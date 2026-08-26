@@ -217,6 +217,9 @@ export async function importOpenRouter(store, catalog) {
         artifact: model.hugging_face_id
           ? `hf:${model.hugging_face_id}`
           : `urn:proprietary:${author}:${slug(model.id.split('/').slice(1).join('-') || model.id)}`,
+        ...(model.description ? { description: String(model.description).slice(0, 500) } : {}),
+        ...(Number.isFinite(model.created)
+          ? { released: new Date(model.created * 1000).toISOString().slice(0, 10) } : {}),
       },
       serving: {
         supports,

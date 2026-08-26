@@ -135,6 +135,28 @@
   .tabbtns { display: flex; gap: 0.5rem; flex-wrap: wrap; }
   .tabbtn { font: inherit; font-weight: 600; font-size: 0.8rem; padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; }
   .tabbtn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  /* model/node card header */
+  .statstrip { display: flex; flex-wrap: wrap; gap: 1.8rem; margin: 0.8rem 0 0.4rem; }
+  .stat { display: flex; flex-direction: column; gap: 0.1rem; }
+  .stat .sv { font-weight: 600; font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+  .stat .sl { font-family: "IBM Plex Mono", monospace; font-size: 0.6rem; letter-spacing: 0.1em; color: var(--muted); }
+  .secnav { display: flex; gap: 1.2rem; border-bottom: 1px solid var(--line); margin: 0.9rem 0 1.1rem; font-family: "IBM Plex Mono", monospace; font-size: 0.7rem; }
+  .secnav a { color: var(--muted); padding-bottom: 0.5rem; }
+  .secnav a:hover { color: var(--ink); text-decoration: none; }
+  .desc { max-width: 52rem; font-size: 0.88rem; color: var(--muted); margin: 0.5rem 0 0; line-height: 1.55; }
+  details.faq { border-bottom: 1px dashed var(--line); padding: 0.55rem 0; font-size: 0.85rem; }
+  details.faq:last-child { border-bottom: none; }
+  details.faq summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+  details.faq summary::after { content: "+"; color: var(--muted); font-weight: 400; }
+  details.faq[open] summary::after { content: "–"; }
+  details.faq p { color: var(--muted); margin: 0.4rem 0 0.2rem; max-width: 48rem; }
+  .relcards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.7rem; }
+  @media (max-width: 800px) { .relcards { grid-template-columns: 1fr; } }
+  .relcard { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.7rem 0.9rem; display: flex; flex-direction: column; gap: 0.2rem; }
+  .relcard:hover { border-color: var(--accent); text-decoration: none; }
+  .relcard .rn { font-weight: 600; color: var(--ink); font-size: 0.86rem; }
+  .relcard .rm { font-family: "IBM Plex Mono", monospace; font-size: 0.66rem; color: var(--muted); }
+
   .feeditem { display: grid; grid-template-columns: 9.5rem 1fr; gap: 0.9rem; padding: 0.6rem 0; border-bottom: 1px dashed var(--line); font-size: 0.83rem; align-items: baseline; }
   .feeditem:last-child { border-bottom: none; }
   .cards3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.7rem; }
@@ -215,10 +237,15 @@
     <span class="chip mono" id="md-artifact" style="border-radius:4px; color:var(--accent)"></span>
     <span id="md-chips" style="display:inline-flex; gap:0.4rem"></span>
   </div>
-  <p class="sub" id="md-sub"></p>
-  <h2>Offerings <span class="counts" id="md-count"></span></h2>
+  <p class="desc" id="md-desc" hidden></p>
+  <div class="statstrip" id="md-stats"></div>
+  <div class="secnav" id="md-nav"></div>
+  <h2 id="sec-offerings">Offerings <span class="counts" id="md-count"></span></h2>
   <div class="panel tablewrap" id="md-offerings"></div>
+  <div id="md-perfsec"></div>
   <div id="md-benchsec"></div>
+  <div id="md-relsec"></div>
+  <div id="md-faqsec"></div>
 </div>
 
 <!-- ================= RANKINGS ================= -->
@@ -488,8 +515,30 @@ async function loadModel(artifact) {
       `<span class="chip">${esc(first.modality)}</span>`,
       first.model.family ? `<span class="chip">${esc(first.model.family)}</span>` : '',
     ].join('');
-    $('#md-sub').textContent = 'Every serving node for this model, side by side — claimed values never blended with measured ones.';
     $('#md-count').textContent = list.length + ' node' + (list.length === 1 ? '' : 's');
+
+    // description (imported catalogs carry one; absent otherwise)
+    const desc = list.map((o) => o.model.description).find(Boolean);
+    $('#md-desc').hidden = !desc;
+    if (desc) $('#md-desc').textContent = desc;
+
+    // stats strip: aggregate honestly across serving nodes
+    const prices = list.map((o) => o.pricing.input_per_mtok ?? 0);
+    const minP = Math.min(...prices), maxP = Math.max(...prices);
+    const ctxMax = Math.max(...list.map((o) => o.serving?.context_window ?? 0), 0);
+    const verified = list.filter((o) => o.tier === 'verified').length;
+    const released = list.map((o) => o.model.released).find(Boolean);
+    const stat = (v, l) => `<span class="stat"><span class="sv">${v}</span><span class="sl">${l}</span></span>`;
+    $('#md-stats').innerHTML = [
+      stat(minP === 0 && maxP === 0 ? 'free' : (minP === maxP ? '$' + fmt(minP) : '$' + fmt(minP) + '–' + fmt(maxP)), '$/MTOK IN ACROSS NODES'),
+      ctxMax ? stat(fmtInt(ctxMax), 'MAX CONTEXT') : '',
+      stat(`${verified}/${list.length}`, 'VERIFIED NODES'),
+      released ? stat(esc(released), 'RELEASED') : '',
+      first.modalities ? stat(esc((first.modalities.input || []).join('+')) + ' → ' + esc((first.modalities.output || []).join('+')), 'MODALITIES') : '',
+    ].filter(Boolean).join('');
+
+    // section nav (anchors appear only for sections that render)
+    const navBits = [['#sec-offerings', 'OFFERINGS']];
     $('#md-offerings').innerHTML = `<table class="grid num"><thead><tr>
       <th>NODE</th><th>PRICE IN/OUT</th><th>CONTEXT</th><th>TTFT</th><th>TOK/S</th><th>UP</th><th>CAPABILITIES</th><th>REVISION</th>
     </tr></thead><tbody>` + list.map((o) => {
@@ -516,11 +565,62 @@ async function loadModel(artifact) {
       </tr>`;
     }).join('') + '</tbody></table>';
 
-    const bench = (first.model && list.flatMap((o) => o.benchmarks || []));
-    if (bench.length) {
-      $('#md-benchsec').innerHTML = '<h2>Benchmarks</h2><div class="panel pad">' + bench.map((b) =>
-        `<div class="stage"><span class="k">${esc(b.suite)}</span><span class="num"><b>${fmt(b.score)}</b> <span class="micro ${b.basis === 'attested' ? 'm-measured' : 'm-claimed'}">${esc(String(b.basis || 'claimed').toUpperCase())}</span></span></div>`).join('') + '</div>';
+    // performance & uptime: only nodes with actual registry observations
+    const probed = list.filter((o) => o.observed?.ttft_ms?.p50 != null || o.observed?.tps > 0 || o.observed?.availability?.ratio != null);
+    $('#md-perfsec').innerHTML = probed.length ? `<h2 id="sec-perf">Performance &amp; uptime <span class="counts">registry-measured, blind-probed</span></h2>
+      <div class="panel pad">` + probed.map((o) => {
+        const obs = o.observed;
+        return `<div class="stage"><span class="k">${esc(o.node_id)}</span><span class="num">
+          ${obs.ttft_ms?.p50 != null ? `ttft <b>${obs.ttft_ms.p50}ms</b> p50${obs.ttft_ms.p95 != null ? ` / ${obs.ttft_ms.p95}ms p95` : ''} · ` : ''}
+          ${obs.tps > 0 ? `<b>${obs.tps}</b> tok/s · ` : ''}
+          ${obs.availability?.ratio != null ? `up <b>${Math.round(obs.availability.ratio * 100)}%</b> · ` : ''}
+          ${obs.probes ?? 0} probes <span class="micro m-measured">● MEASURED</span></span></div>`;
+      }).join('') + '</div>' : '';
+    if (probed.length) navBits.push(['#sec-perf', 'PERFORMANCE']);
+
+    const bench = list.flatMap((o) => o.benchmarks || []);
+    $('#md-benchsec').innerHTML = bench.length ? '<h2 id="sec-bench">Benchmarks</h2><div class="panel pad">' + bench.map((b) =>
+      `<div class="stage"><span class="k">${esc(b.suite)}</span><span class="num"><b>${fmt(b.score)}</b> <span class="micro ${b.basis === 'attested' ? 'm-measured' : 'm-claimed'}">${esc(String(b.basis || 'claimed').toUpperCase())}</span></span></div>`).join('') + '</div>' : '';
+    if (bench.length) navBits.push(['#sec-bench', 'BENCHMARKS']);
+
+    // related: same family, different artifact
+    $('#md-relsec').innerHTML = '';
+    if (first.model.family) {
+      try {
+        const rel = (await api('/v0/offerings?limit=40&family=' + encodeURIComponent(first.model.family))).offerings;
+        const seen = new Map();
+        for (const r of rel) if (r.model.artifact !== artifact && !seen.has(r.model.artifact)) seen.set(r.model.artifact, r);
+        const cards = [...seen.values()].slice(0, 6);
+        if (cards.length) {
+          $('#md-relsec').innerHTML = `<h2 id="sec-related">More from ${esc(first.model.family)}</h2><div class="relcards">` +
+            cards.map((r) => `<a class="relcard" href="#/model/${encodeURIComponent(r.model.artifact)}">
+              <span class="rn">${esc(r.model.name)}</span>
+              <span class="rm">${esc(r.modality)} · ${priceStr(r.pricing)}</span></a>`).join('') + '</div>';
+          navBits.push(['#sec-related', 'RELATED']);
+        }
+      } catch { /* related is optional */ }
     }
+
+    // FAQ — generated strictly from the data on this page
+    const supports = [...new Set(list.flatMap((o) => o.serving?.supports || []))].filter((s) => s !== 'streaming');
+    const capped = list.filter((o) => o.serving?.context_capped_from);
+    const faqs = [
+      ['What is ' + first.model.name + '?', desc
+        ? desc
+        : `A ${first.modality} model${first.model.params_b ? ` (${first.model.params_b}B parameters)` : ''}${first.model.family ? ` in the ${first.model.family} family` : ''}, served by ${list.length} node${list.length === 1 ? '' : 's'} listed in this registry. Artifact: ${artifact}.`],
+      ['What does it cost through OpenNodes?', minP === 0 && maxP === 0
+        ? 'The listed offerings are currently free (rate limits apply per node).'
+        : `Input pricing ranges from $${fmt(minP)} to $${fmt(maxP)} per MTok across the ${list.length} serving node${list.length === 1 ? '' : 's'} — see the offerings table for per-node input/output prices and payment schemes.`],
+      ['Which offerings are verified?', verified > 0
+        ? `${verified} of ${list.length} serving node${list.length === 1 ? '' : 's'} hold the verified tier (identity-fingerprinted, context-verified, capacity-measured).${capped.length ? ` ${capped.length} offering${capped.length === 1 ? ' had its' : 's had their'} claimed context capped to the verified size.` : ''}`
+        : `None yet — current listings are ${list.every((o) => o.source === 'import') ? 'catalog imports (metadata only, unclaimed by their operators)' : 'awaiting Stage B admission'}. Operators can claim a listing and earn the verified tier through the automated qualification procedure.`],
+      supports.length ? ['What capabilities are declared?', `Across serving nodes: ${supports.join(', ')}${first.modalities ? `. Modalities: ${(first.modalities.input || []).join('+')} in, ${(first.modalities.output || []).join('+')} out.` : '.'}`] : null,
+    ].filter(Boolean);
+    $('#md-faqsec').innerHTML = '<h2 id="sec-faq">FAQ</h2><div class="panel pad">' +
+      faqs.map(([q, a]) => `<details class="faq"><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('') + '</div>';
+    navBits.push(['#sec-faq', 'FAQ']);
+
+    $('#md-nav').innerHTML = navBits.map(([h, l]) => `<a href="${h}" onclick="event.preventDefault(); document.querySelector('${h}').scrollIntoView({behavior:'smooth'})">${l}</a>`).join('');
   } catch (e) { $('#md-offerings').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
 }
 
@@ -593,14 +693,32 @@ async function loadNode(id) {
       `<div class="stage"><span class="k">${esc(p.stage)}·${esc(p.kind)}</span><span class="${p.ok ? 'ok' : 'fail'}">${p.ok ? 'pass' : 'fail'}${p.detail ? ' <span style="color:var(--muted)">— ' + esc(p.detail) + '</span>' : ''}</span></div>`).join('');
     const history = (n.history || []).map((h) =>
       `<div class="stage"><span class="k">${esc((h.at || '').slice(0, 10))}</span><span>→ <b>${esc(h.to_state)}</b>${h.reason ? ' <span style="color:var(--muted)">— ' + esc(h.reason) + '</span>' : ''}</span></div>`).join('');
+    const tier = n.state === 'indexed' ? 'unverified' : n.state;
+    const stat = (v, l) => `<span class="stat"><span class="sv">${v}</span><span class="sl">${l}</span></span>`;
+    const offers = (card.offerings || []);
+    const offerRows = offers.slice(0, 50).map((o) => `<tr>
+      <td><a href="#/model/${encodeURIComponent(o.model?.artifact ?? '')}" style="font-weight:600">${esc(o.model?.name ?? o.offering_id)}</a></td>
+      <td><span class="chip">${esc(o.modality)}</span></td>
+      <td class="num"><b>${priceStr(o.pricing || {})}</b></td>
+      <td class="num">${o.serving?.context_window ? fmtInt(o.serving.context_window) : '—'}</td>
+      <td>${(o.serving?.supports || []).filter((s) => s !== 'streaming').map((s) => `<span class="chip">${esc(s)}</span>`).join(' ') || '—'}</td>
+    </tr>`).join('');
     $('#node-detail').innerHTML = `
-      <div class="panel pad" style="max-width:56rem"><table class="grid">
-        <tr><td style="color:var(--muted); width:8rem" class="mono">state</td><td>${tierChip(n.state === 'indexed' ? 'unverified' : n.state)} ${n.source === 'import' ? '<span class="chip imp">IMPORTED — unclaimed by operator</span>' : ''}</td></tr>
-        <tr><td style="color:var(--muted)" class="mono">operator</td><td>${esc(card.node?.operator?.name ?? '—')} ${card.node?.operator?.country ? '(' + esc(card.node.operator.country) + ')' : ''}</td></tr>
-        <tr><td style="color:var(--muted)" class="mono">endpoint</td><td class="mono" style="font-size:0.74rem">${esc(card.endpoints?.openai ?? '—')}</td></tr>
-        <tr><td style="color:var(--muted)" class="mono">offerings</td><td>${(card.offerings || []).length}</td></tr>
+      ${card.node?.description ? `<p class="desc">${esc(card.node.description)}</p>` : ''}
+      <div class="statstrip">
+        ${stat(tierChip(tier), 'TRUST TIER')}
+        ${stat(String(offers.length), 'OFFERINGS')}
+        ${card.node?.operator?.name ? stat(esc(card.node.operator.name) + (card.node.operator.country ? ' (' + esc(card.node.operator.country) + ')' : ''), 'OPERATOR') : ''}
+        ${(card.node?.regions || []).length ? stat(esc(card.node.regions.join(', ')), 'REGIONS') : ''}
+        ${n.source === 'import' ? stat('<span class="chip imp">IMPORTED</span>', 'SOURCE — unclaimed by operator') : ''}
+      </div>
+      <div class="panel pad" style="max-width:56rem; margin-top:0.6rem"><table class="grid">
+        <tr><td style="color:var(--muted); width:8rem" class="mono">endpoint</td><td class="mono" style="font-size:0.74rem">${esc(card.endpoints?.openai ?? '—')}</td></tr>
         <tr><td style="color:var(--muted)" class="mono">revision</td><td class="mono" style="font-size:0.74rem">${esc(card.revision ?? '—')}</td></tr>
       </table></div>
+      ${offers.length ? `<h2>Offerings</h2><div class="panel tablewrap" style="max-width:56rem"><table class="grid num"><thead><tr>
+        <th>MODEL</th><th>MODALITY</th><th>PRICE IN/OUT</th><th>CONTEXT</th><th>CAPABILITIES</th>
+      </tr></thead><tbody>${offerRows}</tbody></table>${offers.length > 50 ? `<div style="padding:0.6rem 0.8rem; border-top:1px solid var(--line)"><span class="prov">showing 50 of ${offers.length} — use the catalog search to browse all</span></div>` : ''}</div>` : ''}
       ${probes ? '<h2>Recent probes</h2><div class="panel pad" style="max-width:56rem">' + probes + '</div>' : ''}
       ${history ? '<h2>Listing history</h2><div class="panel pad" style="max-width:56rem">' + history + '</div>' : ''}`;
   } catch (e) { $('#node-detail').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
