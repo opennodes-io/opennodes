@@ -95,6 +95,10 @@ export async function createPgStore({ connectionString, pool } = {}) {
       return q('SELECT * FROM transitions WHERE node_id = $1 ORDER BY id ASC', [nodeId]);
     },
     async allNodes() { return q('SELECT * FROM nodes'); },
+    async recentTransitions(limit = 50) {
+      return q(`SELECT t.*, n.source FROM transitions t
+        LEFT JOIN nodes n ON n.id = t.node_id ORDER BY t.id DESC LIMIT $1`, [limit]);
+    },
     async addFingerprints(artifact, refs) {
       for (const ref of refs) {
         await q(`INSERT INTO fingerprints (artifact, prompt, expected_hash) VALUES ($1, $2, $3)

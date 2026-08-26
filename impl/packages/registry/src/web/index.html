@@ -4,169 +4,271 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenNodes Registry</title>
-<meta name="description" content="Discover, compare, and rank AI inference offerings across providers — and register your own AI node.">
+<meta name="description" content="Discover, compare, and rank AI inference offerings across providers — verified, not just ranked.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🛰️</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
   :root {
     --ground: #F7F9FA; --panel: #FFFFFF; --panel-2: #EEF2F4;
-    --ink: #1C2733; --muted: #5C6E7E; --line: #D6DEE3;
+    --ink: #1C2733; --muted: #5C6E7E; --faint: #8FA1B0; --line: #D6DEE3; --line-2: #EEF2F4;
     --accent: #0F7A80; --accent-soft: #E0EFF0; --good: #2F6B3A;
-    --warn: #A16207; --bad: #A33;
+    --warn: #A16207; --bad: #A33333; --star: #B45309;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --ground: #101820; --panel: #16202A; --panel-2: #1C2833;
-      --ink: #E4EBF0; --muted: #8FA1B0; --line: #2C3B48;
+      --ink: #E4EBF0; --muted: #8FA1B0; --faint: #64788A; --line: #2C3B48; --line-2: #223140;
       --accent: #4FC0C6; --accent-soft: #12333A; --good: #7CC08A;
-      --warn: #D9A648; --bad: #E08585;
+      --warn: #D9A648; --bad: #E08585; --star: #D9A648;
     }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--ground); color: var(--ink); font-family: "Archivo", "Helvetica Neue", Arial, sans-serif; font-size: 0.95rem; line-height: 1.55; }
-  .wrap { max-width: 62rem; margin: 0 auto; padding: 0 1.25rem; }
-  a { color: var(--accent); text-underline-offset: 2px; }
-  code, .mono { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; }
-  code { font-size: 0.85em; background: var(--panel-2); padding: 0.08em 0.35em; border-radius: 3px; }
-  pre { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.8rem 1rem; overflow-x: auto; font-size: 0.8rem; line-height: 1.5; }
+  body { margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "Archivo", "Helvetica Neue", Arial, sans-serif; font-size: 0.9rem; line-height: 1.5; }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; }
+  .serif { font-family: "Source Serif 4", Georgia, serif; }
+  .num { font-variant-numeric: tabular-nums; }
+  .wrap { max-width: 74rem; margin: 0 auto; padding: 0 1.4rem; }
 
-  nav { border-bottom: 1px solid var(--line); background: var(--panel); }
-  nav .wrap { display: flex; align-items: center; gap: 1.4rem; height: 3.4rem; }
-  nav .brand { font-weight: 700; font-size: 1.05rem; color: var(--ink); text-decoration: none; }
-  nav .brand .mono { color: var(--accent); font-size: 0.8rem; margin-left: 0.4rem; }
-  nav a.tab { color: var(--muted); text-decoration: none; font-weight: 500; font-size: 0.9rem; padding: 0.2rem 0; border-bottom: 2px solid transparent; }
+  /* nav */
+  nav { background: var(--panel); border-bottom: 1px solid var(--line); }
+  nav .wrap { display: flex; align-items: stretch; gap: 1.5rem; height: 3.5rem; }
+  nav .brand { display: flex; align-items: baseline; gap: 0.45rem; align-self: center; color: var(--ink); font-weight: 700; font-size: 1.05rem; text-decoration: none; }
+  nav .brand .mono { color: var(--accent); font-size: 0.7rem; }
+  nav a.tab { display: flex; align-items: center; color: var(--muted); font-weight: 500; font-size: 0.88rem; border-bottom: 2px solid transparent; }
+  nav a.tab:hover { text-decoration: none; color: var(--ink); }
   nav a.tab.active { color: var(--ink); border-bottom-color: var(--accent); }
   nav .spacer { flex: 1; }
-  nav .ext { font-size: 0.82rem; color: var(--muted); text-decoration: none; }
+  nav .cta { align-self: center; background: var(--accent); color: #fff; font-weight: 600; font-size: 0.82rem; border-radius: 6px; padding: 0.55rem 1rem; }
+  nav .cta:hover { text-decoration: none; opacity: 0.92; }
+  nav .ext { align-self: center; font-size: 0.78rem; color: var(--muted); }
 
-  main { padding: 1.6rem 0 4rem; }
-  h1 { font-size: 1.5rem; margin: 0.2rem 0 1rem; }
-  h2 { font-size: 1.15rem; margin: 1.6rem 0 0.6rem; }
-  .sub { color: var(--muted); margin: 0 0 1.2rem; max-width: 46rem; }
+  main { padding: 1.4rem 0 4rem; }
+  h1 { font-size: 1.4rem; margin: 0.2rem 0 0.4rem; }
+  h2 { font-size: 1.05rem; margin: 1.4rem 0 0.6rem; }
+  .sub { color: var(--muted); margin: 0 0 1.1rem; max-width: 52rem; font-size: 0.86rem; }
+  .subserif { font-family: "Source Serif 4", Georgia, serif; font-style: italic; color: var(--muted); font-size: 0.88rem; }
+  .crumb { font-family: "IBM Plex Mono", monospace; font-size: 0.7rem; color: var(--muted); margin-bottom: 0.3rem; }
+  .counts { font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; color: var(--muted); }
 
-  .filters { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-bottom: 1rem; }
-  .filters input[type=text], .filters input[type=number], .filters select {
-    font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
-    border-radius: 4px; padding: 0.45rem 0.6rem;
-  }
-  .filters input[type=text] { min-width: 14rem; flex: 1; }
-  .filters input[type=number] { width: 7.5rem; }
-  .toggle { font-size: 0.8rem; padding: 0.4rem 0.7rem; border-radius: 4px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; }
-  .toggle.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-  .count { font-size: 0.82rem; color: var(--muted); margin: 0 0 0.6rem; }
+  /* chips */
+  .chip { font-family: "IBM Plex Mono", monospace; font-size: 0.6rem; font-weight: 600; padding: 0.12rem 0.5rem;
+    border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .chip.t-verified { color: var(--good); border-color: var(--good); }
+  .chip.t-community { color: var(--accent); border-color: var(--accent); }
+  .chip.t-disputed, .chip.t-suspended { color: var(--bad); border-color: var(--bad); }
+  .chip.inst { color: var(--accent); border-color: var(--accent); }
+  .chip.imp { background: var(--panel-2); font-weight: 400; }
+  .micro { font-family: "IBM Plex Mono", monospace; font-size: 0.58rem; font-weight: 600; letter-spacing: 0.04em; }
+  .m-measured { color: var(--good); } .m-claimed { color: var(--faint); font-weight: 400; } .m-warn { color: var(--warn); }
+  .prov { font-family: "IBM Plex Mono", monospace; font-size: 0.64rem; color: var(--faint); }
 
-  .offering { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: 0.75rem 1rem; margin-bottom: 0.6rem; }
-  .offering .row1 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem; }
-  .offering .name { font-weight: 600; font-size: 1rem; }
-  .offering .nodeid { font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; color: var(--muted); }
-  .offering .row2 { display: flex; flex-wrap: wrap; gap: 1.1rem; margin-top: 0.35rem; font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
-  .offering .row2 b { color: var(--ink); font-weight: 600; }
-  .chip { font-family: "IBM Plex Mono", monospace; font-size: 0.68rem; font-weight: 600; padding: 0.14rem 0.5rem; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
-  .chip.tier-verified { color: var(--good); border-color: var(--good); }
-  .chip.tier-community { color: var(--accent); border-color: var(--accent); }
-  .chip.tier-unverified { color: var(--muted); }
-  .chip.src-import { background: var(--panel-2); }
-  .rank { display: inline-flex; align-items: center; gap: 0.45rem; cursor: pointer; }
-  .rankbar { width: 64px; height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; display: inline-block; }
+  /* layout */
+  .cols { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 1.4rem; align-items: start; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+  .pad { padding: 0.9rem 1rem; }
+
+  /* filter rail */
+  .rail { display: flex; flex-direction: column; gap: 1rem; font-size: 0.82rem; }
+  .rail .grp { display: flex; flex-direction: column; gap: 0.45rem; }
+  .rail .lab { font-family: "IBM Plex Mono", monospace; font-size: 0.62rem; font-weight: 600; letter-spacing: 0.12em; color: var(--muted); }
+  .rail select, .rail input[type=number], .rail input[type=text] {
+    font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 0.4rem 0.55rem; width: 100%; }
+  .toggle { font-size: 0.72rem; padding: 0.28rem 0.65rem; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--muted); cursor: pointer; font-family: inherit; }
+  .toggle.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+  .switchrow { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; user-select: none; }
+  .switch { width: 30px; height: 17px; border-radius: 999px; background: var(--line); position: relative; transition: background 0.15s; flex: none; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--panel); transition: left 0.15s; }
+  .switchrow.on .switch { background: var(--accent); } .switchrow.on .switch::after { left: 15px; }
+
+  /* offering rows */
+  .rows { display: flex; flex-direction: column; gap: 0.55rem; }
+  .row { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.8rem 1rem 0.6rem; cursor: pointer; }
+  .row:hover { border-color: var(--accent); }
+  .row .l1 { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+  .row .name { font-weight: 600; font-size: 0.95rem; }
+  .row .nodeid { font-size: 0.76rem; color: var(--muted); }
+  .row .l2 { display: flex; gap: 1.4rem; margin-top: 0.35rem; font-size: 0.78rem; color: var(--muted); flex-wrap: wrap; align-items: baseline; }
+  .row .l2 b { color: var(--ink); font-weight: 600; }
+  .rankbar { width: 58px; height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; display: inline-block; vertical-align: middle; }
   .rankbar i { display: block; height: 100%; background: var(--accent); }
-  .explain { display: none; margin-top: 0.5rem; font-size: 0.75rem; font-family: "IBM Plex Mono", monospace; color: var(--muted); }
-  .offering.open .explain { display: block; }
+  .rankwrap { display: inline-flex; align-items: center; gap: 0.4rem; margin-left: auto; }
+  .explain { display: none; margin-top: 0.45rem; }
+  .row.open .explain { display: block; }
+  .row .prov { display: block; margin-top: 0.4rem; }
 
-  .btn { font: inherit; font-weight: 600; padding: 0.55rem 1.1rem; border-radius: 4px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
-  .btn.secondary { background: transparent; color: var(--accent); }
+  /* tables */
+  table.grid { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
+  table.grid th { font-family: "IBM Plex Mono", monospace; font-size: 0.6rem; font-weight: 600; letter-spacing: 0.08em;
+    color: var(--muted); text-align: left; padding: 0.55rem 0.8rem; background: var(--panel-2); border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.grid td { padding: 0.7rem 0.8rem; border-bottom: 1px solid var(--line-2); vertical-align: middle; }
+  table.grid tr:last-child td { border-bottom: none; }
+  .tablewrap { overflow-x: auto; }
+
+  .btn { font: inherit; font-weight: 600; font-size: 0.82rem; padding: 0.55rem 1rem; border-radius: 6px;
+    border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  .btn.sec { background: transparent; color: var(--accent); }
   .btn:disabled { opacity: 0.5; cursor: default; }
-  label.f { display: block; font-size: 0.82rem; color: var(--muted); margin: 0.9rem 0 0.25rem; }
-  input.wide { width: 100%; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 0.55rem 0.7rem; }
-
-  .panel { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: 1rem 1.2rem; margin: 1rem 0; }
-  .ok { color: var(--good); } .fail { color: var(--bad); } .warn { color: var(--warn); }
-  .stage { display: grid; grid-template-columns: 7rem 1fr; gap: 0.8rem; padding: 0.55rem 0; border-bottom: 1px dashed var(--line); font-size: 0.88rem; }
+  input.wide { width: 100%; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 0.55rem 0.7rem; }
+  label.f { display: block; font-size: 0.78rem; color: var(--muted); margin: 0.9rem 0 0.25rem; }
+  .ok { color: var(--good); } .fail { color: var(--bad); } .warncol { color: var(--warn); }
+  .err { color: var(--bad); font-size: 0.82rem; margin-top: 0.5rem; }
+  .stage { display: grid; grid-template-columns: 7rem 1fr; gap: 0.8rem; padding: 0.5rem 0; border-bottom: 1px dashed var(--line); font-size: 0.82rem; }
   .stage:last-child { border-bottom: none; }
-  .stage .k { font-family: "IBM Plex Mono", monospace; font-size: 0.74rem; font-weight: 600; color: var(--accent); }
-  .muted { color: var(--muted); }
-  .err { color: var(--bad); font-size: 0.85rem; margin-top: 0.6rem; }
-  table.detail { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
-  table.detail td { padding: 0.4rem 0.6rem; border-bottom: 1px dashed var(--line); vertical-align: top; }
-  table.detail td:first-child { color: var(--muted); white-space: nowrap; font-family: "IBM Plex Mono", monospace; font-size: 0.75rem; }
+  .stage .k { font-family: "IBM Plex Mono", monospace; font-size: 0.66rem; font-weight: 600; color: var(--accent); }
+  .tabbtns { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .tabbtn { font: inherit; font-weight: 600; font-size: 0.8rem; padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; }
+  .tabbtn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .feeditem { display: grid; grid-template-columns: 9.5rem 1fr; gap: 0.9rem; padding: 0.6rem 0; border-bottom: 1px dashed var(--line); font-size: 0.83rem; align-items: baseline; }
+  .feeditem:last-child { border-bottom: none; }
+  .cards3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.7rem; }
+  @media (max-width: 800px) { .cards3 { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 
 <nav><div class="wrap">
   <a class="brand" href="#/">OpenNodes<span class="mono">registry</span></a>
-  <a class="tab" data-view="catalog" href="#/">Models</a>
-  <a class="tab" data-view="register" href="#/register">Register a node</a>
-  <a class="tab" data-view="qualification" href="#/qualification">Qualification</a>
+  <a class="tab" data-view="models" href="#/">Models</a>
+  <a class="tab" data-view="rankings" href="#/rankings">Rankings</a>
+  <a class="tab" data-view="nodes" href="#/nodes">Nodes</a>
+  <a class="tab" data-view="feed" href="#/new">New</a>
   <span class="spacer"></span>
   <a class="ext" href="https://opennodes.io">opennodes.io</a>
   <a class="ext" href="https://github.com/opennodes-io/opennodes">GitHub</a>
+  <a class="cta" href="#/register">Register a node</a>
 </div></nav>
 
 <main class="wrap">
 
-<!-- ============ CATALOG ============ -->
-<div id="view-catalog">
-  <h1>Model offerings</h1>
-  <p class="sub">Search across registered AI nodes and imported catalogs. Every result shows its trust tier, its price, and <em>why</em> it ranks where it does — claimed values are never blended with measured ones.</p>
-  <div class="filters">
-    <input type="text" id="f-q" placeholder="Search models, families, nodes…">
-    <select id="f-modality">
-      <option value="">any modality</option>
-      <option>text</option><option>multimodal</option><option>image</option>
-      <option>audio</option><option>video</option><option>embedding</option>
-    </select>
-    <select id="f-tier">
-      <option value="">any tier</option>
-      <option value="community">community+</option>
-      <option value="verified">verified+</option>
-    </select>
-    <button class="toggle" data-sup="tool_calls">tools</button>
-    <button class="toggle" data-sup="vision">vision</button>
-    <button class="toggle" data-sup="json_mode">json</button>
-    <input type="number" id="f-price" placeholder="max $/MTok in" min="0" step="0.01">
-    <select id="f-sort"><option value="rank">sort: rank</option><option value="price">sort: price</option></select>
+<!-- ================= MODELS (catalog) ================= -->
+<div id="view-models">
+  <div style="display:flex; align-items:baseline; gap:0.9rem; flex-wrap:wrap">
+    <h1>Models</h1>
+    <span class="counts" id="m-counts"></span>
   </div>
-  <p class="count" id="count"></p>
-  <div id="results"></div>
+  <p class="sub">Search across registered AI nodes and imported catalogs. Every result shows its trust tier, its price, and <em>why</em> it ranks where it does — claimed values are never blended with measured ones.</p>
+  <div class="cols">
+    <div class="rail">
+      <div class="panel pad grp" style="border-color: var(--accent)">
+        <span class="lab" style="color: var(--accent)">TRUST</span>
+        <span class="switchrow" id="f-verified"><span class="switch"></span><b style="font-size:0.82rem">Verified only</b></span>
+        <span style="font-size:0.7rem; color:var(--muted); line-height:1.4">identity-fingerprinted · context-verified · continuously probed</span>
+      </div>
+      <div class="grp">
+        <span class="lab">SEARCH</span>
+        <input type="text" id="f-q" placeholder="model, family, node…">
+      </div>
+      <div class="grp">
+        <span class="lab">MODALITY</span>
+        <select id="f-modality">
+          <option value="">any modality</option>
+          <option>text</option><option>multimodal</option><option>image</option>
+          <option>audio</option><option>video</option><option>embedding</option>
+        </select>
+      </div>
+      <div class="grp">
+        <span class="lab">CAPABILITIES</span>
+        <div style="display:flex; flex-wrap:wrap; gap:0.35rem">
+          <button class="toggle" data-sup="tool_calls">tools</button>
+          <button class="toggle" data-sup="vision">vision</button>
+          <button class="toggle" data-sup="json_mode">json</button>
+        </div>
+      </div>
+      <div class="grp">
+        <span class="lab">MAX PRICE · $/MTOK IN</span>
+        <input type="number" id="f-price" placeholder="e.g. 1.00" min="0" step="0.05">
+      </div>
+      <div class="grp">
+        <span class="lab">SORT</span>
+        <select id="f-sort"><option value="rank">rank</option><option value="price">price</option></select>
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:0.55rem">
+      <div class="rows" id="m-results"></div>
+      <p class="counts" id="m-foot"></p>
+    </div>
+  </div>
 </div>
 
-<!-- ============ REGISTER ============ -->
+<!-- ================= MODEL DETAIL ================= -->
+<div id="view-model" hidden>
+  <div class="crumb" id="md-crumb"></div>
+  <div style="display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap">
+    <h1 id="md-title" style="margin:0"></h1>
+    <span class="chip mono" id="md-artifact" style="border-radius:4px; color:var(--accent)"></span>
+    <span id="md-chips" style="display:inline-flex; gap:0.4rem"></span>
+  </div>
+  <p class="sub" id="md-sub"></p>
+  <h2>Offerings <span class="counts" id="md-count"></span></h2>
+  <div class="panel tablewrap" id="md-offerings"></div>
+  <div id="md-benchsec"></div>
+</div>
+
+<!-- ================= RANKINGS ================= -->
+<div id="view-rankings" hidden>
+  <h1>Rankings</h1>
+  <div class="tabbtns" style="margin:0.6rem 0 0.7rem">
+    <button class="tabbtn on">Measured</button>
+    <button class="tabbtn" disabled title="requires receipted gateway usage — arrives with settlement">Adoption</button>
+    <button class="tabbtn" disabled title="requires reviewer accounts — arrives with reviews">Community</button>
+  </div>
+  <p class="subserif">Rolling registry measurements of live endpoints — these rank <b>speed and reliability</b>, not model intelligence. Nodes are blind-probed at unpredictable times; imported catalog entries are unprobed and excluded. Adoption and Community rankings arrive with settlement and reviews.</p>
+  <div class="panel tablewrap" id="r-table"></div>
+</div>
+
+<!-- ================= NODES ================= -->
+<div id="view-nodes" hidden>
+  <div style="display:flex; align-items:baseline; gap:0.9rem"><h1>Nodes</h1><span class="counts" id="n-counts"></span></div>
+  <p class="sub">The supply side, first-class: every provider serving through OpenNodes, with the trust tier it has earned. <b>Verified</b> means identity-fingerprinted, context-verified, capacity-measured, and continuously probed — <a href="#/qualification">the qualification procedure</a> is automated and the same for everyone.</p>
+  <div class="panel tablewrap" id="n-table"></div>
+</div>
+
+<!-- ================= NEW (feed) ================= -->
+<div id="view-feed" hidden>
+  <h1>New</h1>
+  <p class="sub">Dated listing events, newest first — registrations, tier changes, suspensions — each with its provenance. Also available as <a id="feed-json" href="/v0/feed">JSON</a> for agents.</p>
+  <div class="panel pad" id="feed-list"></div>
+</div>
+
+<!-- ================= NODE DETAIL ================= -->
+<div id="view-node" hidden>
+  <div class="crumb"><a href="#/nodes">Nodes</a> /</div>
+  <h1 id="node-title" class="mono" style="font-size:1.05rem"></h1>
+  <div id="node-detail"></div>
+</div>
+
+<!-- ================= REGISTER ================= -->
 <div id="view-register" hidden>
   <h1>Register an AI node</h1>
-  <p class="sub">Anyone can register — a lab, a university cluster, a single Ollama box. Registration is open; <a href="#/qualification">trust is earned</a> through the automated qualification procedure. Serve a signed <a href="https://github.com/opennodes-io/opennodes/blob/main/spec/ONP-2-node-card.md">Node Card</a> at <code>/.well-known/open-node.json</code> (the <a href="https://github.com/opennodes-io/opennodes/tree/main/node-kit">Node Kit</a> does this for any vLLM/Ollama/TGI deployment), then submit it here.</p>
-
-  <div class="panel">
+  <p class="sub">Anyone can register — a lab, a university cluster, a single Ollama box. Registration is open; <a href="#/qualification">trust is earned</a> through the automated qualification procedure. Serve a signed <a href="https://github.com/opennodes-io/opennodes/blob/main/spec/ONP-2-node-card.md">Node Card</a> at <span class="mono" style="font-size:0.8em">/.well-known/open-node.json</span> (the <a href="https://github.com/opennodes-io/opennodes/tree/main/node-kit">Node Kit</a> does this for any vLLM/Ollama/TGI deployment), then submit it here.</p>
+  <div class="panel pad" style="max-width:46rem">
     <label class="f">Node Card URL</label>
-    <input class="wide mono" id="card-url" placeholder="https://ai.example.org/.well-known/open-node.json">
+    <input class="wide mono" id="card-url" placeholder="https://ai.example.org/.well-known/open-node.json" style="font-size:0.8rem">
     <div style="margin-top:0.9rem"><button class="btn" id="btn-register">Submit for registration</button></div>
     <div id="reg-out"></div>
   </div>
 </div>
 
-<!-- ============ QUALIFICATION ============ -->
+<!-- ================= QUALIFICATION ================= -->
 <div id="view-qualification" hidden>
   <h1>The qualification procedure</h1>
   <p class="sub">Listing is open; tiers are earned. The registry runs an automated admission battery against your live endpoints — no paperwork, no gatekeepers, no exceptions. Every verdict is recorded and visible in your node's listing history.</p>
-
-  <div class="panel">
-    <div class="stage"><span class="k">STAGE A</span><span><b>Conformance</b> — gate to <span class="chip tier-community">community</span>, minutes. Health endpoint live; card valid and signed; <code>/v1/models</code> agrees with the card; one blind invocation returns proper usage accounting and a signed receipt. Re-run every 6&nbsp;hours and on every card revision.</span></div>
-    <div class="stage"><span class="k">STAGE B</span><span><b>Substance</b> — gate to <span class="chip tier-verified">verified</span>, hours. <b>Identity fingerprinting:</b> a deterministic probe battery compared against reference outputs of the claimed model — serving a cheaper substitute under a premium name marks the node <i>disputed</i> and delists it. <b>Context verification:</b> needle-in-haystack probes at 25/50/90% of the claimed window; overclaims are capped to the verified size, visibly. <b>Capacity ramp:</b> stepped concurrent load; measured TTFT/throughput overrides your claims in search results.</span></div>
-    <div class="stage"><span class="k">STAGE C</span><span><b>Continuous</b> — keeps the tier honest. Liveness sweeps feed a rolling availability score shown on every search result; random blind invocations at unpredictable times defeat "benchmark mode"; sustained failures auto-suspend the listing.</span></div>
+  <div class="panel pad" style="max-width:56rem">
+    <div class="stage"><span class="k">STAGE A</span><span><b>Conformance</b> — gate to <span class="chip t-community">COMMUNITY</span>, minutes. Health endpoint live; card valid and signed; models list agrees with the card; one blind invocation returns proper usage accounting and a signed receipt. Re-run every 6&nbsp;hours and on every card revision.</span></div>
+    <div class="stage"><span class="k">STAGE B</span><span><b>Substance</b> — gate to <span class="chip t-verified">VERIFIED</span>, hours. <b>Identity fingerprinting:</b> a deterministic probe battery compared against reference outputs of the claimed model — serving a cheaper substitute under a premium name marks the node <i>disputed</i> and delists it. <b>Context verification:</b> needle-in-haystack probes at 25/50/90% of the claimed window; overclaims are capped to the verified size, visibly. <b>Capacity ramp:</b> stepped concurrent load; measured TTFT/throughput overrides claims in search results.</span></div>
+    <div class="stage"><span class="k">STAGE C</span><span><b>Continuous</b> — keeps the tier honest. Liveness sweeps feed a rolling availability score; random blind invocations at unpredictable times defeat "benchmark mode"; sustained failures auto-suspend the listing.</span></div>
   </div>
-
   <h2>Principles</h2>
-  <div class="panel" style="font-size:0.9rem">
-    <p><b>Claimed ≠ measured ≠ attested.</b> Self-reported values are labeled <code>claimed</code>; registry measurements override them; third-party Verifiable Credentials earn <code>attested</code>. The three are never blended.</p>
+  <div class="panel pad" style="max-width:56rem; font-size:0.85rem">
+    <p><b>Claimed ≠ measured ≠ attested.</b> Self-reported values are labeled <span class="micro m-claimed">CLAIMED</span>; registry measurements override them and show as <span class="micro m-measured">● MEASURED</span>; third-party Verifiable Credentials earn <i>attested</i>. The three are never blended.</p>
     <p><b>Transparent rank, by rule.</b> Every result carries its rank explanation — component weights and values. Undisclosed ranking inputs are non-conformant; sponsored placement, if ever present, must be labeled and excluded from rank.</p>
-    <p style="margin-bottom:0"><b>Probes cost you nothing you don't grant.</b> Your card declares a <code>probe_allowance</code>; the registry stays within it or pays like any client.</p>
+    <p style="margin-bottom:0"><b>Probes cost you nothing you don't grant.</b> Your card declares a probe allowance; the registry stays within it or pays like any client.</p>
   </div>
-</div>
-
-<!-- ============ NODE DETAIL ============ -->
-<div id="view-node" hidden>
-  <h1 id="node-title" class="mono" style="font-size:1.1rem"></h1>
-  <div id="node-detail"></div>
 </div>
 
 </main>
@@ -176,111 +278,276 @@ const $ = (s) => document.querySelector(s);
 const api = (p, opts) => fetch(p, opts).then(async (r) => { const b = await r.json().catch(() => ({})); if (!r.ok) throw new Error(b.detail || r.status); return b; });
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt = (n) => n == null ? '—' : (typeof n === 'number' ? (Math.round(n * 1000) / 1000) : n);
+const fmtInt = (n) => n == null ? '—' : Number(n).toLocaleString('en-US');
+const ago = (iso) => {
+  if (!iso) return '—';
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 90) return 'just now';
+  if (s < 5400) return Math.round(s / 60) + 'min ago';
+  if (s < 129600) return Math.round(s / 3600) + 'h ago';
+  return Math.round(s / 86400) + 'd ago';
+};
+const tierChip = (t) => `<span class="chip t-${esc(t)}">${esc(String(t).toUpperCase())}</span>`;
+const priceStr = (p) => {
+  const i = p.input_per_mtok ?? 0, o = p.output_per_mtok ?? 0;
+  return (i === 0 && o === 0) ? 'free' : `$${fmt(i)} / $${fmt(o)} per MTok`;
+};
 
-/* ---- routing ---- */
-const views = ['catalog', 'register', 'qualification', 'node'];
+/* ---------- routing ---------- */
+const views = ['models', 'model', 'rankings', 'nodes', 'feed', 'node', 'register', 'qualification'];
 function route() {
   const hash = location.hash || '#/';
-  let view = 'catalog', arg = null;
-  if (hash.startsWith('#/register')) view = 'register';
-  else if (hash.startsWith('#/qualification')) view = 'qualification';
+  let view = 'models', arg = null;
+  if (hash.startsWith('#/model/')) { view = 'model'; arg = decodeURIComponent(hash.slice(8)); }
+  else if (hash.startsWith('#/rankings')) view = 'rankings';
+  else if (hash.startsWith('#/nodes')) view = 'nodes';
+  else if (hash.startsWith('#/new')) view = 'feed';
   else if (hash.startsWith('#/node/')) { view = 'node'; arg = decodeURIComponent(hash.slice(7)); }
+  else if (hash.startsWith('#/register')) view = 'register';
+  else if (hash.startsWith('#/qualification')) view = 'qualification';
   for (const v of views) $('#view-' + v).hidden = (v !== view);
-  document.querySelectorAll('nav a.tab').forEach((a) => a.classList.toggle('active', a.dataset.view === view));
-  if (view === 'catalog') search();
+  document.querySelectorAll('nav a.tab').forEach((a) => a.classList.toggle('active', a.dataset.view === view || (view === 'model' && a.dataset.view === 'models') || (view === 'node' && a.dataset.view === 'nodes')));
+  window.scrollTo(0, 0);
+  if (view === 'models') search();
+  if (view === 'model' && arg) loadModel(arg);
+  if (view === 'rankings') loadRankings();
+  if (view === 'nodes') loadNodes();
+  if (view === 'feed') loadFeed();
   if (view === 'node' && arg) loadNode(arg);
 }
 window.addEventListener('hashchange', route);
 
-/* ---- catalog ---- */
+/* ---------- catalog ---------- */
 const sup = new Set();
 document.querySelectorAll('.toggle').forEach((b) => b.addEventListener('click', () => {
   b.classList.toggle('on'); b.classList.contains('on') ? sup.add(b.dataset.sup) : sup.delete(b.dataset.sup); search();
 }));
+$('#f-verified').addEventListener('click', () => { $('#f-verified').classList.toggle('on'); search(); });
 let debounce;
 for (const id of ['f-q', 'f-price']) $('#' + id).addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(search, 250); });
-for (const id of ['f-modality', 'f-tier', 'f-sort']) $('#' + id).addEventListener('change', search);
+for (const id of ['f-modality', 'f-sort']) $('#' + id).addEventListener('change', search);
+
+function measuredBits(o) {
+  const obs = o.observed || {};
+  const bits = [];
+  if (obs.ttft_ms?.p50 != null) bits.push(`<span>ttft <b class="num">${obs.ttft_ms.p50}ms</b> <span class="micro m-measured">● MEASURED</span></span>`);
+  else if (o.serving?.expected_ttft_ms?.p50 != null) bits.push(`<span>ttft <b class="num">${o.serving.expected_ttft_ms.p50}ms</b> <span class="micro m-claimed">CLAIMED</span></span>`);
+  if (obs.tps != null && obs.tps > 0) bits.push(`<span><b class="num">${obs.tps}</b> tok/s <span class="micro m-measured">● MEASURED</span></span>`);
+  else if (o.serving?.expected_tps?.p50 != null) bits.push(`<span><b class="num">${o.serving.expected_tps.p50}</b> tok/s <span class="micro m-claimed">CLAIMED</span></span>`);
+  if (obs.availability?.ratio != null) bits.push(`<span>up <b class="num">${Math.round(obs.availability.ratio * 100)}%</b></span>`);
+  return bits;
+}
+function ctxBit(o) {
+  if (!o.serving?.context_window) return '';
+  const cap = o.serving.context_capped_from
+    ? ` <span class="micro m-warn">▼ CAPPED FROM ${fmtInt(o.serving.context_capped_from)}</span>` : '';
+  const basis = (o.source === 'import' && !o.serving.context_capped_from) ? ' <span class="micro m-claimed">CLAIMED</span>' : '';
+  return `<span>ctx <b class="num">${fmtInt(o.serving.context_window)}</b>${cap}${basis}</span>`;
+}
+function provLine(o) {
+  const obs = o.observed || {};
+  const bits = [`revision ${esc((o.card_revision || '').slice(0, 10))}`];
+  if (obs.probes > 0) bits.push(`probes ${Math.round((obs.probe_success ?? 0) * obs.probes)}/${obs.probes} pass`);
+  if (o.source === 'import') bits.push('catalog import — operator can claim this listing to get verified');
+  return bits.join(' · ');
+}
 
 async function search() {
-  const p = new URLSearchParams({ limit: 100 });
+  const p = new URLSearchParams({ limit: 60 });
   if ($('#f-q').value) p.set('q', $('#f-q').value);
   if ($('#f-modality').value) p.set('modality', $('#f-modality').value);
-  if ($('#f-tier').value) p.set('tier', $('#f-tier').value);
+  if ($('#f-verified').classList.contains('on')) p.set('tier', 'verified');
   if ($('#f-price').value) p.set('max_input_price', $('#f-price').value);
   if (sup.size) p.set('supports', [...sup].join(','));
   p.set('sort', $('#f-sort').value);
   try {
     const { offerings } = await api('/v0/offerings?' + p);
-    $('#count').textContent = offerings.length + ' offering' + (offerings.length === 1 ? '' : 's') + (offerings.length === 100 ? ' (first 100)' : '');
-    $('#results').innerHTML = offerings.map(renderOffering).join('') || '<p class="muted">No offerings match. A fresh registry fills up via catalog imports and node registrations.</p>';
-  } catch (e) { $('#results').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
+    $('#m-counts').textContent = offerings.length + (offerings.length === 60 ? '+' : '') + ' offerings';
+    $('#m-results').innerHTML = offerings.map(renderRow).join('')
+      || '<p class="sub">No offerings match. A fresh registry fills up via catalog imports and node registrations.</p>';
+    $('#m-foot').textContent = offerings.length === 60 ? 'showing first 60 — refine filters to narrow' : '';
+  } catch (e) { $('#m-results').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
 }
 
-function renderOffering(o) {
-  const price = (o.pricing.input_per_mtok ?? 0) === 0 && (o.pricing.output_per_mtok ?? 0) === 0
-    ? 'free' : '$' + fmt(o.pricing.input_per_mtok) + ' / $' + fmt(o.pricing.output_per_mtok) + ' per MTok';
-  const obs = o.observed || {};
+function renderRow(o) {
   const expl = o.rank_explanation ? Object.entries(o.rank_explanation.components)
-    .map(([k, v]) => k + '=' + fmt(v) + '×' + o.rank_explanation.weights[k]).join('  ') : '';
-  return `<div class="offering" onclick="this.classList.toggle('open')">
-    <div class="row1">
+    .map(([k, v]) => `${k}=${fmt(v)}×${o.rank_explanation.weights[k]}`).join('  ') : '';
+  const rankMuted = o.tier === 'unverified';
+  return `<div class="row" onclick="if (!event.target.closest('a')) location.hash = '#/model/' + encodeURIComponent(${JSON.stringify(o.model.artifact)})">
+    <div class="l1">
       <span class="name">${esc(o.model.name)}</span>
-      <span class="chip tier-${esc(o.tier)}">${esc(o.tier)}</span>
+      ${tierChip(o.tier)}
       <span class="chip">${esc(o.modality)}</span>
-      ${o.source === 'import' ? '<span class="chip src-import">imported</span>' : ''}
-      ${o.institutional ? '<span class="chip tier-verified">institutional</span>' : ''}
-      <span class="spacer" style="flex:1"></span>
-      <span class="rank" title="rank explanation"><span class="rankbar"><i style="width:${Math.round((o.rank ?? 0) * 100)}%"></i></span><span class="mono" style="font-size:0.72rem">${fmt(o.rank)}</span></span>
+      ${o.source === 'import' ? '<span class="chip imp">IMPORTED</span>' : ''}
+      ${o.institutional ? '<span class="chip inst">institutional</span>' : ''}
+      <a class="nodeid" href="#/node/${encodeURIComponent(o.node_id)}">${esc(o.node_id)}</a>
+      <span class="rankwrap" onclick="event.stopPropagation(); this.closest('.row').classList.toggle('open')" title="rank explanation">
+        <span class="rankbar"><i style="width:${Math.round((o.rank ?? 0) * 100)}%; ${rankMuted ? 'background: var(--faint)' : ''}"></i></span>
+        <span class="mono num" style="font-size:0.7rem; ${rankMuted ? 'color: var(--muted)' : ''}">${fmt(o.rank)}</span>
+      </span>
     </div>
-    <div class="row2">
-      <span><a href="#/node/${encodeURIComponent(o.node_id)}" onclick="event.stopPropagation()" class="nodeid">${esc(o.node_id)}</a></span>
-      <span><b>${price}</b></span>
-      ${o.serving?.context_window ? `<span>ctx <b>${o.serving.context_window.toLocaleString()}</b>${o.serving.context_capped_from ? ' <span class="warn">(capped from ' + o.serving.context_capped_from.toLocaleString() + ')</span>' : ''}</span>` : ''}
-      ${obs.ttft_ms?.p50 != null ? `<span>ttft <b>${obs.ttft_ms.p50}ms</b><span class="muted"> measured</span></span>` : ''}
-      ${obs.tps != null && obs.tps > 0 ? `<span><b>${obs.tps}</b> tok/s<span class="muted"> measured</span></span>` : ''}
-      ${obs.availability?.ratio != null ? `<span>up <b>${Math.round(obs.availability.ratio * 100)}%</b></span>` : ''}
-      ${(o.serving?.supports || []).filter(s => s !== 'streaming').map(s => `<span class="chip">${esc(s)}</span>`).join('')}
+    <div class="l2 num">
+      <span><b>${priceStr(o.pricing)}</b></span>
+      ${ctxBit(o)}
+      ${measuredBits(o).join('')}
+      ${(o.serving?.supports || []).filter((s) => s !== 'streaming').map((s) => `<span class="chip">${esc(s)}</span>`).join('')}
     </div>
-    <div class="explain">rank = ${esc(expl)}</div>
+    <span class="prov">${provLine(o)}</span>
+    <div class="explain prov">rank = ${esc(expl)}</div>
   </div>`;
 }
 
-/* ---- node detail ---- */
+/* ---------- model detail ---------- */
+async function loadModel(artifact) {
+  $('#md-crumb').innerHTML = '<a href="#/">Models</a> / ' + esc(artifact);
+  $('#md-title').textContent = '…';
+  $('#md-offerings').innerHTML = '';
+  $('#md-benchsec').innerHTML = '';
+  try {
+    const { offerings } = await api('/v0/offerings?limit=100&q=' + encodeURIComponent(artifact));
+    const list = offerings.filter((o) => o.model.artifact === artifact);
+    if (!list.length) { $('#md-title').textContent = 'Not found'; return; }
+    const tierOrder = { verified: 3, community: 2, unverified: 1 };
+    list.sort((a, b) => (tierOrder[b.tier] ?? 0) - (tierOrder[a.tier] ?? 0) || (a.pricing.input_per_mtok ?? 0) - (b.pricing.input_per_mtok ?? 0));
+    const first = list[0];
+    $('#md-title').textContent = first.model.name;
+    $('#md-artifact').textContent = artifact;
+    $('#md-chips').innerHTML = [
+      first.model.params_b ? `<span class="chip">${first.model.params_b}B</span>` : '',
+      `<span class="chip">${esc(first.modality)}</span>`,
+      first.model.family ? `<span class="chip">${esc(first.model.family)}</span>` : '',
+    ].join('');
+    $('#md-sub').textContent = 'Every serving node for this model, side by side — claimed values never blended with measured ones.';
+    $('#md-count').textContent = list.length + ' node' + (list.length === 1 ? '' : 's');
+    $('#md-offerings').innerHTML = `<table class="grid num"><thead><tr>
+      <th>NODE</th><th>PRICE IN/OUT</th><th>CONTEXT</th><th>TTFT</th><th>TOK/S</th><th>UP</th><th>CAPABILITIES</th><th>REVISION</th>
+    </tr></thead><tbody>` + list.map((o) => {
+      const obs = o.observed || {};
+      const ctx = o.serving?.context_window
+        ? (o.serving.context_capped_from
+          ? `${fmtInt(o.serving.context_capped_from)} → <b class="warncol">${fmtInt(o.serving.context_window)}</b> <span class="micro m-warn">▼CAP</span>`
+          : `<b>${fmtInt(o.serving.context_window)}</b>${o.source === 'import' ? ' <span class="micro m-claimed">CLAIMED</span>' : ' <span class="micro m-measured">✓</span>'}`)
+        : '—';
+      const ttft = obs.ttft_ms?.p50 != null ? `<b>${obs.ttft_ms.p50}ms</b> <span class="micro m-measured">●</span>`
+        : (o.serving?.expected_ttft_ms?.p50 != null ? `${o.serving.expected_ttft_ms.p50}ms <span class="micro m-claimed">CLAIMED</span>` : '<span style="color:var(--faint)">not probed</span>');
+      return `<tr>
+        <td><div style="display:flex; flex-direction:column; gap:0.2rem">
+          <a href="#/node/${encodeURIComponent(o.node_id)}" style="font-weight:600">${esc(o.node_id)}</a>
+          <span style="display:flex; gap:0.3rem">${tierChip(o.tier)}${o.institutional ? '<span class="chip inst">institutional</span>' : ''}${o.source === 'import' ? '<span class="chip imp">IMPORTED</span>' : ''}</span>
+        </div></td>
+        <td><b>${priceStr(o.pricing)}</b></td>
+        <td>${ctx}</td>
+        <td>${ttft}</td>
+        <td>${obs.tps > 0 ? '<b>' + obs.tps + '</b>' : (o.serving?.expected_tps?.p50 != null ? o.serving.expected_tps.p50 + ' <span class="micro m-claimed">CL</span>' : '—')}</td>
+        <td>${obs.availability?.ratio != null ? '<b>' + Math.round(obs.availability.ratio * 100) + '%</b>' : '—'}</td>
+        <td>${(o.serving?.supports || []).filter((s) => s !== 'streaming').map((s) => `<span class="chip">${esc(s)}</span>`).join(' ') || '—'}</td>
+        <td><span class="prov">${esc((o.card_revision || '').slice(0, 10))}</span></td>
+      </tr>`;
+    }).join('') + '</tbody></table>';
+
+    const bench = (first.model && list.flatMap((o) => o.benchmarks || []));
+    if (bench.length) {
+      $('#md-benchsec').innerHTML = '<h2>Benchmarks</h2><div class="panel pad">' + bench.map((b) =>
+        `<div class="stage"><span class="k">${esc(b.suite)}</span><span class="num"><b>${fmt(b.score)}</b> <span class="micro ${b.basis === 'attested' ? 'm-measured' : 'm-claimed'}">${esc(String(b.basis || 'claimed').toUpperCase())}</span></span></div>`).join('') + '</div>';
+    }
+  } catch (e) { $('#md-offerings').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
+}
+
+/* ---------- rankings ---------- */
+async function loadRankings() {
+  try {
+    const { offerings } = await api('/v0/offerings?limit=200&tier=community');
+    const measured = offerings.filter((o) => (o.observed?.ttft_ms?.p50 != null) || (o.observed?.tps > 0));
+    measured.sort((a, b) => (a.observed?.ttft_ms?.p50 ?? 1e9) - (b.observed?.ttft_ms?.p50 ?? 1e9));
+    $('#r-table').innerHTML = measured.length ? `<table class="grid num"><thead><tr>
+      <th>RANK</th><th>OFFERING · NODE</th><th>TTFT P50</th><th>TOK/S</th><th>UP 7D</th><th>PROBES</th><th>$/MTOK IN</th>
+    </tr></thead><tbody>` + measured.map((o, i) => `<tr>
+      <td class="mono" style="font-weight:600">${i + 1}</td>
+      <td><div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap">
+        <a href="#/model/${encodeURIComponent(o.model.artifact)}" style="font-weight:600">${esc(o.model.name)}</a>
+        <span style="color:var(--muted); font-size:0.76rem">${esc(o.node_id)}</span>
+        ${tierChip(o.tier)}${o.institutional ? '<span class="chip inst">institutional</span>' : ''}
+      </div></td>
+      <td><b>${o.observed?.ttft_ms?.p50 ?? '—'}ms</b></td>
+      <td><b>${o.observed?.tps > 0 ? o.observed.tps : '—'}</b></td>
+      <td>${o.observed?.availability?.ratio != null ? Math.round(o.observed.availability.ratio * 100) + '%' : '—'}</td>
+      <td style="color:var(--muted)">${o.observed?.probes ?? 0}</td>
+      <td>$${fmt(o.pricing.input_per_mtok)}</td>
+    </tr>`).join('') + `</tbody></table>
+    <div style="display:flex; padding:0.6rem 0.8rem; background:var(--panel-2); border-top:1px solid var(--line)">
+      <span class="prov">only probed community+ offerings are ranked — imported claims never compete with measurements</span>
+    </div>`
+    : '<p class="sub" style="padding:1rem">No measured offerings yet — rankings appear once registered nodes pass Stage B and accumulate probe measurements.</p>';
+  } catch (e) { $('#r-table').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
+}
+
+/* ---------- nodes directory ---------- */
+async function loadNodes() {
+  try {
+    const { nodes } = await api('/v0/nodes');
+    $('#n-counts').textContent = nodes.length + ' nodes';
+    $('#n-table').innerHTML = `<table class="grid num"><thead><tr>
+      <th>NODE</th><th>TIER</th><th>OPERATOR</th><th>REGION</th><th>OFFERINGS</th><th>UP</th><th>UPDATED</th>
+    </tr></thead><tbody>` + nodes.map((n) => `<tr>
+      <td><a href="#/node/${encodeURIComponent(n.id)}" style="font-weight:600">${esc(n.id)}</a></td>
+      <td><span style="display:inline-flex; gap:0.3rem">${tierChip(n.tier)}${n.institutional ? '<span class="chip inst">institutional</span>' : ''}${n.source === 'import' ? '<span class="chip imp">IMPORTED</span>' : ''}</span></td>
+      <td>${esc(n.operator ?? '—')}${n.country ? ' <span style="color:var(--muted)">(' + esc(n.country) + ')</span>' : ''}</td>
+      <td style="color:var(--muted)">${esc((n.regions || []).join(', ') || '—')}</td>
+      <td>${n.offerings}</td>
+      <td>${n.availability?.ratio != null ? Math.round(n.availability.ratio * 100) + '%' : '—'}</td>
+      <td><span class="prov">${ago(n.updated_at)}</span></td>
+    </tr>`).join('') + '</tbody></table>';
+  } catch (e) { $('#n-table').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
+}
+
+/* ---------- feed ---------- */
+async function loadFeed() {
+  try {
+    const { events } = await api('/v0/feed?limit=80');
+    $('#feed-list').innerHTML = events.length ? events.map((e) => `<div class="feeditem">
+      <span class="prov">${esc((e.at || '').replace('T', ' ').slice(0, 16))}</span>
+      <span><a href="#/node/${encodeURIComponent(e.node_id)}" class="mono" style="font-size:0.78rem">${esc(e.node_id)}</a>
+        → ${tierChip(e.to)} ${e.reason ? '<span style="color:var(--muted)">— ' + esc(e.reason) + '</span>' : ''}</span>
+    </div>`).join('') : '<p class="sub">No events yet.</p>';
+  } catch (e) { $('#feed-list').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
+}
+
+/* ---------- node detail ---------- */
 async function loadNode(id) {
   $('#node-title').textContent = id;
   try {
     const n = await api('/v0/nodes/' + encodeURIComponent(id));
     const card = n.card || {};
     const probes = (n.probes || []).map((p) =>
-      `<div class="stage"><span class="k">${esc(p.stage)}·${esc(p.kind)}</span><span class="${p.ok ? 'ok' : 'fail'}">${p.ok ? 'pass' : 'fail'}${p.detail ? ' <span class="muted">— ' + esc(p.detail) + '</span>' : ''}</span></div>`).join('');
+      `<div class="stage"><span class="k">${esc(p.stage)}·${esc(p.kind)}</span><span class="${p.ok ? 'ok' : 'fail'}">${p.ok ? 'pass' : 'fail'}${p.detail ? ' <span style="color:var(--muted)">— ' + esc(p.detail) + '</span>' : ''}</span></div>`).join('');
     const history = (n.history || []).map((h) =>
-      `<div class="stage"><span class="k">${esc((h.at || '').slice(0, 10))}</span><span>→ <b>${esc(h.to_state)}</b>${h.reason ? ' <span class="muted">— ' + esc(h.reason) + '</span>' : ''}</span></div>`).join('');
+      `<div class="stage"><span class="k">${esc((h.at || '').slice(0, 10))}</span><span>→ <b>${esc(h.to_state)}</b>${h.reason ? ' <span style="color:var(--muted)">— ' + esc(h.reason) + '</span>' : ''}</span></div>`).join('');
     $('#node-detail').innerHTML = `
-      <div class="panel"><table class="detail">
-        <tr><td>state</td><td><span class="chip tier-${esc(n.state)}">${esc(n.state)}</span> ${n.source === 'import' ? '<span class="chip src-import">imported — unclaimed by operator</span>' : ''}</td></tr>
-        <tr><td>operator</td><td>${esc(card.node?.operator?.name ?? '—')} ${card.node?.operator?.country ? '(' + esc(card.node.operator.country) + ')' : ''}</td></tr>
-        <tr><td>endpoint</td><td class="mono" style="font-size:0.78rem">${esc(card.endpoints?.openai ?? '—')}</td></tr>
-        <tr><td>offerings</td><td>${(card.offerings || []).length}</td></tr>
-        <tr><td>revision</td><td class="mono" style="font-size:0.78rem">${esc(card.revision ?? '—')}</td></tr>
+      <div class="panel pad" style="max-width:56rem"><table class="grid">
+        <tr><td style="color:var(--muted); width:8rem" class="mono">state</td><td>${tierChip(n.state === 'indexed' ? 'unverified' : n.state)} ${n.source === 'import' ? '<span class="chip imp">IMPORTED — unclaimed by operator</span>' : ''}</td></tr>
+        <tr><td style="color:var(--muted)" class="mono">operator</td><td>${esc(card.node?.operator?.name ?? '—')} ${card.node?.operator?.country ? '(' + esc(card.node.operator.country) + ')' : ''}</td></tr>
+        <tr><td style="color:var(--muted)" class="mono">endpoint</td><td class="mono" style="font-size:0.74rem">${esc(card.endpoints?.openai ?? '—')}</td></tr>
+        <tr><td style="color:var(--muted)" class="mono">offerings</td><td>${(card.offerings || []).length}</td></tr>
+        <tr><td style="color:var(--muted)" class="mono">revision</td><td class="mono" style="font-size:0.74rem">${esc(card.revision ?? '—')}</td></tr>
       </table></div>
-      ${probes ? '<h2>Recent probes</h2><div class="panel">' + probes + '</div>' : ''}
-      ${history ? '<h2>Listing history</h2><div class="panel">' + history + '</div>' : ''}`;
+      ${probes ? '<h2>Recent probes</h2><div class="panel pad" style="max-width:56rem">' + probes + '</div>' : ''}
+      ${history ? '<h2>Listing history</h2><div class="panel pad" style="max-width:56rem">' + history + '</div>' : ''}`;
   } catch (e) { $('#node-detail').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
 }
 
-/* ---- register flow ---- */
+/* ---------- register flow ---------- */
 let regState = null;
 $('#btn-register').addEventListener('click', async () => {
   const out = $('#reg-out');
   try {
     if (!regState) {
-      out.innerHTML = '<p class="muted">Submitting…</p>';
+      out.innerHTML = '<p class="sub">Submitting…</p>';
       regState = await api('/v0/nodes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ card_url: $('#card-url').value.trim() }) });
       out.innerHTML = `
         <h2>Prove your namespace</h2>
-        <p style="font-size:0.88rem">Card accepted for <code>${esc(regState.node_id)}</code>. Complete <b>one</b> challenge, then verify:</p>
-        <div class="stage"><span class="k">HTTP</span><span style="font-size:0.82rem">Serve <code>{"token":"${esc(regState.challenge.token)}"}</code> at<br><code style="font-size:0.75rem">${esc(regState.challenge.methods.http)}</code><br><span class="muted">(the Node Kit stages this automatically)</span></span></div>
-        <div class="stage"><span class="k">DNS TXT</span><span style="font-size:0.82rem"><code style="font-size:0.75rem">${esc(regState.challenge.methods.dns)}</code></span></div>
+        <p style="font-size:0.84rem">Card accepted for <span class="mono" style="font-size:0.78rem">${esc(regState.node_id)}</span>. Complete <b>one</b> challenge, then verify:</p>
+        <div class="stage"><span class="k">HTTP</span><span style="font-size:0.8rem">Serve <span class="mono" style="font-size:0.72rem">{"token":"${esc(regState.challenge.token)}"}</span> at<br><span class="mono" style="font-size:0.7rem">${esc(regState.challenge.methods.http)}</span><br><span style="color:var(--muted)">(the Node Kit stages this automatically)</span></span></div>
+        <div class="stage"><span class="k">DNS TXT</span><span class="mono" style="font-size:0.7rem">${esc(regState.challenge.methods.dns)}</span></div>
         <div style="margin-top:0.9rem"><button class="btn" id="btn-verify">Verify &amp; run Stage A</button></div>`;
       $('#btn-verify').addEventListener('click', verify);
     }
@@ -292,18 +559,18 @@ async function verify() {
   try {
     const v = await api(regState.challenge.verify, { method: 'POST' });
     const rows = (v.stage_a?.results || []).map((r) =>
-      `<div class="stage"><span class="k">${esc(r.kind)}</span><span class="${r.ok ? 'ok' : 'fail'}">${r.ok ? 'pass' : 'fail'}${r.detail ? ' <span class="muted">— ' + esc(r.detail) + '</span>' : ''}</span></div>`).join('');
+      `<div class="stage"><span class="k">${esc(r.kind)}</span><span class="${r.ok ? 'ok' : 'fail'}">${r.ok ? 'pass' : 'fail'}${r.detail ? ' <span style="color:var(--muted)">— ' + esc(r.detail) + '</span>' : ''}</span></div>`).join('');
     out.innerHTML = `
       <h2>Stage A ${v.stage_a?.ok ? '<span class="ok">passed</span>' : '<span class="fail">failed</span>'}</h2>
-      <p style="font-size:0.88rem">State: <span class="chip tier-${esc(v.state)}">${esc(v.state)}</span> · signature ${v.signature_verified ? '<span class="ok">verified</span>' : '<span class="warn">not verified</span>'}</p>
-      <div class="panel">${rows}</div>
-      ${v.state === 'community' ? `<p style="font-size:0.88rem">Your node is listed. <a href="#/node/${encodeURIComponent(v.node_id)}">View it</a> — then request <b>Stage B</b> admission for the verified tier: <button class="btn secondary" id="btn-admit">Run Stage B</button></p>` : ''}`;
+      <p style="font-size:0.84rem">State: ${tierChip(v.state)} · signature ${v.signature_verified ? '<span class="ok">verified</span>' : '<span class="warncol">not verified</span>'}</p>
+      <div class="panel pad">${rows}</div>
+      ${v.state === 'community' ? `<p style="font-size:0.84rem; margin-top:0.8rem">Your node is listed. <a href="#/node/${encodeURIComponent(v.node_id)}">View it</a> — then request <b>Stage B</b> admission for the verified tier: <button class="btn sec" id="btn-admit">Run Stage B</button></p>` : ''}`;
     const admitBtn = $('#btn-admit');
     if (admitBtn) admitBtn.addEventListener('click', async () => {
       admitBtn.disabled = true; admitBtn.textContent = 'Running (identity, context, capacity)…';
       try {
         const a = await api('/v0/nodes/' + encodeURIComponent(v.node_id) + '/admit', { method: 'POST' });
-        admitBtn.outerHTML = `<span class="chip tier-${esc(a.state)}">${esc(a.state)}</span> <a href="#/node/${encodeURIComponent(v.node_id)}">details</a>`;
+        admitBtn.outerHTML = tierChip(a.state) + ` <a href="#/node/${encodeURIComponent(v.node_id)}">details</a>`;
       } catch (e) { admitBtn.outerHTML = '<span class="err">' + esc(e.message) + '</span>'; }
     });
   } catch (e) { out.insertAdjacentHTML('beforeend', '<p class="err">' + esc(e.message) + '</p>'); }

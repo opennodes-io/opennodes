@@ -118,6 +118,26 @@ test('models.dev importer seeds searchable unverified offerings', async (t) => {
   assert.equal(verifiedOnly.length, 0);
 });
 
+test('node directory and event feed endpoints', async (t) => {
+  const node = await startFixtureNode();
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  t.after(async () => { await node.close(); await registry.close(); });
+  await registerAndVerify(registry, node);
+
+  const { nodes } = await (await fetch(`${registry.origin}/v0/nodes`)).json();
+  assert.equal(nodes.length, 1);
+  assert.equal(nodes[0].id, 'org.opennodes.fixture');
+  assert.equal(nodes[0].tier, 'community');
+  assert.equal(nodes[0].offerings, 1);
+  assert.equal(nodes[0].country, 'DE');
+
+  const { events } = await (await fetch(`${registry.origin}/v0/feed?limit=10`)).json();
+  assert.ok(events.length >= 3); // challenged, indexed, community
+  assert.equal(events[0].to, 'community'); // newest first
+  assert.equal(events[0].node_id, 'org.opennodes.fixture');
+  assert.ok(events.every((e) => e.at && e.to));
+});
+
 test('admin routes demand the bearer token when configured', async (t) => {
   const registry = await startRegistry({ allowPrivateTargets: true, adminToken: 'adm1n' });
   t.after(() => registry.close());

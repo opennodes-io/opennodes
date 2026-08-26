@@ -193,6 +193,43 @@ export async function startRegistry({
       sendJson(res, 200, { artifact: offering.model.artifact, references: refs.length });
     }],
 
+    // Node directory: every listed node with tier, source, offering count, availability.
+    ['GET', '/v0/nodes', async (req, res) => {
+      const out = [];
+      for (const node of await store.allNodes()) {
+        if (['delisted'].includes(node.state)) continue;
+        const card = await store.latestCard(node.id);
+        const availability = (await store.getObservations(node.id, '_node')).availability ?? null;
+        out.push({
+          id: node.id,
+          state: node.state,
+          tier: node.state === 'indexed' ? 'unverified' : node.state,
+          source: node.source ?? 'registration',
+          institutional: Boolean(node.institutional),
+          updated_at: node.updated_at,
+          name: card?.node?.name ?? node.id,
+          operator: card?.node?.operator?.name ?? null,
+          country: card?.node?.operator?.country ?? null,
+          regions: card?.node?.regions ?? [],
+          offerings: card?.offerings?.length ?? 0,
+          availability,
+        });
+      }
+      out.sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
+      sendJson(res, 200, { nodes: out });
+    }],
+
+    // Freshness feed: recent listing events (registrations, tier changes, suspensions),
+    // newest first, each linked to its provenance reason.
+    ['GET', '/v0/feed', async (req, res, { query }) => {
+      const limit = Math.min(Number(query.get('limit') ?? 50), 200);
+      const events = (await store.recentTransitions(limit)).map((t) => ({
+        at: t.at, node_id: t.node_id, from: t.from_state, to: t.to_state,
+        reason: t.reason, source: t.source ?? 'registration',
+      }));
+      sendJson(res, 200, { events });
+    }],
+
     ['GET', '/v0/nodes/:id', async (req, res, { params }) => {
       const node = await store.getNode(params.id);
       if (!node) return problem(res, 404, 'unknown-node', params.id);

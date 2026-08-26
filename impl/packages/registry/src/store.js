@@ -96,6 +96,10 @@ export async function createSqliteStore(path = ':memory:') {
       return db.prepare('SELECT * FROM transitions WHERE node_id = ? ORDER BY id ASC').all(nodeId);
     },
     async allNodes() { return db.prepare('SELECT * FROM nodes').all(); },
+    async recentTransitions(limit = 50) {
+      return db.prepare(`SELECT t.*, n.source FROM transitions t
+        LEFT JOIN nodes n ON n.id = t.node_id ORDER BY t.id DESC LIMIT ?`).all(limit);
+    },
     async addFingerprints(artifact, refs) {
       for (const ref of refs) {
         db.prepare('INSERT OR REPLACE INTO fingerprints (artifact, prompt, expected_hash) VALUES (?, ?, ?)')
