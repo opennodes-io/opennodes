@@ -138,6 +138,10 @@ test('registry serves the web app at /', async (t) => {
   assert.match(html, /OpenNodes Registry/);
   assert.match(html, /Register an AI node/);
   assert.match(html, /qualification procedure/i);
+  assert.match(html, /navigator\.modelContext/); // WebMCP progressive enhancement present
+  assert.match(html, /__onpWebMcpTools/);
+  const health = await (await fetch(`${registry.origin}/v0/health`)).json();
+  assert.equal(health.webmcp, true);
 });
 
 test('stdio MCP server: real child process serves search + estimate over imported catalog', async (t) => {

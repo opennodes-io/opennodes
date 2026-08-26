@@ -327,6 +327,7 @@ export async function startRegistry({
         peers: [],
         fees: { listing: 'free', settlement: 'not-operated' },
         mcp: '/mcp',
+        webmcp: true, // the web app at / registers in-page tools via navigator.modelContext where supported
         export: '/v0/export',
         signing_key: { ...registryKeys.publicJwk, kid: 'registry-1' },
         stage_c: Boolean(stageC),

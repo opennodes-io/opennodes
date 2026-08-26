@@ -577,6 +577,84 @@ async function verify() {
 }
 
 route();
+
+/* ---------- WebMCP (ONP-6 §3): expose site functions as in-page tools ----------
+   Progressive enhancement over the W3C WebML CG draft (navigator.modelContext,
+   Chrome origin trial). Browser agents get structured tools instead of scraping
+   the DOM; on browsers without the API this block is inert. Tool implementations
+   are also exported on window.__onpWebMcpTools so they are testable everywhere. */
+(function () {
+  const text = (data) => ({ content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] });
+  const tools = [
+    {
+      name: 'search_offerings',
+      description: 'Search AI inference offerings in this OpenNodes registry (registered nodes + imported catalogs). Filters: q, modality (text|multimodal|image|audio|video|embedding), tier (community|verified), supports (comma list: tool_calls,json_mode,vision), max_input_price (USD/MTok), sort (rank|price), limit.',
+      inputSchema: { type: 'object', properties: {
+        q: { type: 'string' }, modality: { type: 'string' }, tier: { type: 'string' },
+        supports: { type: 'string' }, max_input_price: { type: 'number' },
+        sort: { type: 'string' }, limit: { type: 'number' } } },
+      async execute(args = {}) {
+        const p = new URLSearchParams();
+        for (const [k, v] of Object.entries(args)) if (v != null) p.set(k, String(v));
+        return text(await api('/v0/offerings?' + p));
+      },
+    },
+    {
+      name: 'get_node',
+      description: 'Full detail for one node: card, trust tier, recent probe verdicts, listing history.',
+      inputSchema: { type: 'object', required: ['node_id'], properties: { node_id: { type: 'string' } } },
+      async execute(args) { return text(await api('/v0/nodes/' + encodeURIComponent(args.node_id))); },
+    },
+    {
+      name: 'estimate_chain',
+      description: 'Pre-price an invocation chain BEFORE spending money. steps: [{offering: "node_id/offering_id"} or {select: {…search filters…}}, est_input_tokens, est_output_tokens]. Returns enforceable per-step cost bounds pinned to card revisions.',
+      inputSchema: { type: 'object', required: ['steps'], properties: {
+        steps: { type: 'array', items: { type: 'object', properties: {
+          offering: { type: 'string' }, select: { type: 'object' },
+          est_input_tokens: { type: 'number' }, est_output_tokens: { type: 'number' } } } } } },
+      async execute(args) {
+        return text(await api('/v0/estimate', { method: 'POST',
+          headers: { 'content-type': 'application/json' }, body: JSON.stringify({ steps: args.steps }) }));
+      },
+    },
+    {
+      name: 'list_nodes',
+      description: 'The node directory: every listed provider with trust tier, operator, region, offering count, availability.',
+      inputSchema: { type: 'object', properties: {} },
+      async execute() { return text(await api('/v0/nodes')); },
+    },
+    {
+      name: 'get_recent_changes',
+      description: 'Dated listing events, newest first: registrations, tier promotions/demotions, suspensions — with provenance reasons.',
+      inputSchema: { type: 'object', properties: { limit: { type: 'number' } } },
+      async execute(args = {}) { return text(await api('/v0/feed?limit=' + (args.limit ?? 50))); },
+    },
+    {
+      name: 'register_node',
+      description: 'Begin registering an AI node: submits its Node Card URL and returns the namespace challenge (HTTP and DNS TXT methods) plus the verify endpoint. Registration is open; trust tiers are earned via automated probes.',
+      inputSchema: { type: 'object', required: ['card_url'], properties: { card_url: { type: 'string' } } },
+      async execute(args) {
+        return text(await api('/v0/nodes', { method: 'POST',
+          headers: { 'content-type': 'application/json' }, body: JSON.stringify({ card_url: args.card_url }) }));
+      },
+    },
+    {
+      name: 'verify_node',
+      description: 'Complete a pending registration: checks the namespace challenge (HTTP or DNS TXT), runs the Stage A conformance battery, and returns the resulting trust tier and probe verdicts.',
+      inputSchema: { type: 'object', required: ['node_id'], properties: { node_id: { type: 'string' } } },
+      async execute(args) {
+        return text(await api('/v0/nodes/' + encodeURIComponent(args.node_id) + '/verify', { method: 'POST' }));
+      },
+    },
+  ];
+
+  window.__onpWebMcpTools = tools; // testable surface, present regardless of browser support
+  try {
+    const mc = navigator.modelContext;
+    if (mc?.provideContext) mc.provideContext({ tools });
+    else if (mc?.registerTool) for (const t of tools) mc.registerTool(t);
+  } catch { /* draft API — never let registration break the page */ }
+})();
 </script>
 </body>
 </html>
