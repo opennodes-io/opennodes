@@ -97,9 +97,21 @@
   .rankbar { width: 58px; height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; display: inline-block; vertical-align: middle; }
   .rankbar i { display: block; height: 100%; background: var(--accent); }
   .rankwrap { display: inline-flex; align-items: center; gap: 0.4rem; margin-left: auto; }
-  .explain { display: none; margin-top: 0.45rem; }
-  .row.open .explain { display: block; }
   .row .prov { display: block; margin-top: 0.4rem; }
+  .row .chev { transition: transform 0.15s; color: var(--faint); flex: none; }
+  .row.open .chev { transform: rotate(90deg); }
+  .rowx { display: none; margin-top: 0.7rem; border-top: 1px solid var(--line-2); padding-top: 0.7rem; cursor: default; }
+  .row.open .rowx { display: block; }
+  .rowx .xgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+  @media (max-width: 760px) { .rowx .xgrid { grid-template-columns: 1fr; } }
+  .rowx dl { margin: 0; display: grid; grid-template-columns: 7.5rem 1fr; gap: 0.3rem 0.8rem; font-size: 0.78rem; }
+  .rowx dt { color: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: 0.66rem; align-self: baseline; padding-top: 0.1rem; }
+  .rowx dd { margin: 0; }
+  .rowx .xlab { font-family: "IBM Plex Mono", monospace; font-size: 0.62rem; font-weight: 600; letter-spacing: 0.1em; color: var(--accent); display: block; margin-bottom: 0.4rem; }
+  .rowx .also { margin-top: 0.7rem; }
+  .rowx .alsorow { display: flex; gap: 0.7rem; align-items: baseline; font-size: 0.78rem; padding: 0.3rem 0; border-bottom: 1px dashed var(--line-2); }
+  .rowx .alsorow:last-child { border-bottom: none; }
+  .rowx .actions { display: flex; gap: 1rem; margin-top: 0.7rem; font-size: 0.8rem; font-weight: 600; }
 
   /* tables */
   table.grid { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
@@ -362,6 +374,7 @@ async function search() {
   p.set('sort', $('#f-sort').value);
   try {
     const { offerings } = await api('/v0/offerings?' + p);
+    lastResults = offerings;
     $('#m-counts').textContent = offerings.length + (offerings.length === 60 ? '+' : '') + ' offerings';
     $('#m-results').innerHTML = offerings.map(renderRow).join('')
       || '<p class="sub">No offerings match. A fresh registry fills up via catalog imports and node registrations.</p>';
@@ -369,19 +382,77 @@ async function search() {
   } catch (e) { $('#m-results').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
 }
 
-function renderRow(o) {
+let lastResults = [];
+window.toggleRow = async function (el, idx) {
+  const o = lastResults[idx];
+  if (!o) return;
+  const willOpen = !el.classList.contains('open');
+  el.classList.toggle('open');
+  const pane = el.querySelector('.rowx');
+  if (!willOpen || pane.dataset.loaded) return;
+  pane.dataset.loaded = '1';
+  const obs = o.observed || {};
   const expl = o.rank_explanation ? Object.entries(o.rank_explanation.components)
-    .map(([k, v]) => `${k}=${fmt(v)}×${o.rank_explanation.weights[k]}`).join('  ') : '';
+    .map(([k, v]) => `${k}=${fmt(v)}×${o.rank_explanation.weights[k]}`).join('  ') : '—';
+  const artifactLink = o.model.artifact.startsWith('hf:')
+    ? `<a href="https://huggingface.co/${esc(o.model.artifact.slice(3))}" target="_blank" rel="noopener">${esc(o.model.artifact)}</a>`
+    : `<span class="mono" style="font-size:0.72rem">${esc(o.model.artifact)}</span>`;
+  pane.innerHTML = `<div class="xgrid">
+    <div>
+      <span class="xlab">MODEL</span>
+      <dl>
+        <dt>artifact</dt><dd>${artifactLink}</dd>
+        ${o.model.family ? `<dt>family</dt><dd>${esc(o.model.family)}</dd>` : ''}
+        ${o.model.params_b ? `<dt>params</dt><dd class="num">${o.model.params_b}B</dd>` : ''}
+        ${o.modalities ? `<dt>modalities</dt><dd>${esc((o.modalities.input || []).join('+'))} → ${esc((o.modalities.output || []).join('+'))}</dd>` : ''}
+        ${o.pricing.cached_input_per_mtok != null ? `<dt>cached input</dt><dd class="num">$${fmt(o.pricing.cached_input_per_mtok)}/MTok</dd>` : ''}
+        ${o.serving?.max_output_tokens ? `<dt>max output</dt><dd class="num">${fmtInt(o.serving.max_output_tokens)}</dd>` : ''}
+        <dt>schemes</dt><dd>${esc((o.pricing.schemes || []).join(', '))}</dd>
+      </dl>
+    </div>
+    <div>
+      <span class="xlab">MEASURED · REGISTRY OBSERVATIONS</span>
+      <dl class="num">
+        <dt>ttft</dt><dd>${obs.ttft_ms?.p50 != null ? `<b>${obs.ttft_ms.p50}ms</b> p50${obs.ttft_ms.p95 != null ? ` · ${obs.ttft_ms.p95}ms p95` : ''} <span class="micro m-measured">● MEASURED</span>` : '<span style="color:var(--faint)">not probed</span>'}</dd>
+        <dt>throughput</dt><dd>${obs.tps > 0 ? `<b>${obs.tps}</b> tok/s <span class="micro m-measured">● MEASURED</span>` : '<span style="color:var(--faint)">—</span>'}</dd>
+        <dt>availability</dt><dd>${obs.availability?.ratio != null ? `<b>${Math.round(obs.availability.ratio * 100)}%</b> · window ${obs.availability.window}` : '<span style="color:var(--faint)">—</span>'}</dd>
+        <dt>probes</dt><dd>${obs.probes > 0 ? `${Math.round((obs.probe_success ?? 0) * obs.probes)}/${obs.probes} pass` : '<span style="color:var(--faint)">none yet</span>'}</dd>
+        <dt>rank</dt><dd class="prov" style="font-size:0.66rem">${esc(expl)}</dd>
+      </dl>
+    </div>
+  </div>
+  <div class="also"><span class="xlab">ALSO SERVED BY</span><div class="alsolist prov">loading…</div></div>
+  <div class="actions">
+    <a href="#/model/${encodeURIComponent(o.model.artifact)}">Model page — all nodes side by side →</a>
+    <a href="#/node/${encodeURIComponent(o.node_id)}">Node ${esc(o.node_id)} →</a>
+  </div>`;
+  try {
+    const { offerings } = await api('/v0/offerings?limit=50&q=' + encodeURIComponent(o.model.artifact));
+    const others = offerings.filter((x) => x.model.artifact === o.model.artifact
+      && !(x.node_id === o.node_id && x.offering_id === o.offering_id));
+    pane.querySelector('.alsolist').innerHTML = others.length
+      ? others.slice(0, 5).map((x) => `<div class="alsorow">
+          <a href="#/node/${encodeURIComponent(x.node_id)}" class="mono" style="font-size:0.72rem">${esc(x.node_id)}</a>
+          ${tierChip(x.tier)}
+          <span class="num" style="color:var(--muted)">${priceStr(x.pricing)}</span>
+          ${x.observed?.ttft_ms?.p50 != null ? `<span class="num" style="color:var(--muted)">${x.observed.ttft_ms.p50}ms <span class="micro m-measured">●</span></span>` : ''}
+        </div>`).join('') + (others.length > 5 ? `<div class="alsorow"><a href="#/model/${encodeURIComponent(o.model.artifact)}">+${others.length - 5} more on the model page</a></div>` : '')
+      : 'no other nodes serve this exact artifact';
+  } catch { pane.querySelector('.alsolist').textContent = 'could not load'; }
+};
+
+function renderRow(o, idx) {
   const rankMuted = o.tier === 'unverified';
-  return `<div class="row" onclick="if (!event.target.closest('a')) location.hash = '#/model/' + encodeURIComponent(${JSON.stringify(o.model.artifact)})">
+  return `<div class="row" onclick="if (!event.target.closest('a') && !event.target.closest('.rowx')) toggleRow(this, ${idx})">
     <div class="l1">
+      <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 4l4 4-4 4"></path></svg>
       <span class="name">${esc(o.model.name)}</span>
       ${tierChip(o.tier)}
       <span class="chip">${esc(o.modality)}</span>
       ${o.source === 'import' ? '<span class="chip imp">IMPORTED</span>' : ''}
       ${o.institutional ? '<span class="chip inst">institutional</span>' : ''}
       <a class="nodeid" href="#/node/${encodeURIComponent(o.node_id)}">${esc(o.node_id)}</a>
-      <span class="rankwrap" onclick="event.stopPropagation(); this.closest('.row').classList.toggle('open')" title="rank explanation">
+      <span class="rankwrap" title="rank — expand for the formula">
         <span class="rankbar"><i style="width:${Math.round((o.rank ?? 0) * 100)}%; ${rankMuted ? 'background: var(--faint)' : ''}"></i></span>
         <span class="mono num" style="font-size:0.7rem; ${rankMuted ? 'color: var(--muted)' : ''}">${fmt(o.rank)}</span>
       </span>
@@ -393,7 +464,7 @@ function renderRow(o) {
       ${(o.serving?.supports || []).filter((s) => s !== 'streaming').map((s) => `<span class="chip">${esc(s)}</span>`).join('')}
     </div>
     <span class="prov">${provLine(o)}</span>
-    <div class="explain prov">rank = ${esc(expl)}</div>
+    <div class="rowx"></div>
   </div>`;
 }
 
