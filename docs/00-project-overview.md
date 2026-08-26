@@ -47,7 +47,7 @@ Two reference stacks, cross-verified against each other:
 
 | Component | What it does |
 |---|---|
-| Registry | Full ONP-3 subset: registration with DNS/HTTP challenges, SSRF-guarded probe workers, Stage A/B/C admission, transparent ranking, estimation, MCP server at `/mcp`, signed NDJSON export feed, persistent Ed25519 signing identity, storage drivers for `node:sqlite` (dev) and PostgreSQL (production) behind one async contract |
+| Registry | Full ONP-3 subset: registration with DNS/HTTP challenges, SSRF-guarded probe workers, Stage A/B/C admission, transparent ranking, estimation, MCP server at `/mcp`, signed NDJSON export feed, persistent Ed25519 signing identity, storage drivers for `node:sqlite` (dev) and PostgreSQL (production) behind one async contract — plus a **web app served at `/`**: OpenRouter-style catalog with per-result rank explanations, node pages with probe and listing history, and the complete registration + qualification flow in the browser |
 | Catalog importers | OpenRouter (417 offerings live, incl. image/video models), Hugging Face Inference Providers (14 providers / 310 offerings, with real parameter counts and per-provider measured performance), models.dev (188 providers / 7,104 offerings) — all entering as `unverified`/`source: import`, refreshed by a periodic scheduler |
 | Gateway | A local OpenAI-compatible server exposing discovered offerings to *unmodified* third-party apps (Cursor, VS Code, Open WebUI…): aliases, live-search-backed virtual models, revision pinning with transparent reprice recovery, per-host BYOK upstream keys, receipt verification, spend ledger |
 | `onp` CLI + stdio MCP server | Search/estimate/invoke from the terminal; `onp mcp` installs OpenNodes discovery + chain pricing into any MCP editor host (`--print-config` emits the paste-ready config) |
@@ -78,6 +78,7 @@ The supply-side on-ramp: a reverse proxy that turns any OpenAI-compatible engine
 1. Hands-on editor validation (Cursor/VS Code with the generated MCP config) and an Open WebUI pass over the gateway.
 2. One test-suite run against a real PostgreSQL server (`ONP_PG_URL`).
 3. Flip the repo public, enable Pages, point opennodes.io DNS, announce quietly.
+4. Deploy a hosted registry (`registry.opennodes.io`): the web app + API on a small VM/PaaS with PostgreSQL, the re-import scheduler, and Stage C enabled — the public, OpenRouter-comparable discovery surface.
 
 **Near term (Draft 0.2 and hardening)**
 4. Spec: promote `modalities: {input, output}` to normative; finalize detached-JWS card serialization; settlement OpenAPI.

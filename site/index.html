@@ -112,10 +112,12 @@
 <section><div class="wrap">
   <p class="eyebrow">Quickstart</p>
   <h2>Three ways in</h2>
-  <h3 style="font-size:1.05rem">Model search &amp; chain pricing inside your editor (MCP)</h3>
+  <h3 style="font-size:1.05rem">The registry app — browse, rank, register</h3>
+  <p style="font-size:0.92rem;color:var(--muted)">Every registry serves an OpenRouter-style web app at its root: searchable catalog with transparent per-result rank explanations, node pages with probe and listing history, and the full registration + qualification flow (submit card → namespace challenge → Stage A → Stage B). A hosted instance is coming at <code>registry.opennodes.io</code>; run one locally today:</p>
   <pre><code>git clone https://github.com/opennodes-io/opennodes && cd opennodes/impl && npm install
-node packages/registry/bin.js                # registry on :4300
-node packages/cli/bin.js mcp --print-config  # paste into Cursor / VS Code / Claude Desktop</code></pre>
+node packages/registry/bin.js                # app + API on http://127.0.0.1:4300</code></pre>
+  <h3 style="font-size:1.05rem">Model search &amp; chain pricing inside your editor (MCP)</h3>
+  <pre><code>node packages/cli/bin.js mcp --print-config  # paste into Cursor / VS Code / Claude Desktop</code></pre>
   <h3 style="font-size:1.05rem">Any OpenAI-compatible app, routed through discovery (gateway)</h3>
   <pre><code>node packages/cli/bin.js gateway --port 4141 --virtual "auto-cheap=modality=text&amp;sort=price"
 # point the app's OpenAI base URL at http://127.0.0.1:4141/v1</code></pre>

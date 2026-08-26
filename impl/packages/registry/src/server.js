@@ -6,6 +6,7 @@ import {
 } from '@opennodes/core';
 import { resolveTxt } from 'node:dns/promises';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { generateKeypair, keypairFromPem } from '@opennodes/core';
 import { createStore } from './store.js';
 import { runStageA } from './probes.js';
@@ -33,6 +34,7 @@ export async function startRegistry({
 } = {}) {
   const store = await createStore(dbPath); // sqlite path/:memory: or postgres:// URL
   const safeFetch = makeSafeFetch({ allowPrivate: allowPrivateTargets });
+  const webApp = readFileSync(fileURLToPath(new URL('./web/index.html', import.meta.url)), 'utf8');
   let registryKeys;
   if (keyPath && existsSync(keyPath)) {
     registryKeys = keypairFromPem(readFileSync(keyPath, 'utf8'));
@@ -292,6 +294,12 @@ export async function startRegistry({
         signing_key: { ...registryKeys.publicJwk, kid: 'registry-1' },
         stage_c: Boolean(stageC),
       });
+    }],
+
+    // The registry web app: OpenRouter-style discovery + ranking + node registration UI.
+    ['GET', '/', (req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'max-age=300' });
+      res.end(webApp);
     }],
 
     ...mcpRoutes(store),

@@ -128,6 +128,18 @@ test('OpenRouter importer: per-token prices to per-MTok, hf artifact join, modal
   assert.equal(big.length, 1);
 });
 
+test('registry serves the web app at /', async (t) => {
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  t.after(() => registry.close());
+  const res = await fetch(`${registry.origin}/`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/html/);
+  const html = await res.text();
+  assert.match(html, /OpenNodes Registry/);
+  assert.match(html, /Register an AI node/);
+  assert.match(html, /qualification procedure/i);
+});
+
 test('stdio MCP server: real child process serves search + estimate over imported catalog', async (t) => {
   const registry = await startRegistry({ allowPrivateTargets: true });
   t.after(() => registry.close());
