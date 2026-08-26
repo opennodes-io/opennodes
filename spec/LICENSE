@@ -1,0 +1,12 @@
+The OpenNodes Protocol specification documents in this directory (ONP-1 through
+ONP-6) and the normative schemas in ../schemas/ are licensed under the
+Creative Commons Attribution 4.0 International License (CC BY 4.0).
+
+You are free to share and adapt these documents for any purpose, including
+commercially, provided you give appropriate attribution to
+"The OpenNodes Project" and indicate if changes were made.
+
+Full license text: https://creativecommons.org/licenses/by/4.0/legalcode
+
+Implementation code in ../impl/ and ../node-kit/ is separately licensed under
+the Apache License 2.0 (see ../LICENSE).

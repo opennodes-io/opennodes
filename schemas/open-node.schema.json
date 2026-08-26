@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opennodes.org/schemas/0.1/open-node.schema.json",
+  "title": "OpenNodes Node Card",
+  "type": "object",
+  "required": ["onp", "revision", "node", "endpoints", "offerings", "payment"],
+  "additionalProperties": true,
+  "properties": {
+    "onp": { "const": "0.1" },
+    "revision": { "type": "string", "format": "date-time" },
+    "node": {
+      "type": "object",
+      "required": ["id", "name", "operator"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(\\.[a-z0-9-]+)+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 4000 },
+        "operator": {
+          "type": "object",
+          "required": ["name"],
+          "properties": {
+            "name": { "type": "string" },
+            "url": { "type": "string", "format": "uri" },
+            "contact": { "type": "string" },
+            "country": { "type": "string", "pattern": "^[A-Z]{2}$" }
+          }
+        },
+        "did": { "type": "string", "pattern": "^did:[a-z0-9]+:.+$" },
+        "regions": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "endpoints": {
+      "type": "object",
+      "required": ["openai", "health"],
+      "properties": {
+        "openai": { "type": "string", "format": "uri" },
+        "health": { "type": "string", "format": "uri" },
+        "receipts": { "type": ["string", "null"], "format": "uri" },
+        "a2a": { "type": ["string", "null"], "format": "uri" },
+        "docs": { "type": ["string", "null"], "format": "uri" }
+      }
+    },
+    "offerings": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/offering" }
+    },
+    "hardware": {
+      "type": "object",
+      "properties": {
+        "accelerators": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type", "count"],
+            "properties": {
+              "type": { "type": "string" },
+              "count": { "type": "integer", "minimum": 1 },
+              "memory_gb": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "basis": { "$ref": "#/$defs/basis" },
+        "mlperf": {
+          "type": "object",
+          "properties": {
+            "suite": { "type": "string" },
+            "system_id": { "type": "string" },
+            "url": { "type": "string", "format": "uri" }
+          }
+        }
+      }
+    },
+    "payment": {
+      "type": "object",
+      "required": ["schemes"],
+      "properties": {
+        "schemes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["scheme"],
+            "properties": {
+              "scheme": { "enum": ["x402", "prepaid", "free"] },
+              "networks": { "type": "array", "items": { "type": "string" } },
+              "asset": { "type": "string" },
+              "signup": { "type": "string", "format": "uri" },
+              "settlement_registry": { "type": "string", "format": "uri" }
+            }
+          }
+        },
+        "probe_allowance": {
+          "type": "object",
+          "properties": { "requests_per_day": { "type": "integer", "minimum": 0 } }
+        }
+      }
+    },
+    "compliance": {
+      "type": "object",
+      "properties": {
+        "certifications": { "type": "array", "items": { "type": "string" } },
+        "gdpr": { "type": "boolean" },
+        "attestations": { "type": "array", "items": { "type": "string", "format": "uri" } }
+      }
+    },
+    "signatures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["protected", "signature"],
+        "properties": {
+          "protected": { "type": "string" },
+          "signature": { "type": "string" },
+          "kid": { "type": "string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "basis": { "enum": ["claimed", "attested"] },
+    "measured": {
+      "type": "object",
+      "required": ["basis"],
+      "properties": {
+        "p50": { "type": "number", "minimum": 0 },
+        "p95": { "type": "number", "minimum": 0 },
+        "basis": { "$ref": "#/$defs/basis" },
+        "attestation": { "type": "string", "format": "uri" }
+      }
+    },
+    "offering": {
+      "type": "object",
+      "required": ["offering_id", "modality", "model", "serving", "binding", "pricing"],
+      "properties": {
+        "offering_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,99}$" },
+        "modality": { "enum": ["text", "image", "audio", "video", "embedding", "multimodal", "agent", "tools"] },
+        "model": {
+          "type": "object",
+          "required": ["name", "artifact"],
+          "properties": {
+            "name": { "type": "string" },
+            "family": { "type": "string" },
+            "artifact": { "type": "string", "pattern": "^(hf:[^/\\s]+/[^/\\s]+|urn:proprietary:[a-z0-9-]+:[A-Za-z0-9._-]+)$" },
+            "params_b": { "type": "number", "minimum": 0 },
+            "quantization": { "type": "string" },
+            "license": { "type": "string" },
+            "revision_pin": { "type": "string" }
+          }
+        },
+        "serving": {
+          "type": "object",
+          "properties": {
+            "context_window": { "type": "integer", "minimum": 1 },
+            "max_output_tokens": { "type": "integer", "minimum": 1 },
+            "supports": {
+              "type": "array",
+              "items": { "enum": ["streaming", "tool_calls", "json_mode", "vision", "edit"] }
+            },
+            "languages": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["lang", "grade"],
+                "properties": {
+                  "lang": { "type": "string", "pattern": "^[a-z]{2,3}$" },
+                  "grade": { "enum": ["native", "strong", "basic"] },
+                  "basis": { "$ref": "#/$defs/basis" },
+                  "attestation": { "type": "string", "format": "uri" }
+                }
+              }
+            },
+            "expected_ttft_ms": { "$ref": "#/$defs/measured" },
+            "expected_tps": { "$ref": "#/$defs/measured" }
+          }
+        },
+        "binding": {
+          "type": "object",
+          "required": ["profile", "model_id"],
+          "properties": {
+            "profile": { "type": "string", "pattern": "^[a-z0-9.-]+/v[0-9]+$" },
+            "model_id": { "type": "string" }
+          }
+        },
+        "benchmarks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["suite", "score", "basis"],
+            "properties": {
+              "suite": { "type": "string" },
+              "score": { "type": "number" },
+              "basis": { "$ref": "#/$defs/basis" },
+              "attestation": { "type": "string", "format": "uri" }
+            }
+          }
+        },
+        "pricing": {
+          "type": "object",
+          "required": ["currency", "schemes"],
+          "properties": {
+            "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+            "input_per_mtok": { "type": "number", "minimum": 0 },
+            "output_per_mtok": { "type": "number", "minimum": 0 },
+            "cached_input_per_mtok": { "type": "number", "minimum": 0 },
+            "per_image": { "type": ["number", "object"] },
+            "per_second": { "type": "number", "minimum": 0 },
+            "per_mchar": { "type": "number", "minimum": 0 },
+            "per_minute": { "type": "number", "minimum": 0 },
+            "per_task": { "type": "number", "minimum": 0 },
+            "per_call": { "type": "number", "minimum": 0 },
+            "schemes": { "type": "array", "minItems": 1, "items": { "enum": ["x402", "prepaid", "free"] } },
+            "free_tier": {
+              "type": "object",
+              "properties": { "requests_per_day": { "type": "integer", "minimum": 0 } }
+            }
+          }
+        },
+        "availability": {
+          "type": "object",
+          "properties": {
+            "sla": { "type": "number", "minimum": 0, "maximum": 1 },
+            "interruptible": { "type": "boolean" }
+          }
+        },
+        "data_policy": {
+          "type": "object",
+          "properties": {
+            "retention": { "enum": ["none", "ephemeral", "logged"] },
+            "training_on_inputs": { "type": "boolean" },
+            "region_pinning": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,17 @@
+# Node
+node_modules/
+
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+
+# Local demo deployment (contains a private signing key)
+node-kit/demo/
+
+# Local data
+*.db
+*.jsonl
+
+# Internal strategy - never in the public tree
+private/

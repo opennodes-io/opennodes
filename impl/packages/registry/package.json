@@ -1,0 +1,7 @@
+{
+  "name": "@opennodes/registry",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/server.js",
+  "dependencies": { "@opennodes/core": "0.1.0", "pg": "^8.13.1" }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "@opennodes/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/client.js",
+  "bin": { "onp": "bin.js" },
+  "dependencies": { "@opennodes/core": "0.1.0" }
+}
