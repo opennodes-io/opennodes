@@ -11,6 +11,9 @@ MCP standardized how AI applications reach *tools*; the OpenAI API shape standar
 
 ## Documents
 
+### Start here
+- [00 — Project overview](docs/00-project-overview.md) — the concept, architecture, implementation status, completed development stages, and next steps in one document.
+
 ### Research (why this standard, and why now)
 - [01 — Protocol & standards landscape](docs/01-protocol-landscape.md) — MCP + Registry, WebMCP, A2A, AGNTCY, ANP, NANDA, OpenAI-compatible APIs, DIDs/VCs, x402, UCAN, model cards, MLPerf; full gap analysis.
 - [02 — Market landscape & demand evidence](docs/02-market-landscape.md) — OpenRouter, HF Inference Providers, gateways, DePIN/decentralized compute, OS-level AI runtimes, payment rails; viability assessment.
