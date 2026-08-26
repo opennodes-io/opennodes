@@ -19,7 +19,8 @@ import { mcpRoutes } from './mcp.js';
 import { exportRoutes } from './export.js';
 import {
   importModelsDev, importHuggingFace, importOpenRouter,
-  HF_ROUTER_URL, HF_HUB_URL, OPENROUTER_URL,
+  importOllamaLibrary, parseOllamaLibrary,
+  HF_ROUTER_URL, HF_HUB_URL, OPENROUTER_URL, OLLAMA_LIBRARY_URL,
 } from './importers.js';
 
 export async function startRegistry({
@@ -309,6 +310,18 @@ export async function startRegistry({
         catch { hub = []; } // hub enrichment is optional
       }
       sendJson(res, 200, await importHuggingFace(store, router, hub ?? []));
+    }],
+
+    // Ollama library importer (admin): inline {entries} or {html}, or fetch the live page.
+    ['POST', '/v0/import/ollama', async (req, res) => {
+      if (!adminOk(req, res)) return;
+      const body = await readJson(req, 50_000_000);
+      let entries = body.entries;
+      if (!entries) {
+        const html = body.html ?? await (await safeFetch(OLLAMA_LIBRARY_URL, {}, 60_000)).text();
+        entries = parseOllamaLibrary(html);
+      }
+      sendJson(res, 200, await importOllamaLibrary(store, entries));
     }],
 
     // OpenRouter catalog importer (admin): inline {catalog}, or fetch the live API.

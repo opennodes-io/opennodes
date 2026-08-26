@@ -128,6 +128,52 @@ test('OpenRouter importer: per-token prices to per-MTok, hf artifact join, modal
   assert.equal(big.length, 1);
 });
 
+test('Ollama library importer: parses tiles, maps to local offerings on a localhost node', async (t) => {
+  const { parseOllamaLibrary } = await import('@opennodes/registry/src/importers.js');
+  // fixture mirrors the live ollama.com/library tile structure sampled 2026-08-27
+  const html = `
+    <li><a href="/library/gemma3" class="group"><h2><span>gemma3</span></h2>
+    <p class="max-w-lg break-words text-neutral-800 text-md">The current, most capable model that runs on a single GPU.</p>
+    <span class="inline-flex items-center rounded-md bg-indigo-50">vision</span>
+    <span class="inline-flex items-center rounded-md">1b</span>
+    <span class="inline-flex items-center rounded-md">27b</span>
+    <span >39.9M</span> <span class="hidden sm:flex">&nbsp;Pulls</span></a></li>
+    <li><a href="/library/nomic-embed-text"><h2><span>nomic-embed-text</span></h2>
+    <p class="max-w-lg break-words">A high-performing open embedding model.</p>
+    <span class="inline-flex items-center">embedding</span>
+    <span >22M</span> <span class="hidden sm:flex">&nbsp;Pulls</span></a></li>`;
+  const entries = parseOllamaLibrary(html);
+  assert.equal(entries.length, 2);
+  assert.equal(entries[0].name, 'gemma3');
+  assert.deepEqual(entries[0].sizes, ['1b', '27b']);
+  assert.deepEqual(entries[0].capabilities, ['vision']);
+  assert.equal(entries[0].pulls, '39.9M');
+  assert.match(entries[0].description, /single GPU/);
+
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  t.after(() => registry.close());
+  const result = await (await fetch(`${registry.origin}/v0/import/ollama`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ entries }),
+  })).json();
+  assert.equal(result.providers, 1);
+  assert.equal(result.offerings, 2);
+
+  const all = (await (await fetch(`${registry.origin}/v0/offerings?limit=10`)).json()).offerings;
+  const gemma = all.find((o) => o.offering_id === 'gemma3');
+  assert.equal(gemma.node_id, 'import.ollama.library');
+  assert.equal(gemma.modality, 'multimodal');       // vision capability
+  assert.equal(gemma.model.params_b, 27);           // largest size
+  assert.equal(gemma.local.run, 'ollama run gemma3');
+  assert.equal(gemma.local.pulls, '39.9M');
+  assert.deepEqual(gemma.pricing.schemes, ['free']);
+  assert.equal(gemma.endpoints.openai, 'http://127.0.0.1:11434/v1'); // your own machine
+
+  const embed = all.find((o) => o.offering_id === 'nomic-embed-text');
+  assert.equal(embed.modality, 'embedding');
+  assert.equal(embed.binding.profile, 'onp.openai.embeddings/v1');
+});
+
 test('registry serves the web app at /', async (t) => {
   const registry = await startRegistry({ allowPrivateTargets: true });
   t.after(() => registry.close());

@@ -189,6 +189,92 @@ export async function importHuggingFace(store, router, hub = []) {
   return { providers, offerings, skipped };
 }
 
+export const OLLAMA_LIBRARY_URL = 'https://ollama.com/library';
+
+/** Parse ollama.com/library HTML into entries. Resilient to styling churn:
+ *  anchors on /library/{name}, spans classified by content (sizes look like "27b"/"270m"). */
+export function parseOllamaLibrary(html) {
+  const entries = [];
+  const blocks = String(html).split('href="/library/').slice(1);
+  for (const block of blocks) {
+    const name = block.match(/^([a-z0-9._-]+)"/)?.[1];
+    if (!name) continue;
+    const chunk = block.slice(0, 6000);
+    const description = chunk.match(/<p[^>]*class="[^"]*max-w-lg[^"]*"[^>]*>\s*([^<]{1,400}?)\s*<\/p>/)?.[1]?.trim() ?? null;
+    const spans = [...chunk.matchAll(/<span[^>]*class="[^"]*inline-flex[^"]*"[^>]*>\s*([^<]{1,40}?)\s*<\/span>/g)].map((m) => m[1].trim());
+    const sizes = spans.filter((s) => /^\d+(\.\d+)?[mb]$/i.test(s));
+    const capabilities = spans.filter((s) => !/^\d+(\.\d+)?[mb]$/i.test(s));
+    const pulls = chunk.match(/<span[^>]*>\s*([\d.]+[KMB]?)\s*<\/span>\s*<span[^>]*>&nbsp;Pulls/)?.[1] ?? null;
+    entries.push({ name, description, capabilities, sizes, pulls });
+  }
+  return entries;
+}
+
+const sizeToParamsB = (s) => {
+  const m = String(s).match(/^(\d+(?:\.\d+)?)([mb])$/i);
+  if (!m) return null;
+  return m[2].toLowerCase() === 'b' ? Number(m[1]) : Math.round(Number(m[1]) / 10) / 100;
+};
+
+/**
+ * Import the Ollama library as locally-runnable offerings on a synthetic node whose
+ * endpoint is the user's OWN machine (http://127.0.0.1:11434/v1) — free, local, and
+ * directly usable from the model-page playground once `ollama run <name>` has pulled it.
+ */
+export async function importOllamaLibrary(store, entries) {
+  const offeringList = [];
+  for (const e of entries ?? []) {
+    if (!e?.name) continue;
+    const caps = (e.capabilities ?? []).map((c) => String(c).toLowerCase());
+    const modality = caps.includes('embedding') ? 'embedding' : (caps.includes('vision') ? 'multimodal' : 'text');
+    const paramsCandidates = (e.sizes ?? []).map(sizeToParamsB).filter((n) => n != null);
+    const supports = ['streaming'];
+    if (caps.includes('tools')) supports.push('tool_calls');
+    if (caps.includes('vision')) supports.push('vision');
+    offeringList.push({
+      offering_id: slug(e.name),
+      modality,
+      model: {
+        name: e.name,
+        family: vendorSlug(e.name.split(/[.:0-9]/)[0] || e.name),
+        artifact: `urn:proprietary:ollama:${vendorSlug(e.name)}`,
+        ...(paramsCandidates.length ? { params_b: Math.max(...paramsCandidates) } : {}),
+        ...(e.description ? { description: String(e.description).slice(0, 500) } : {}),
+      },
+      serving: { supports },
+      binding: {
+        profile: modality === 'embedding' ? 'onp.openai.embeddings/v1' : 'onp.openai.chat/v1',
+        model_id: e.name,
+      },
+      pricing: { currency: 'USD', input_per_mtok: 0, output_per_mtok: 0, schemes: ['free'] },
+      local: {
+        runtime: 'ollama',
+        run: `ollama run ${e.name}`,
+        ...(e.pulls ? { pulls: e.pulls } : {}),
+        ...(e.sizes?.length ? { sizes: e.sizes } : {}),
+      },
+    });
+  }
+  if (!offeringList.length) return { providers: 0, offerings: 0, skipped: ['no entries'] };
+  const nodeId = 'import.ollama.library';
+  const card = {
+    onp: '0.1',
+    revision: new Date().toISOString(),
+    node: {
+      id: nodeId,
+      name: 'Ollama library (runs on your machine)',
+      description: 'Locally-runnable models from the Ollama library. The endpoint is your own machine: install Ollama, `ollama run <model>`, and these offerings serve at localhost — free, private, no network.',
+      operator: { name: 'Ollama (community library)' },
+    },
+    endpoints: { openai: 'http://127.0.0.1:11434/v1', health: 'http://127.0.0.1:11434' },
+    offerings: offeringList,
+    payment: { schemes: [{ scheme: 'free' }] },
+  };
+  const err = await saveImportedCard(store, nodeId, 'https://ollama.com', 'import:ollama-library', card);
+  if (err) return { providers: 0, offerings: 0, skipped: [err] };
+  return { providers: 1, offerings: offeringList.length, skipped: [] };
+}
+
 export const OPENROUTER_URL = 'https://openrouter.ai/api/v1/models';
 
 /**

@@ -2,7 +2,8 @@
 // upserts keyed by node id + revision, so each cycle replaces the previous snapshot).
 import {
   importModelsDev, importHuggingFace, importOpenRouter,
-  HF_ROUTER_URL, HF_HUB_URL, OPENROUTER_URL,
+  importOllamaLibrary, parseOllamaLibrary,
+  HF_ROUTER_URL, HF_HUB_URL, OPENROUTER_URL, OLLAMA_LIBRARY_URL,
 } from './importers.js';
 
 export const MODELS_DEV_URL = 'https://models.dev/api.json';
@@ -29,6 +30,9 @@ export function startReimport(store, {
           results[source] = await importHuggingFace(store, router, hub);
         } else if (source === 'models-dev') {
           results[source] = await importModelsDev(store, await json(MODELS_DEV_URL));
+        } else if (source === 'ollama') {
+          const html = await (await safeFetch(OLLAMA_LIBRARY_URL, {}, 120_000)).text();
+          results[source] = await importOllamaLibrary(store, parseOllamaLibrary(html));
         } else {
           results[source] = { error: `unknown source: ${source}` };
         }

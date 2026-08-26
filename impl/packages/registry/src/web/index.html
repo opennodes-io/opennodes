@@ -61,6 +61,7 @@
   .chip.t-disputed, .chip.t-suspended { color: var(--bad); border-color: var(--bad); }
   .chip.inst { color: var(--accent); border-color: var(--accent); }
   .chip.imp { background: var(--panel-2); font-weight: 400; }
+  .chip.loc { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
   .micro { font-family: "IBM Plex Mono", monospace; font-size: 0.58rem; font-weight: 600; letter-spacing: 0.04em; }
   .m-measured { color: var(--good); } .m-claimed { color: var(--faint); font-weight: 400; } .m-warn { color: var(--warn); }
   .prov { font-family: "IBM Plex Mono", monospace; font-size: 0.64rem; color: var(--faint); }
@@ -171,6 +172,7 @@
   <a class="tab" data-view="rankings" href="#/rankings">Rankings</a>
   <a class="tab" data-view="nodes" href="#/nodes">Nodes</a>
   <a class="tab" data-view="feed" href="#/new">New</a>
+  <a class="tab" data-view="build" href="#/build">Build</a>
   <span class="spacer"></span>
   <a class="ext" href="https://opennodes.io">opennodes.io</a>
   <a class="ext" href="https://github.com/opennodes-io/opennodes">GitHub</a>
@@ -300,6 +302,50 @@
   <div class="panel pad" id="feed-list"></div>
 </div>
 
+<!-- ================= NODE BUILDER ================= -->
+<div id="view-build" hidden>
+  <h1>Build an AI node</h1>
+  <p class="sub">From "which model?" to a registered node: pick a model and quantization, choose a runtime and hardware, and get a ready Node Kit configuration. Estimates are rough sizing guidance, not measurements — the qualification battery measures reality after you register.</p>
+
+  <h2>1 · Model &amp; quantization</h2>
+  <div class="panel pad" style="max-width:56rem">
+    <div style="display:grid; grid-template-columns: 2fr 1fr 1fr; gap:0.8rem">
+      <div><label class="f" style="margin-top:0">Search the catalog (open-weight models with known size)</label>
+        <input class="wide" id="nb-search" placeholder="llama, qwen, gemma…"></div>
+      <div><label class="f" style="margin-top:0">Quantization</label>
+        <select id="nb-quant" style="width:100%; font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:5px; padding:0.45rem 0.6rem">
+          <option value="2">fp16 / bf16</option><option value="1" selected>fp8</option><option value="0.55">int4 / q4</option>
+        </select></div>
+      <div><label class="f" style="margin-top:0">Target context</label>
+        <select id="nb-ctx" style="width:100%; font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:5px; padding:0.45rem 0.6rem">
+          <option value="8">8K</option><option value="32" selected>32K</option><option value="128">128K</option><option value="256">256K</option>
+        </select></div>
+    </div>
+    <div id="nb-models" style="margin-top:0.7rem; display:flex; flex-direction:column; gap:0.3rem"></div>
+    <p class="prov" id="nb-vram" style="margin-top:0.7rem"></p>
+  </div>
+
+  <h2>2 · Runtime</h2>
+  <div class="cards3" style="max-width:56rem" id="nb-runtimes">
+    <div class="panel pad nb-rt" data-rt="ollama" style="cursor:pointer"><b>Ollama</b><p class="sub" style="margin:0.3rem 0 0; font-size:0.78rem">Simplest path — one install, GGUF quantization built in. Best for personal nodes and development; modest peak throughput.</p></div>
+    <div class="panel pad nb-rt" data-rt="vllm" style="cursor:pointer"><b>vLLM</b><p class="sub" style="margin:0.3rem 0 0; font-size:0.78rem">Production serving — continuous batching, paged attention, best multi-user throughput. The default for a serious node.</p></div>
+    <div class="panel pad nb-rt" data-rt="tensorrt" style="cursor:pointer"><b>TensorRT-LLM</b><p class="sub" style="margin:0.3rem 0 0; font-size:0.78rem">NVIDIA-optimized kernels — lowest latency on H100/H200 class hardware; heavier build and engine-compilation step.</p></div>
+  </div>
+
+  <h2>3 · Hardware</h2>
+  <div class="panel pad" style="max-width:56rem">
+    <div id="nb-gpus" class="prov" style="font-size:0.78rem">pick a model above to size hardware</div>
+    <p class="sub" style="margin:0.7rem 0 0; font-size:0.78rem">Where to run it: your own hardware, a university/institutional cluster, or GPU clouds (Google Cloud, AWS, Hetzner, OVHcloud, CoreWeave, and regional providers). Data-residency requirements narrow the list — that constraint is a first-class filter in this registry for a reason.</p>
+  </div>
+
+  <h2>4 · Your node</h2>
+  <div class="panel pad" style="max-width:56rem">
+    <div id="nb-comparables" class="prov" style="margin-bottom:0.5rem"></div>
+    <pre id="nb-config" style="background:var(--panel-2); border:1px solid var(--line); border-radius:6px; padding:0.8rem 1rem; overflow-x:auto; font-size:0.72rem; line-height:1.5; font-family:'IBM Plex Mono', monospace">select a model and runtime to generate your configuration</pre>
+    <p style="font-size:0.84rem">Then: <a href="https://github.com/opennodes-io/opennodes/tree/main/node-kit">install the Node Kit</a> → <code>onp-node init</code> with this config → <code>onp-node check</code> → <a href="#/register">register</a>. Trust tiers are earned through the <a href="#/qualification">automated qualification battery</a>.</p>
+  </div>
+</div>
+
 <!-- ================= NODE DETAIL ================= -->
 <div id="view-node" hidden>
   <div class="crumb"><a href="#/nodes">Nodes</a> /</div>
@@ -359,7 +405,7 @@ const priceStr = (p) => {
 };
 
 /* ---------- routing ---------- */
-const views = ['models', 'model', 'rankings', 'nodes', 'feed', 'node', 'register', 'qualification'];
+const views = ['models', 'model', 'rankings', 'nodes', 'feed', 'build', 'node', 'register', 'qualification'];
 function route() {
   const hash = location.hash || '#/';
   let view = 'models', arg = null;
@@ -367,6 +413,7 @@ function route() {
   else if (hash.startsWith('#/rankings')) view = 'rankings';
   else if (hash.startsWith('#/nodes')) view = 'nodes';
   else if (hash.startsWith('#/new')) view = 'feed';
+  else if (hash.startsWith('#/build')) view = 'build';
   else if (hash.startsWith('#/node/')) { view = 'node'; arg = decodeURIComponent(hash.slice(7)); }
   else if (hash.startsWith('#/register')) view = 'register';
   else if (hash.startsWith('#/qualification')) view = 'qualification';
@@ -461,6 +508,7 @@ window.toggleRow = async function (el, idx) {
         ${o.pricing.cached_input_per_mtok != null ? `<dt>cached input</dt><dd class="num">$${fmt(o.pricing.cached_input_per_mtok)}/MTok</dd>` : ''}
         ${o.serving?.max_output_tokens ? `<dt>max output</dt><dd class="num">${fmtInt(o.serving.max_output_tokens)}</dd>` : ''}
         <dt>schemes</dt><dd>${esc((o.pricing.schemes || []).join(', '))}</dd>
+        ${o.local ? `<dt>run locally</dt><dd><code style="background:var(--panel-2); padding:0.1em 0.4em; border-radius:3px" class="mono">${esc(o.local.run)}</code>${o.local.pulls ? ` <span class="prov" style="display:inline">· ${esc(o.local.pulls)} pulls</span>` : ''}${o.local.sizes ? ` <span class="prov" style="display:inline">· sizes: ${esc(o.local.sizes.join(' '))}</span>` : ''}</dd>` : ''}
       </dl>
     </div>
     <div>
@@ -502,7 +550,7 @@ function renderRow(o, idx) {
       <span class="name">${esc(o.model.name)}</span>
       ${tierChip(o.tier)}
       <span class="chip">${esc(o.modality)}</span>
-      ${o.source === 'import' ? '<span class="chip imp">IMPORTED</span>' : ''}
+      ${o.local ? '<span class="chip loc">RUNS LOCALLY</span>' : (o.source === 'import' ? '<span class="chip imp">IMPORTED</span>' : '')}
       ${o.institutional ? '<span class="chip inst">institutional</span>' : ''}
       <a class="nodeid" href="#/node/${encodeURIComponent(o.node_id)}">${esc(o.node_id)}</a>
       <span class="rankwrap" title="rank — expand for the formula">
@@ -705,6 +753,104 @@ $('#pg-send').addEventListener('click', async () => {
     out.innerHTML = '<span class="err">' + esc(err.message) + '</span><br><span class="prov">If this is a network/CORS error: the node must allow browser origins. ONP kit nodes do by default; for local Ollama set OLLAMA_ORIGINS to include this page&#39;s origin.</span>';
   } finally { $('#pg-send').disabled = false; }
 });
+
+/* ---------- node builder ---------- */
+const nb = { model: null, runtime: null };
+let nbDebounce;
+$('#nb-search').addEventListener('input', () => { clearTimeout(nbDebounce); nbDebounce = setTimeout(nbSearch, 250); });
+for (const id of ['nb-quant', 'nb-ctx']) $('#' + id).addEventListener('change', nbUpdate);
+document.querySelectorAll('.nb-rt').forEach((c) => c.addEventListener('click', () => {
+  document.querySelectorAll('.nb-rt').forEach((x) => x.style.borderColor = 'var(--line)');
+  c.style.borderColor = 'var(--accent)';
+  nb.runtime = c.dataset.rt;
+  nbUpdate();
+}));
+
+async function nbSearch() {
+  const q = $('#nb-search').value.trim();
+  if (!q) { $('#nb-models').innerHTML = ''; return; }
+  try {
+    const { offerings } = await api('/v0/offerings?limit=200&q=' + encodeURIComponent(q));
+    const seen = new Map();
+    for (const o of offerings) {
+      if (!o.model.params_b) continue; // sizing needs a known parameter count
+      if (!seen.has(o.model.artifact)) seen.set(o.model.artifact, o);
+    }
+    const list = [...seen.values()].slice(0, 6);
+    $('#nb-models').innerHTML = list.length ? list.map((o) => `
+      <div class="panel pad nb-m" data-artifact="${esc(o.model.artifact)}" style="cursor:pointer; display:flex; gap:0.7rem; align-items:baseline; padding:0.55rem 0.8rem">
+        <b style="font-size:0.85rem">${esc(o.model.name)}</b>
+        <span class="chip">${o.model.params_b}B</span>
+        <span class="chip">${esc(o.modality)}</span>
+        ${o.local ? '<span class="chip loc">RUNS LOCALLY</span>' : ''}
+        <span class="prov" style="margin:0">${esc(o.model.artifact)}</span>
+      </div>`).join('') : '<p class="prov">no sized open-weight models match — try another term</p>';
+    document.querySelectorAll('.nb-m').forEach((el) => el.addEventListener('click', () => {
+      document.querySelectorAll('.nb-m').forEach((x) => x.style.borderColor = 'var(--line)');
+      el.style.borderColor = 'var(--accent)';
+      nb.model = list.find((o) => o.model.artifact === el.dataset.artifact);
+      nbUpdate();
+    }));
+  } catch (e) { $('#nb-models').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
+}
+
+async function nbUpdate() {
+  if (!nb.model) return;
+  const bpp = Number($('#nb-quant').value);
+  const ctxK = Number($('#nb-ctx').value);
+  const p = nb.model.model.params_b;
+  const weights = p * bpp;
+  const kv = ctxK * 0.12;                       // ~GB per K tokens, rough
+  const total = Math.ceil((weights + kv) * 1.15); // runtime overhead
+  $('#nb-vram').textContent = `rough VRAM estimate: ${weights.toFixed(1)}GB weights + ~${kv.toFixed(1)}GB KV cache @ ${ctxK}K ctx + overhead ≈ ${total}GB — the capacity ramp measures the truth after registration`;
+
+  const gpus = [['RTX 4090', 24], ['L4', 24], ['L40S', 48], ['A100 40G', 40], ['A100 80G', 80], ['H100', 80], ['H200', 141]];
+  const fits = gpus.filter(([, g]) => g >= total);
+  $('#nb-gpus').innerHTML = (fits.length
+    ? 'fits on a single: ' + fits.map(([n]) => `<b>${n}</b>`).join(' · ')
+    : `needs ≈${total}GB — multi-GPU (tensor parallel): e.g. ${Math.ceil(total / 80)}× H100 or ${Math.ceil(total / 141)}× H200`)
+    + ` <span style="color:var(--faint)">· for ${esc(nb.model.model.name)} at ${bpp === 2 ? 'fp16' : bpp === 1 ? 'fp8' : 'int4'}</span>`;
+
+  // price comparables from the catalog for the same artifact
+  try {
+    const { offerings } = await api('/v0/offerings?limit=50&q=' + encodeURIComponent(nb.model.model.artifact));
+    const priced = offerings.filter((o) => o.model.artifact === nb.model.model.artifact && (o.pricing.input_per_mtok ?? 0) > 0);
+    $('#nb-comparables').textContent = priced.length
+      ? `catalog comparables for this artifact: $${fmt(Math.min(...priced.map((o) => o.pricing.input_per_mtok)))}–${fmt(Math.max(...priced.map((o) => o.pricing.input_per_mtok)))} per MTok in, across ${priced.length} listing${priced.length === 1 ? '' : 's'}`
+      : 'no priced catalog comparables for this artifact yet — you set the market';
+  } catch { $('#nb-comparables').textContent = ''; }
+
+  const rt = nb.runtime;
+  if (!rt) { $('#nb-config').textContent = 'pick a runtime above to generate your configuration'; return; }
+  const base = rt === 'ollama' ? 'http://127.0.0.1:11434/v1' : 'http://127.0.0.1:8000/v1';
+  const install = rt === 'ollama'
+    ? `# engine\nollama pull ${nb.model.binding.model_id}`
+    : rt === 'vllm'
+      ? `# engine\npip install vllm\nvllm serve ${nb.model.model.artifact.startsWith('hf:') ? nb.model.model.artifact.slice(3) : nb.model.binding.model_id} ${bpp === 1 ? '--quantization fp8 ' : ''}--max-model-len ${ctxK * 1024}`
+      : `# engine — TensorRT-LLM: build an engine for your GPU, then serve the OpenAI endpoint\n# see nvidia.github.io/TensorRT-LLM (trtllm-serve)`;
+  $('#nb-config').textContent = `${install}
+
+# node kit
+pipx install onp-node   # from the OpenNodes repo
+onp-node init --engine ${base} \\
+  --id org.example.mynode \\
+  --public-url https://ai.example.org
+
+# then edit onp-node.toml:
+[pricing]
+currency = "USD"
+input_per_mtok = 0.0    # see catalog comparables above
+output_per_mtok = 0.0
+schemes = ["free"]
+
+[serving]
+context_window = ${ctxK * 1024}
+
+# verify locally, then register
+onp-node serve
+onp-node check
+onp-node register https://registry.opennodes.io`;
+}
 
 /* ---------- rankings ---------- */
 async function loadRankings() {

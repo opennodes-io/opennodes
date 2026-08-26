@@ -33,6 +33,7 @@ export async function collectOfferings(store) {
         card_revision: card.revision,
         modality: offering.modality,
         modalities: offering.modalities ?? null,
+        local: offering.local ?? null,
         model: offering.model,
         serving,
         binding: offering.binding,
