@@ -26,9 +26,17 @@ export async function readJson(req, limit = 1_000_000) {
 /**
  * Router: routes are [method, pattern, handler]; pattern segments starting with ':' capture params.
  * Handler signature: (req, res, { params, query, url }).
+ * opts.cors enables permissive CORS (public read APIs and inference nodes serving
+ * browser clients — ONP headers and receipts are exposed to cross-origin pages).
  */
-export function createApp(routes) {
+export function createApp(routes, { cors = false } = {}) {
   return createServer(async (req, res) => {
+    if (cors) {
+      res.setHeader('access-control-allow-origin', '*');
+      res.setHeader('access-control-allow-headers', 'content-type, authorization, onp-offering, onp-card-revision');
+      res.setHeader('access-control-expose-headers', 'onp-receipt');
+      if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+    }
     const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
     const segments = url.pathname.split('/').filter(Boolean);
     for (const [method, pattern, handler] of routes) {

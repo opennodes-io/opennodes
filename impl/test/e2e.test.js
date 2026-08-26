@@ -46,6 +46,15 @@ test('full discover → estimate → invoke → receipt loop', async (t) => {
   assert.equal(receipt.card_revision, offering.card_revision);
   assert.ok(client.spendTotal() >= 0);
 
+  // 5b. CORS: browser clients (registry playground) can reach the node cross-origin
+  const preflight = await fetch(`${node.origin}/v1/chat/completions`, {
+    method: 'OPTIONS',
+    headers: { origin: 'http://example.com', 'access-control-request-headers': 'onp-offering' },
+  });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('access-control-allow-origin'), '*');
+  assert.match(preflight.headers.get('access-control-allow-headers'), /onp-offering/);
+
   // 6. Reprice → stale pin gets 409 → client recovers by re-resolving and retrying once
   const newRevision = node.reprice(9.99);
   assert.notEqual(newRevision, offering.card_revision);

@@ -140,7 +140,7 @@ export async function startFixtureNode({
         sendJson(res, 200, completion, { 'onp-receipt': receipt });
       }
     }],
-  ]);
+  ], { cors: true }); // nodes SHOULD serve browser clients (registry playground, web agents)
 
   const actualPort = await listen(app, port, host);
   state.origin = `http://${host}:${actualPort}`;

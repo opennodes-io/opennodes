@@ -242,6 +242,32 @@
   <div class="secnav" id="md-nav"></div>
   <h2 id="sec-offerings">Offerings <span class="counts" id="md-count"></span></h2>
   <div class="panel tablewrap" id="md-offerings"></div>
+  <h2 id="sec-play">Playground <span class="counts">runs in your browser — your prompt goes straight to the node, never through this registry</span></h2>
+  <div class="panel pad" style="max-width:56rem">
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.8rem">
+      <div>
+        <label class="f" style="margin-top:0">Target</label>
+        <select id="pg-target" style="width:100%; font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:5px; padding:0.45rem 0.6rem"></select>
+      </div>
+      <div>
+        <label class="f" style="margin-top:0">API key <span style="font-weight:400">(if the node needs one — kept in your browser only)</span></label>
+        <input class="wide mono" id="pg-key" type="password" placeholder="optional" style="font-size:0.78rem">
+      </div>
+    </div>
+    <div id="pg-customrow" hidden style="display:grid; grid-template-columns: 2fr 1fr; gap:0.8rem">
+      <div><label class="f">Custom OpenAI-compatible endpoint <span style="font-weight:400">(e.g. your local Ollama: http://127.0.0.1:11434/v1)</span></label>
+        <input class="wide mono" id="pg-endpoint" placeholder="http://127.0.0.1:11434/v1" style="font-size:0.78rem"></div>
+      <div><label class="f">Model id</label>
+        <input class="wide mono" id="pg-model" placeholder="gemma4:latest" style="font-size:0.78rem"></div>
+    </div>
+    <label class="f">Prompt</label>
+    <textarea id="pg-prompt" rows="3" class="wide" style="resize:vertical; font-family:inherit" placeholder="Try the model…"></textarea>
+    <div style="display:flex; align-items:center; gap:0.9rem; margin-top:0.7rem">
+      <button class="btn" id="pg-send">Send</button>
+      <span class="prov" id="pg-meta"></span>
+    </div>
+    <div id="pg-out" style="margin-top:0.8rem; font-size:0.88rem; white-space:pre-wrap; line-height:1.55"></div>
+  </div>
   <div id="md-perfsec"></div>
   <div id="md-benchsec"></div>
   <div id="md-relsec"></div>
@@ -538,7 +564,16 @@ async function loadModel(artifact) {
     ].filter(Boolean).join('');
 
     // section nav (anchors appear only for sections that render)
-    const navBits = [['#sec-offerings', 'OFFERINGS']];
+    const navBits = [['#sec-offerings', 'OFFERINGS'], ['#sec-play', 'PLAYGROUND']];
+
+    // playground targets: this page's offerings + a custom endpoint (e.g. local Ollama)
+    pgOfferings = list;
+    $('#pg-target').innerHTML = list.map((o, i) =>
+      `<option value="${i}">${esc(o.node_id)} — ${priceStr(o.pricing)} [${esc(o.tier)}]</option>`).join('')
+      + '<option value="custom">custom endpoint (your local Ollama / any OpenAI-compatible server)</option>';
+    $('#pg-customrow').hidden = true;
+    $('#pg-out').textContent = '';
+    $('#pg-meta').textContent = '';
     $('#md-offerings').innerHTML = `<table class="grid num"><thead><tr>
       <th>NODE</th><th>PRICE IN/OUT</th><th>CONTEXT</th><th>TTFT</th><th>TOK/S</th><th>UP</th><th>CAPABILITIES</th><th>REVISION</th>
     </tr></thead><tbody>` + list.map((o) => {
@@ -623,6 +658,53 @@ async function loadModel(artifact) {
     $('#md-nav').innerHTML = navBits.map(([h, l]) => `<a href="${h}" onclick="event.preventDefault(); document.querySelector('${h}').scrollIntoView({behavior:'smooth'})">${l}</a>`).join('');
   } catch (e) { $('#md-offerings').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
 }
+
+/* ---------- playground ---------- */
+let pgOfferings = [];
+$('#pg-target').addEventListener('change', () => {
+  $('#pg-customrow').hidden = $('#pg-target').value !== 'custom';
+});
+$('#pg-send').addEventListener('click', async () => {
+  const out = $('#pg-out'), meta = $('#pg-meta');
+  const prompt = $('#pg-prompt').value.trim();
+  if (!prompt) return;
+  const isCustom = $('#pg-target').value === 'custom';
+  const offering = isCustom ? null : pgOfferings[Number($('#pg-target').value)];
+  const base = isCustom ? $('#pg-endpoint').value.trim().replace(/\/$/, '') : offering.endpoints.openai.replace(/\/$/, '');
+  const model = isCustom ? $('#pg-model').value.trim() : offering.binding.model_id;
+  if (!base || !model) { out.innerHTML = '<span class="err">endpoint and model id are required</span>'; return; }
+  const keyStoreId = 'onp-key-' + new URL(base).host;
+  const key = $('#pg-key').value.trim();
+  if (key) localStorage.setItem(keyStoreId, key); else $('#pg-key').value = localStorage.getItem(keyStoreId) ?? '';
+  const useKey = key || localStorage.getItem(keyStoreId) || '';
+  $('#pg-send').disabled = true;
+  out.textContent = '…';
+  meta.textContent = '';
+  const t0 = performance.now();
+  try {
+    const res = await fetch(base + '/chat/completions', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(useKey ? { authorization: 'Bearer ' + useKey } : {}),
+        ...(offering ? { 'onp-offering': offering.node_id + '/' + offering.offering_id, 'onp-card-revision': offering.card_revision } : {}),
+      },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: 512 }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body?.detail ?? body?.error?.message ?? ('status ' + res.status));
+    out.textContent = body.choices?.[0]?.message?.content ?? JSON.stringify(body).slice(0, 800);
+    const u = body.usage;
+    const receipt = res.headers.get('onp-receipt');
+    meta.textContent = [
+      Math.round(performance.now() - t0) + 'ms',
+      u ? `${u.prompt_tokens} in / ${u.completion_tokens} out` : null,
+      receipt ? 'signed receipt received' : (offering ? 'no receipt' : null),
+    ].filter(Boolean).join(' · ');
+  } catch (err) {
+    out.innerHTML = '<span class="err">' + esc(err.message) + '</span><br><span class="prov">If this is a network/CORS error: the node must allow browser origins. ONP kit nodes do by default; for local Ollama set OLLAMA_ORIGINS to include this page&#39;s origin.</span>';
+  } finally { $('#pg-send').disabled = false; }
+});
 
 /* ---------- rankings ---------- */
 async function loadRankings() {

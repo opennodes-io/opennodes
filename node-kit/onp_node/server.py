@@ -164,7 +164,21 @@ class NodeKitServer:
 
     # -- lifecycle -----------------------------------------------------------
     def build_app(self) -> web.Application:
-        app = web.Application()
+        # Nodes SHOULD serve browser clients (registry playgrounds, web agents):
+        # permissive CORS with the ONP headers allowed and receipts exposed.
+        @web.middleware
+        async def cors(request, handler):
+            if request.method == "OPTIONS":
+                resp = web.Response(status=204)
+            else:
+                resp = await handler(request)
+            resp.headers["Access-Control-Allow-Origin"] = "*"
+            resp.headers["Access-Control-Allow-Headers"] = "content-type, authorization, onp-offering, onp-card-revision"
+            resp.headers["Access-Control-Expose-Headers"] = "onp-receipt"
+            return resp
+
+        app = web.Application(middlewares=[cors])
+        app.router.add_route("OPTIONS", "/{tail:.*}", lambda r: web.Response(status=204))
         app.router.add_get("/.well-known/open-node.json", self.well_known_card)
         app.router.add_get("/.well-known/jwks.json", self.jwks)
         app.router.add_get("/.well-known/onp-challenge/{token}", self.challenge)

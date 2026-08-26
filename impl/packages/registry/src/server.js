@@ -342,7 +342,7 @@ export async function startRegistry({
 
     ...mcpRoutes(store),
     ...exportRoutes(store, registryKeys),
-  ]);
+  ], { cors: true }); // public read API: third-party web clients may call it directly
 
   const stageCHandle = stageC ? startStageC(store, { safeFetch, ...stageC }) : null;
   const reimportHandle = reimport ? startReimport(store, { safeFetch, ...reimport }) : null;
