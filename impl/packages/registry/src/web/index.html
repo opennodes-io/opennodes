@@ -583,11 +583,22 @@ async function loadModel(artifact) {
     list.sort((a, b) => (tierOrder[b.tier] ?? 0) - (tierOrder[a.tier] ?? 0) || (a.pricing.input_per_mtok ?? 0) - (b.pricing.input_per_mtok ?? 0));
     const first = list[0];
     $('#md-title').textContent = first.model.name;
-    $('#md-artifact').textContent = artifact;
+    // the artifact chip links to its authoritative home: Hugging Face for hf: artifacts
+    $('#md-artifact').innerHTML = artifact.startsWith('hf:')
+      ? `<a href="https://huggingface.co/${esc(artifact.slice(3))}" target="_blank" rel="noopener" style="color:inherit; text-decoration:none">${esc(artifact)}</a>`
+      : esc(artifact);
+    const extLinks = [];
+    if (artifact.startsWith('hf:')) {
+      extLinks.push(`<a class="chip" style="text-decoration:none; color:var(--accent); border-color:var(--accent)" href="https://huggingface.co/${esc(artifact.slice(3))}" target="_blank" rel="noopener">MODEL CARD ON HUGGING FACE ↗</a>`);
+    }
+    if (first.local?.runtime === 'ollama') {
+      extLinks.push(`<a class="chip" style="text-decoration:none; color:var(--accent); border-color:var(--accent)" href="https://ollama.com/library/${esc(first.binding.model_id.split(':')[0])}" target="_blank" rel="noopener">OLLAMA LIBRARY ↗</a>`);
+    }
     $('#md-chips').innerHTML = [
       first.model.params_b ? `<span class="chip">${first.model.params_b}B</span>` : '',
       `<span class="chip">${esc(first.modality)}</span>`,
       first.model.family ? `<span class="chip">${esc(first.model.family)}</span>` : '',
+      ...extLinks,
     ].join('');
     $('#md-count').textContent = list.length + ' node' + (list.length === 1 ? '' : 's');
 
