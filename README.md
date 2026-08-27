@@ -37,6 +37,13 @@ MCP standardized how AI applications reach *tools*; the OpenAI API shape standar
 - [impl/](impl/README.md) — runnable reference stack (registry + fixture node + `onp` CLI/gateway); `npm install && npm test` in `impl/`.
 - [node-kit/](node-kit/README.md) — Python Node Kit (REQ-003): wraps any OpenAI-compatible engine (vLLM/Ollama/TGI) into a conforming node; cross-language e2e against the JS registry.
 
+## Ecosystem
+
+Clients and products consuming ONP — independent of the standard, listed here for discovery:
+
+- **[Surge](https://github.com/opennodes-io/surge)** — a desktop "browser for MCP" with a native OpenNodes provider: model discovery with trust tiers and measured latency in the picker, enforceable pre-pricing, pinned direct-to-node invocation. The first client to span both discovery layers (models via ONP, tools via MCP).
+- **Your client here** — ONP is an open standard; any client can implement discovery via [ONP-3](spec/ONP-3-registry.md) and invocation via [ONP-4](spec/ONP-4-invocation.md). Open a PR to be listed.
+
 ## Design principles
 
 1. **Standardize the gap, reuse the rest.** ONP defines only the Node Card, the Registry API, and thin profiles binding existing standards together. Invocation is OpenAI-compatible; payment is x402/prepaid; identity is domain-based with optional DIDs; tool access is MCP.
