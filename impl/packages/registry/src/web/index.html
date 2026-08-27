@@ -30,7 +30,34 @@
   .mono { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; }
   .serif { font-family: "Source Serif 4", Georgia, serif; }
   .num { font-variant-numeric: tabular-nums; }
-  .wrap { max-width: 74rem; margin: 0 auto; padding: 0 1.4rem; }
+  .wrap { max-width: 82rem; margin: 0 auto; padding: 0 1.4rem; }
+
+  /* models master-detail */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 0.55rem; align-items: center; margin-bottom: 1rem; }
+  .toolbar input[type=text] { flex: 1; min-width: 12rem; }
+  .toolbar input, .toolbar select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 0.42rem 0.6rem; }
+  .toolbar input[type=number] { width: 8.5rem; }
+  .mgrid { display: grid; grid-template-columns: 23rem minmax(0, 1fr); gap: 1.2rem; align-items: start; }
+  @media (max-width: 980px) { .mgrid { grid-template-columns: 1fr; } }
+  .mlist { display: flex; flex-direction: column; gap: 0.4rem; max-height: 76vh; overflow-y: auto; padding-right: 0.25rem; }
+  .mitem { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.6rem 0.75rem; cursor: pointer; }
+  .mitem:hover { border-color: var(--accent); }
+  .mitem.sel { border-color: var(--accent); background: var(--accent-soft); }
+  .mitem .t { display: flex; align-items: center; gap: 0.5rem; }
+  .mitem .t .nm { font-weight: 600; font-size: 0.86rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mitem .b { display: flex; gap: 0.8rem; margin-top: 0.25rem; font-size: 0.7rem; color: var(--muted); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+  .mdetail { min-height: 30rem; }
+
+  /* chat */
+  .chatgrid { display: grid; grid-template-columns: minmax(0, 1fr) 19rem; gap: 1.2rem; align-items: start; }
+  @media (max-width: 980px) { .chatgrid { grid-template-columns: 1fr; } }
+  .chatlog { display: flex; flex-direction: column; gap: 0.7rem; min-height: 20rem; max-height: 60vh; overflow-y: auto; padding: 1rem; }
+  .msg { max-width: 46rem; font-size: 0.9rem; line-height: 1.55; white-space: pre-wrap; border-radius: 8px; padding: 0.6rem 0.9rem; }
+  .msg.user { align-self: flex-end; background: var(--accent-soft); border: 1px solid var(--accent); }
+  .msg.assistant { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--line); }
+  .msg .mm { display: block; margin-top: 0.35rem; }
+  .chatbar { display: flex; gap: 0.6rem; padding: 0.8rem 1rem; border-top: 1px solid var(--line); }
+  .chatbar textarea { flex: 1; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.55rem 0.7rem; resize: none; }
 
   /* nav */
   nav { background: var(--panel); border-bottom: 1px solid var(--line); }
@@ -173,6 +200,7 @@
   <a class="tab" data-view="nodes" href="#/nodes">Nodes</a>
   <a class="tab" data-view="feed" href="#/new">New</a>
   <a class="tab" data-view="build" href="#/build">Build</a>
+  <a class="tab" data-view="chat" href="#/chat">Chat</a>
   <span class="spacer"></span>
   <a class="ext" href="https://opennodes.io">opennodes.io</a>
   <a class="ext" href="https://github.com/opennodes-io/opennodes">GitHub</a>
@@ -181,58 +209,37 @@
 
 <main class="wrap">
 
-<!-- ================= MODELS (catalog) ================= -->
+<!-- ================= MODELS (catalog, master-detail) ================= -->
 <div id="view-models">
   <div style="display:flex; align-items:baseline; gap:0.9rem; flex-wrap:wrap">
     <h1>Models</h1>
     <span class="counts" id="m-counts"></span>
   </div>
-  <p class="sub">Search across registered AI nodes and imported catalogs. Every result shows its trust tier, its price, and <em>why</em> it ranks where it does — claimed values are never blended with measured ones.</p>
-  <div class="cols">
-    <div class="rail">
-      <div class="panel pad grp" style="border-color: var(--accent)">
-        <span class="lab" style="color: var(--accent)">TRUST</span>
-        <span class="switchrow" id="f-verified"><span class="switch"></span><b style="font-size:0.82rem">Verified only</b></span>
-        <span style="font-size:0.7rem; color:var(--muted); line-height:1.4">identity-fingerprinted · context-verified · continuously probed</span>
-      </div>
-      <div class="grp">
-        <span class="lab">SEARCH</span>
-        <input type="text" id="f-q" placeholder="model, family, node…">
-      </div>
-      <div class="grp">
-        <span class="lab">MODALITY</span>
-        <select id="f-modality">
-          <option value="">any modality</option>
-          <option>text</option><option>multimodal</option><option>image</option>
-          <option>audio</option><option>video</option><option>embedding</option>
-        </select>
-      </div>
-      <div class="grp">
-        <span class="lab">CAPABILITIES</span>
-        <div style="display:flex; flex-wrap:wrap; gap:0.35rem">
-          <button class="toggle" data-sup="tool_calls">tools</button>
-          <button class="toggle" data-sup="vision">vision</button>
-          <button class="toggle" data-sup="json_mode">json</button>
-        </div>
-      </div>
-      <div class="grp">
-        <span class="lab">MAX PRICE · $/MTOK IN</span>
-        <input type="number" id="f-price" placeholder="e.g. 1.00" min="0" step="0.05">
-      </div>
-      <div class="grp">
-        <span class="lab">SORT</span>
-        <select id="f-sort"><option value="rank">rank</option><option value="price">price</option></select>
-      </div>
-    </div>
-    <div style="display:flex; flex-direction:column; gap:0.55rem">
-      <div class="rows" id="m-results"></div>
-      <p class="counts" id="m-foot"></p>
-    </div>
+  <p class="sub">Search across registered AI nodes and imported catalogs — pick a model on the left, its full card is on the right. Claimed values are never blended with measured ones.</p>
+  <div class="toolbar">
+    <input type="text" id="f-q" placeholder="Search models, families, nodes…">
+    <span class="switchrow" id="f-verified" title="identity-fingerprinted · context-verified · continuously probed"><span class="switch"></span><b style="font-size:0.78rem">Verified only</b></span>
+    <select id="f-modality">
+      <option value="">any modality</option>
+      <option>text</option><option>multimodal</option><option>image</option>
+      <option>audio</option><option>video</option><option>embedding</option>
+    </select>
+    <button class="toggle" data-sup="tool_calls">tools</button>
+    <button class="toggle" data-sup="vision">vision</button>
+    <button class="toggle" data-sup="json_mode">json</button>
+    <input type="number" id="f-price" placeholder="max $/MTok in" min="0" step="0.05">
+    <select id="f-sort"><option value="rank">sort: rank</option><option value="price">sort: price</option></select>
+  </div>
+  <div class="mgrid">
+    <div class="mlist" id="m-list"></div>
+    <div class="mdetail" id="m-detail"><p class="sub">Select a model from the list.</p></div>
   </div>
 </div>
 
-<!-- ================= MODEL DETAIL ================= -->
+<!-- ================= MODEL DETAIL (the card lives once; it is re-parented between
+     the standalone route and the catalog's right pane) ================= -->
 <div id="view-model" hidden>
+<div id="model-card">
   <div class="crumb" id="md-crumb"></div>
   <div style="display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap">
     <h1 id="md-title" style="margin:0"></h1>
@@ -275,6 +282,7 @@
   <div id="md-relsec"></div>
   <div id="md-faqsec"></div>
 </div>
+</div>
 
 <!-- ================= RANKINGS ================= -->
 <div id="view-rankings" hidden>
@@ -300,6 +308,44 @@
   <h1>New</h1>
   <p class="sub">Dated listing events, newest first — registrations, tier changes, suspensions — each with its provenance. Also available as <a id="feed-json" href="/v0/feed">JSON</a> for agents.</p>
   <div class="panel pad" id="feed-list"></div>
+</div>
+
+<!-- ================= CHAT ================= -->
+<div id="view-chat" hidden>
+  <h1>Chat</h1>
+  <p class="sub">Multi-turn chat, straight from your browser to the node you pick — your messages never pass through this registry. Costs accumulate from real usage at the pinned price.</p>
+  <div class="chatgrid">
+    <div class="panel" style="display:flex; flex-direction:column">
+      <div class="chatlog" id="ch-log"><p class="sub" style="margin:0">Pick a target on the right and say something.</p></div>
+      <div class="chatbar">
+        <textarea id="ch-input" rows="2" placeholder="Message…"></textarea>
+        <button class="btn" id="ch-send" style="align-self:flex-end">Send</button>
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:0.9rem">
+      <div class="panel pad">
+        <label class="f" style="margin-top:0">Target</label>
+        <select id="ch-target" style="width:100%; font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:5px; padding:0.45rem 0.6rem"></select>
+        <div id="ch-customrow" hidden>
+          <label class="f">Custom endpoint</label>
+          <input class="wide mono" id="ch-endpoint" placeholder="http://127.0.0.1:11434/v1" style="font-size:0.76rem">
+          <label class="f">Model id</label>
+          <input class="wide mono" id="ch-model" placeholder="gemma3" style="font-size:0.76rem">
+        </div>
+        <label class="f">API key <span style="font-weight:400">(if needed — kept in your browser)</span></label>
+        <input class="wide mono" id="ch-key" type="password" placeholder="optional" style="font-size:0.76rem">
+        <div style="display:flex; gap:0.6rem; margin-top:0.8rem; align-items:center">
+          <button class="btn sec" id="ch-clear" style="padding:0.4rem 0.8rem; font-size:0.76rem">Clear chat</button>
+          <span class="prov" id="ch-cost" style="margin:0"></span>
+        </div>
+      </div>
+      <div class="panel pad">
+        <span class="lab" style="font-family:'IBM Plex Mono',monospace; font-size:0.62rem; font-weight:600; letter-spacing:0.12em; color:var(--accent)">DESKTOP &amp; APPS</span>
+        <p style="font-size:0.8rem; color:var(--muted); margin:0.5rem 0 0.4rem">A desktop client (the OpenNodes cockpit) is in development — <a href="https://github.com/opennodes-io/opennodes">watch the repository</a> for its first release.</p>
+        <p style="font-size:0.8rem; color:var(--muted); margin:0">Available today: bring every model here into <b>Cursor, VS Code, or any OpenAI-compatible app</b> via the <a href="https://github.com/opennodes-io/opennodes/tree/main/impl">onp gateway and MCP server</a> — two commands, receipts included.</p>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ================= NODE BUILDER ================= -->
@@ -405,7 +451,7 @@ const priceStr = (p) => {
 };
 
 /* ---------- routing ---------- */
-const views = ['models', 'model', 'rankings', 'nodes', 'feed', 'build', 'node', 'register', 'qualification'];
+const views = ['models', 'model', 'rankings', 'nodes', 'feed', 'build', 'chat', 'node', 'register', 'qualification'];
 function route() {
   const hash = location.hash || '#/';
   let view = 'models', arg = null;
@@ -414,6 +460,7 @@ function route() {
   else if (hash.startsWith('#/nodes')) view = 'nodes';
   else if (hash.startsWith('#/new')) view = 'feed';
   else if (hash.startsWith('#/build')) view = 'build';
+  else if (hash.startsWith('#/chat')) view = 'chat';
   else if (hash.startsWith('#/node/')) { view = 'node'; arg = decodeURIComponent(hash.slice(7)); }
   else if (hash.startsWith('#/register')) view = 'register';
   else if (hash.startsWith('#/qualification')) view = 'qualification';
@@ -421,7 +468,8 @@ function route() {
   document.querySelectorAll('nav a.tab').forEach((a) => a.classList.toggle('active', a.dataset.view === view || (view === 'model' && a.dataset.view === 'models') || (view === 'node' && a.dataset.view === 'nodes')));
   window.scrollTo(0, 0);
   if (view === 'models') search();
-  if (view === 'model' && arg) loadModel(arg);
+  if (view === 'model' && arg) { $('#view-model').appendChild($('#model-card')); loadModel(arg); }
+  if (view === 'chat') loadChatTargets();
   if (view === 'rankings') loadRankings();
   if (view === 'nodes') loadNodes();
   if (view === 'feed') loadFeed();
@@ -476,13 +524,43 @@ async function search() {
     const { offerings } = await api('/v0/offerings?' + p);
     lastResults = offerings;
     $('#m-counts').textContent = offerings.length + (offerings.length === 60 ? '+' : '') + ' offerings';
-    $('#m-results').innerHTML = offerings.map(renderRow).join('')
+    $('#m-list').innerHTML = offerings.map(renderItem).join('')
       || '<p class="sub">No offerings match. A fresh registry fills up via catalog imports and node registrations.</p>';
-    $('#m-foot').textContent = offerings.length === 60 ? 'showing first 60 — refine filters to narrow' : '';
-  } catch (e) { $('#m-results').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
+    document.querySelectorAll('.mitem').forEach((el) => el.addEventListener('click', () => selectModel(el)));
+    // keep the current selection when still listed, else select the first result
+    const current = $('#model-card')?.dataset.artifact;
+    const keep = current && [...document.querySelectorAll('.mitem')].find((el) => el.dataset.artifact === current);
+    const target = keep ?? document.querySelector('.mitem');
+    if (target) selectModel(target);
+    else $('#m-detail').innerHTML = '<p class="sub">No offerings match.</p>';
+  } catch (e) { $('#m-list').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
+}
+
+function selectModel(el) {
+  document.querySelectorAll('.mitem').forEach((x) => x.classList.toggle('sel', x === el));
+  const host = $('#m-detail');
+  if (!host.contains($('#model-card'))) { host.innerHTML = ''; host.appendChild($('#model-card')); }
+  loadModel(el.dataset.artifact);
 }
 
 let lastResults = [];
+function renderItem(o) {
+  const obs = o.observed || {};
+  return `<div class="mitem" data-artifact="${esc(o.model.artifact)}">
+    <div class="t">
+      <span class="nm">${esc(o.model.name)}</span>
+      ${tierChip(o.tier)}
+      ${o.local ? '<span class="chip loc">LOCAL</span>' : (o.source === 'import' ? '<span class="chip imp">IMP</span>' : '')}
+    </div>
+    <div class="b">
+      <span><b style="color:var(--ink)">${priceStr(o.pricing)}</b></span>
+      ${o.serving?.context_window ? `<span>ctx ${fmtInt(o.serving.context_window)}${o.serving.context_capped_from ? ' <span class="micro m-warn">▼</span>' : ''}</span>` : ''}
+      ${obs.ttft_ms?.p50 != null ? `<span>${obs.ttft_ms.p50}ms <span class="micro m-measured">●</span></span>` : ''}
+      <span class="mono">${fmt(o.rank)}</span>
+    </div>
+  </div>`;
+}
+
 window.toggleRow = async function (el, idx) {
   const o = lastResults[idx];
   if (!o) return;
@@ -571,6 +649,7 @@ function renderRow(o, idx) {
 
 /* ---------- model detail ---------- */
 async function loadModel(artifact) {
+  $('#model-card').dataset.artifact = artifact;
   $('#md-crumb').innerHTML = '<a href="#/">Models</a> / ' + esc(artifact);
   $('#md-title').textContent = '…';
   $('#md-offerings').innerHTML = '';
@@ -764,6 +843,93 @@ $('#pg-send').addEventListener('click', async () => {
     out.innerHTML = '<span class="err">' + esc(err.message) + '</span><br><span class="prov">If this is a network/CORS error: the node must allow browser origins. ONP kit nodes do by default; for local Ollama set OLLAMA_ORIGINS to include this page&#39;s origin.</span>';
   } finally { $('#pg-send').disabled = false; }
 });
+
+/* ---------- chat ---------- */
+const chat = { history: [], cost: 0, offerings: [] };
+async function loadChatTargets() {
+  if (chat.offerings.length) return;
+  try {
+    const { offerings } = await api('/v0/offerings?limit=60&modality=text');
+    chat.offerings = offerings;
+    $('#ch-target').innerHTML = offerings.map((o, i) =>
+      `<option value="${i}">${esc(o.model.name)} — ${esc(o.node_id)} — ${priceStr(o.pricing)}</option>`).join('')
+      + '<option value="custom">custom endpoint (your local Ollama / any OpenAI server)</option>';
+  } catch { $('#ch-target').innerHTML = '<option value="custom">custom endpoint</option>'; }
+}
+$('#ch-target').addEventListener('change', () => {
+  $('#ch-customrow').hidden = $('#ch-target').value !== 'custom';
+});
+$('#ch-clear').addEventListener('click', () => {
+  chat.history = []; chat.cost = 0;
+  $('#ch-log').innerHTML = '<p class="sub" style="margin:0">Cleared.</p>';
+  $('#ch-cost').textContent = '';
+});
+$('#ch-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#ch-send').click(); }
+});
+$('#ch-send').addEventListener('click', async () => {
+  const text = $('#ch-input').value.trim();
+  if (!text) return;
+  const isCustom = $('#ch-target').value === 'custom';
+  const offering = isCustom ? null : chat.offerings[Number($('#ch-target').value)];
+  const base = (isCustom ? $('#ch-endpoint').value.trim() : offering?.endpoints.openai ?? '').replace(/\/$/, '');
+  const model = isCustom ? $('#ch-model').value.trim() : offering.binding.model_id;
+  if (!base || !model) { addMsg('assistant', 'Set an endpoint and model id first.'); return; }
+  const keyId = 'onp-key-' + new URL(base).host;
+  const typedKey = $('#ch-key').value.trim();
+  if (typedKey) localStorage.setItem(keyId, typedKey); else $('#ch-key').value = localStorage.getItem(keyId) ?? '';
+  const key = typedKey || localStorage.getItem(keyId) || '';
+
+  $('#ch-input').value = '';
+  chat.history.push({ role: 'user', content: text });
+  addMsg('user', text);
+  const pending = addMsg('assistant', '…');
+  $('#ch-send').disabled = true;
+  const t0 = performance.now();
+  try {
+    const res = await fetch(base + '/chat/completions', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(key ? { authorization: 'Bearer ' + key } : {}),
+        ...(offering ? { 'onp-offering': offering.node_id + '/' + offering.offering_id, 'onp-card-revision': offering.card_revision } : {}),
+      },
+      body: JSON.stringify({ model, messages: chat.history, max_tokens: 1024 }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body?.detail ?? body?.error?.message ?? ('status ' + res.status));
+    const reply = body.choices?.[0]?.message?.content ?? '';
+    chat.history.push({ role: 'assistant', content: reply });
+    const u = body.usage;
+    const turnCost = (offering && u)
+      ? ((offering.pricing.input_per_mtok ?? 0) * u.prompt_tokens + (offering.pricing.output_per_mtok ?? 0) * u.completion_tokens) / 1e6 : 0;
+    chat.cost += turnCost;
+    pending.firstChild.textContent = reply || '(empty response)';
+    pending.querySelector('.mm').textContent = [
+      Math.round(performance.now() - t0) + 'ms',
+      u ? `${u.prompt_tokens}+${u.completion_tokens} tok` : null,
+      res.headers.get('onp-receipt') ? 'receipt ✓' : null,
+    ].filter(Boolean).join(' · ');
+    $('#ch-cost').textContent = chat.cost > 0 ? `session cost: $${(Math.round(chat.cost * 1e6) / 1e6)}` : '';
+  } catch (err) {
+    chat.history.pop(); // failed turn doesn't poison the context
+    pending.firstChild.textContent = '';
+    pending.querySelector('.mm').innerHTML = '<span class="err">' + esc(err.message) + '</span> <span class="prov" style="display:inline">— if this is a CORS/network error, the node must allow browser origins (local Ollama: set OLLAMA_ORIGINS)</span>';
+  } finally { $('#ch-send').disabled = false; $('#ch-input').focus(); }
+});
+function addMsg(role, text) {
+  if ($('#ch-log').querySelector('p.sub')) $('#ch-log').innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  const span = document.createElement('span');
+  span.textContent = text;
+  const meta = document.createElement('span');
+  meta.className = 'mm prov';
+  div.append(span, meta);
+  $('#ch-log').appendChild(div);
+  $('#ch-log').scrollTop = $('#ch-log').scrollHeight;
+  return div;
+}
 
 /* ---------- node builder ---------- */
 const nb = { model: null, runtime: null };
