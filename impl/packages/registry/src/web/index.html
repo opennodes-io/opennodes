@@ -313,36 +313,68 @@
 <!-- ================= CHAT ================= -->
 <div id="view-chat" hidden>
   <h1>Chat</h1>
-  <p class="sub">Multi-turn chat, straight from your browser to the node you pick — your messages never pass through this registry. Costs accumulate from real usage at the pinned price.</p>
+  <p class="sub">Straight from your browser to the nodes you pick — your messages never pass through this registry. Add several models and switch modes: compare them in parallel, let a jury judge their answers, or chain them into a pipeline.</p>
   <div class="chatgrid">
-    <div class="panel" style="display:flex; flex-direction:column">
-      <div class="chatlog" id="ch-log"><p class="sub" style="margin:0">Pick a target on the right and say something.</p></div>
-      <div class="chatbar">
-        <textarea id="ch-input" rows="2" placeholder="Message…"></textarea>
-        <button class="btn" id="ch-send" style="align-self:flex-end">Send</button>
+    <div style="display:flex; flex-direction:column; gap:0.9rem; min-width:0">
+      <div class="panel" style="display:flex; flex-direction:column">
+        <div class="chatlog" id="ch-log"><p class="sub" style="margin:0">Add a model on the right and say something.</p></div>
+        <div class="chatbar">
+          <textarea id="ch-input" rows="2" placeholder="Message…"></textarea>
+          <button class="btn" id="ch-send" style="align-self:flex-end">Send</button>
+        </div>
       </div>
+      <details class="panel pad">
+        <summary style="cursor:pointer; font-weight:600; font-size:0.9rem">Model tests <span class="counts">smoke probes for the current roster — quick sanity checks, not benchmarks</span></summary>
+        <div id="ct-list" style="display:flex; flex-wrap:wrap; gap:0.8rem; margin:0.8rem 0"></div>
+        <div style="display:flex; gap:0.8rem; align-items:center">
+          <button class="btn sec" id="ct-run" style="padding:0.45rem 0.9rem; font-size:0.78rem">Run tests</button>
+          <span class="prov" id="ct-note">single run each, default temperature — a ✗ is a data point, not a verdict</span>
+        </div>
+        <div class="tablewrap" id="ct-out" style="margin-top:0.8rem"></div>
+      </details>
     </div>
     <div style="display:flex; flex-direction:column; gap:0.9rem">
       <div class="panel pad">
-        <label class="f" style="margin-top:0">Target</label>
-        <select id="ch-target" style="width:100%; font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:5px; padding:0.45rem 0.6rem"></select>
+        <span class="lab" style="font-family:'IBM Plex Mono',monospace; font-size:0.62rem; font-weight:600; letter-spacing:0.12em; color:var(--accent)">ROSTER</span>
+        <div id="ch-chips" style="display:flex; flex-direction:column; gap:0.35rem; margin:0.6rem 0"></div>
+        <select id="ch-add" style="width:100%; font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:5px; padding:0.45rem 0.6rem"></select>
         <div id="ch-customrow" hidden>
           <label class="f">Custom endpoint</label>
           <input class="wide mono" id="ch-endpoint" placeholder="http://127.0.0.1:11434/v1" style="font-size:0.76rem">
           <label class="f">Model id</label>
           <input class="wide mono" id="ch-model" placeholder="gemma3" style="font-size:0.76rem">
+          <button class="btn sec" id="ch-addcustom" style="margin-top:0.5rem; padding:0.35rem 0.8rem; font-size:0.74rem">Add custom</button>
         </div>
-        <label class="f">API key <span style="font-weight:400">(if needed — kept in your browser)</span></label>
+        <label class="f">Mode</label>
+        <select id="ch-mode" style="width:100%; font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:5px; padding:0.45rem 0.6rem">
+          <option value="single">Single — multi-turn with the first model</option>
+          <option value="compare">Compare — all models answer in parallel</option>
+          <option value="jury">Jury — parallel answers, one model judges</option>
+          <option value="pipeline">Pipeline — sequential refine through the roster</option>
+        </select>
+        <div id="ch-juryrow" hidden>
+          <label class="f">Judge</label>
+          <select id="ch-judge" style="width:100%; font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:5px; padding:0.45rem 0.6rem"></select>
+        </div>
+        <details style="margin-top:0.7rem">
+          <summary class="prov" style="cursor:pointer">scenario instructions</summary>
+          <label class="f">Pipeline step instruction</label>
+          <textarea id="ch-seqprompt" rows="3" class="wide" style="font-size:0.76rem; resize:vertical">You receive a question and a previous answer. Improve and correct it. Reply with the improved answer only.</textarea>
+          <label class="f">Jury instruction</label>
+          <textarea id="ch-juryprompt" rows="3" class="wide" style="font-size:0.76rem; resize:vertical">You are the judge. Compare the candidate answers to the question. Name the best one (by letter), then justify your verdict in two sentences.</textarea>
+        </details>
+        <label class="f">API key <span style="font-weight:400">(per host, kept in your browser)</span></label>
         <input class="wide mono" id="ch-key" type="password" placeholder="optional" style="font-size:0.76rem">
-        <div style="display:flex; gap:0.6rem; margin-top:0.8rem; align-items:center">
+        <div style="display:flex; gap:0.6rem; margin-top:0.8rem; align-items:center; flex-wrap:wrap">
           <button class="btn sec" id="ch-clear" style="padding:0.4rem 0.8rem; font-size:0.76rem">Clear chat</button>
-          <span class="prov" id="ch-cost" style="margin:0"></span>
+          <span class="prov" id="ch-est" style="margin:0"></span>
         </div>
+        <div class="prov" id="ch-cost" style="margin-top:0.4rem"></div>
       </div>
       <div class="panel pad">
         <span class="lab" style="font-family:'IBM Plex Mono',monospace; font-size:0.62rem; font-weight:600; letter-spacing:0.12em; color:var(--accent)">DESKTOP &amp; APPS</span>
         <p style="font-size:0.8rem; color:var(--muted); margin:0.5rem 0 0.4rem">A desktop client (the OpenNodes cockpit) is in development — <a href="https://github.com/opennodes-io/opennodes">watch the repository</a> for its first release.</p>
-        <p style="font-size:0.8rem; color:var(--muted); margin:0">Available today: bring every model here into <b>Cursor, VS Code, or any OpenAI-compatible app</b> via the <a href="https://github.com/opennodes-io/opennodes/tree/main/impl">onp gateway and MCP server</a> — two commands, receipts included.</p>
+        <p style="font-size:0.8rem; color:var(--muted); margin:0">Available today: bring every model here into <b>Cursor, VS Code, or any OpenAI-compatible app</b> via the <a href="https://github.com/opennodes-io/opennodes/tree/main/impl">onp gateway and MCP server</a>.</p>
       </div>
     </div>
   </div>
@@ -844,20 +876,49 @@ $('#pg-send').addEventListener('click', async () => {
   } finally { $('#pg-send').disabled = false; }
 });
 
-/* ---------- chat ---------- */
-const chat = { history: [], cost: 0, offerings: [] };
+/* ---------- chat: roster, modes (single/compare/jury/pipeline), tests ----------
+   Jury verdict structure adapted from the author's LLM Jury project (synthesis +
+   per-candidate scores + best answer), with candidates anonymized as A/B/C. */
+const chat = { roster: [], history: [], cost: 0, offerings: [] };
+
 async function loadChatTargets() {
+  renderTests();
   if (chat.offerings.length) return;
   try {
     const { offerings } = await api('/v0/offerings?limit=60&modality=text');
     chat.offerings = offerings;
-    $('#ch-target').innerHTML = offerings.map((o, i) =>
-      `<option value="${i}">${esc(o.model.name)} — ${esc(o.node_id)} — ${priceStr(o.pricing)}</option>`).join('')
-      + '<option value="custom">custom endpoint (your local Ollama / any OpenAI server)</option>';
-  } catch { $('#ch-target').innerHTML = '<option value="custom">custom endpoint</option>'; }
+    $('#ch-add').innerHTML = '<option value="">+ Add a model…</option>'
+      + offerings.map((o, i) => `<option value="${i}">${esc(o.model.name)} — ${esc(o.node_id)} — ${priceStr(o.pricing)}</option>`).join('')
+      + '<option value="custom">custom endpoint (local Ollama / any OpenAI server)</option>';
+  } catch { $('#ch-add').innerHTML = '<option value="custom">custom endpoint</option>'; }
 }
-$('#ch-target').addEventListener('change', () => {
-  $('#ch-customrow').hidden = $('#ch-target').value !== 'custom';
+
+const targetLabel = (t) => t.offering ? t.offering.model.name : `${t.custom.model} @ ${new URL(t.custom.base).host}`;
+const targetKeyBase = (t) => (t.offering ? t.offering.endpoints.openai : t.custom.base).replace(/\/$/, '');
+
+$('#ch-add').addEventListener('change', () => {
+  const v = $('#ch-add').value;
+  $('#ch-customrow').hidden = v !== 'custom';
+  if (v !== '' && v !== 'custom') {
+    const o = chat.offerings[Number(v)];
+    if (!chat.roster.some((t) => t.offering && t.offering.node_id === o.node_id && t.offering.offering_id === o.offering_id)) {
+      chat.roster.push({ offering: o });
+      renderRoster();
+    }
+    $('#ch-add').value = '';
+  }
+});
+$('#ch-addcustom').addEventListener('click', () => {
+  const base = $('#ch-endpoint').value.trim().replace(/\/$/, '');
+  const model = $('#ch-model').value.trim();
+  if (!base || !model) return;
+  chat.roster.push({ custom: { base, model } });
+  $('#ch-customrow').hidden = true; $('#ch-add').value = '';
+  renderRoster();
+});
+$('#ch-mode').addEventListener('change', () => {
+  $('#ch-juryrow').hidden = $('#ch-mode').value !== 'jury';
+  refreshEstimate();
 });
 $('#ch-clear').addEventListener('click', () => {
   chat.history = []; chat.cost = 0;
@@ -867,69 +928,213 @@ $('#ch-clear').addEventListener('click', () => {
 $('#ch-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#ch-send').click(); }
 });
-$('#ch-send').addEventListener('click', async () => {
-  const text = $('#ch-input').value.trim();
-  if (!text) return;
-  const isCustom = $('#ch-target').value === 'custom';
-  const offering = isCustom ? null : chat.offerings[Number($('#ch-target').value)];
-  const base = (isCustom ? $('#ch-endpoint').value.trim() : offering?.endpoints.openai ?? '').replace(/\/$/, '');
-  const model = isCustom ? $('#ch-model').value.trim() : offering.binding.model_id;
-  if (!base || !model) { addMsg('assistant', 'Set an endpoint and model id first.'); return; }
-  const keyId = 'onp-key-' + new URL(base).host;
-  const typedKey = $('#ch-key').value.trim();
-  if (typedKey) localStorage.setItem(keyId, typedKey); else $('#ch-key').value = localStorage.getItem(keyId) ?? '';
-  const key = typedKey || localStorage.getItem(keyId) || '';
 
-  $('#ch-input').value = '';
-  chat.history.push({ role: 'user', content: text });
-  addMsg('user', text);
-  const pending = addMsg('assistant', '…');
-  $('#ch-send').disabled = true;
-  const t0 = performance.now();
+function renderRoster() {
+  $('#ch-chips').innerHTML = chat.roster.map((t, i) => `
+    <div style="display:flex; align-items:center; gap:0.5rem; border:1px solid var(--line); border-radius:6px; padding:0.35rem 0.6rem; font-size:0.78rem">
+      <span class="mono" style="font-size:0.66rem; color:var(--accent)">${i + 1}</span>
+      <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"><b>${esc(targetLabel(t))}</b>${t.offering ? ` <span style="color:var(--muted)">${esc(t.offering.node_id)}</span>` : ' <span class="chip">custom</span>'}</span>
+      <span style="cursor:pointer; color:var(--muted)" data-rm="${i}" title="remove">✕</span>
+    </div>`).join('') || '<p class="prov" style="margin:0">no models yet</p>';
+  document.querySelectorAll('#ch-chips [data-rm]').forEach((x) => x.addEventListener('click', () => {
+    chat.roster.splice(Number(x.dataset.rm), 1); renderRoster();
+  }));
+  $('#ch-judge').innerHTML = chat.roster.map((t, i) => `<option value="${i}">${i + 1} · ${esc(targetLabel(t))}</option>`).join('');
+  if (chat.roster.length) $('#ch-judge').value = String(chat.roster.length - 1);
+  refreshEstimate();
+}
+
+async function refreshEstimate() {
+  const est = $('#ch-est');
+  const offeringTargets = chat.roster.filter((t) => t.offering);
+  if (!offeringTargets.length) { est.textContent = ''; return; }
+  const mode = $('#ch-mode').value;
+  const steps = (mode === 'single' ? offeringTargets.slice(0, 1) : offeringTargets)
+    .map((t) => ({ offering: `${t.offering.node_id}/${t.offering.offering_id}`, est_input_tokens: 1000, est_output_tokens: 300 }));
+  if (mode === 'jury') {
+    const j = chat.roster[Number($('#ch-judge').value)];
+    if (j?.offering) steps.push({ offering: `${j.offering.node_id}/${j.offering.offering_id}`, est_input_tokens: 2500, est_output_tokens: 500 });
+  }
   try {
-    const res = await fetch(base + '/chat/completions', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(key ? { authorization: 'Bearer ' + key } : {}),
-        ...(offering ? { 'onp-offering': offering.node_id + '/' + offering.offering_id, 'onp-card-revision': offering.card_revision } : {}),
-      },
-      body: JSON.stringify({ model, messages: chat.history, max_tokens: 1024 }),
-    });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body?.detail ?? body?.error?.message ?? ('status ' + res.status));
-    const reply = body.choices?.[0]?.message?.content ?? '';
-    chat.history.push({ role: 'assistant', content: reply });
-    const u = body.usage;
-    const turnCost = (offering && u)
-      ? ((offering.pricing.input_per_mtok ?? 0) * u.prompt_tokens + (offering.pricing.output_per_mtok ?? 0) * u.completion_tokens) / 1e6 : 0;
-    chat.cost += turnCost;
-    pending.firstChild.textContent = reply || '(empty response)';
-    pending.querySelector('.mm').textContent = [
-      Math.round(performance.now() - t0) + 'ms',
-      u ? `${u.prompt_tokens}+${u.completion_tokens} tok` : null,
-      res.headers.get('onp-receipt') ? 'receipt ✓' : null,
-    ].filter(Boolean).join(' · ');
-    $('#ch-cost').textContent = chat.cost > 0 ? `session cost: $${(Math.round(chat.cost * 1e6) / 1e6)}` : '';
-  } catch (err) {
-    chat.history.pop(); // failed turn doesn't poison the context
-    pending.firstChild.textContent = '';
-    pending.querySelector('.mm').innerHTML = '<span class="err">' + esc(err.message) + '</span> <span class="prov" style="display:inline">— if this is a CORS/network error, the node must allow browser origins (local Ollama: set OLLAMA_ORIGINS)</span>';
-  } finally { $('#ch-send').disabled = false; $('#ch-input').focus(); }
-});
-function addMsg(role, text) {
+    const r = await api('/v0/estimate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ steps }) });
+    est.textContent = `≈ $${r.total.min}–${r.total.max} per turn (enforceable estimate${chat.roster.some((t) => t.custom) ? '; custom endpoints excluded' : ''})`;
+  } catch { est.textContent = ''; }
+}
+$('#ch-judge').addEventListener('change', refreshEstimate);
+
+async function callTarget(t, messages, maxTokens = 1024) {
+  const base = targetKeyBase(t);
+  const model = t.offering ? t.offering.binding.model_id : t.custom.model;
+  const keyId = 'onp-key-' + new URL(base).host;
+  const typed = $('#ch-key').value.trim();
+  if (typed) localStorage.setItem(keyId, typed);
+  const key = typed || localStorage.getItem(keyId) || '';
+  const t0 = performance.now();
+  const res = await fetch(base + '/chat/completions', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(key ? { authorization: 'Bearer ' + key } : {}),
+      ...(t.offering ? { 'onp-offering': t.offering.node_id + '/' + t.offering.offering_id, 'onp-card-revision': t.offering.card_revision } : {}),
+    },
+    body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.detail ?? body?.error?.message ?? ('status ' + res.status));
+  const u = body.usage;
+  const cost = (t.offering && u)
+    ? ((t.offering.pricing.input_per_mtok ?? 0) * u.prompt_tokens + (t.offering.pricing.output_per_mtok ?? 0) * u.completion_tokens) / 1e6 : 0;
+  chat.cost += cost;
+  $('#ch-cost').textContent = chat.cost > 0 ? `session cost: $${Math.round(chat.cost * 1e6) / 1e6}` : '';
+  return {
+    text: body.choices?.[0]?.message?.content ?? '',
+    usage: u, ms: Math.round(performance.now() - t0),
+    receipt: Boolean(res.headers.get('onp-receipt')),
+  };
+}
+const metaLine = (r) => [r.ms + 'ms', r.usage ? `${r.usage.prompt_tokens}+${r.usage.completion_tokens} tok` : null, r.receipt ? 'receipt ✓' : null].filter(Boolean).join(' · ');
+const corsHint = ' — if this is a CORS/network error, the node must allow browser origins (local Ollama: set OLLAMA_ORIGINS)';
+
+function logEl(html) {
   if ($('#ch-log').querySelector('p.sub')) $('#ch-log').innerHTML = '';
   const div = document.createElement('div');
-  div.className = 'msg ' + role;
-  const span = document.createElement('span');
-  span.textContent = text;
-  const meta = document.createElement('span');
-  meta.className = 'mm prov';
-  div.append(span, meta);
-  $('#ch-log').appendChild(div);
+  div.innerHTML = html;
+  const el = div.firstElementChild;
+  $('#ch-log').appendChild(el);
   $('#ch-log').scrollTop = $('#ch-log').scrollHeight;
-  return div;
+  return el;
 }
+const userBubble = (text) => logEl(`<div class="msg user"><span></span></div>`).firstChild.textContent = text;
+const candCard = (label) => `<div class="panel pad" style="min-width:0"><div style="display:flex; gap:0.5rem; align-items:baseline"><b style="font-size:0.8rem">${esc(label)}</b><span class="mm prov" style="margin:0"></span></div><div class="ctext" style="font-size:0.86rem; white-space:pre-wrap; line-height:1.5; margin-top:0.4rem">…</div></div>`;
+
+$('#ch-send').addEventListener('click', async () => {
+  const text = $('#ch-input').value.trim();
+  if (!text || !chat.roster.length) {
+    if (!chat.roster.length) logEl('<div class="msg assistant"><span>Add at least one model to the roster first.</span></div>');
+    return;
+  }
+  $('#ch-input').value = '';
+  $('#ch-send').disabled = true;
+  const mode = $('#ch-mode').value;
+  try {
+    userBubble(text);
+    if (mode === 'single') await runSingle(text);
+    else if (mode === 'compare') await runFanout(text, false);
+    else if (mode === 'jury') await runFanout(text, true);
+    else await runPipeline(text);
+  } finally { $('#ch-send').disabled = false; $('#ch-input').focus(); }
+});
+
+async function runSingle(text) {
+  chat.history.push({ role: 'user', content: text });
+  const el = logEl('<div class="msg assistant"><span>…</span><span class="mm prov"></span></div>');
+  try {
+    const r = await callTarget(chat.roster[0], chat.history);
+    chat.history.push({ role: 'assistant', content: r.text });
+    el.firstChild.textContent = r.text || '(empty response)';
+    el.querySelector('.mm').textContent = metaLine(r);
+  } catch (err) {
+    chat.history.pop();
+    el.firstChild.textContent = '';
+    el.querySelector('.mm').innerHTML = '<span class="err">' + esc(err.message) + '</span>' + corsHint;
+  }
+}
+
+async function runFanout(text, withJury) {
+  const block = logEl(`<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(16rem, 1fr)); gap:0.6rem; align-self:stretch">${chat.roster.map((t, i) => candCard((withJury ? String.fromCharCode(65 + i) + ' · ' : '') + targetLabel(t))).join('')}</div>`);
+  const cards = [...block.children];
+  const answers = await Promise.all(chat.roster.map(async (t, i) => {
+    try {
+      const r = await callTarget(t, [{ role: 'user', content: text }]);
+      cards[i].querySelector('.ctext').textContent = r.text || '(empty)';
+      cards[i].querySelector('.mm').textContent = metaLine(r);
+      return { label: String.fromCharCode(65 + i), text: r.text, ok: true };
+    } catch (err) {
+      cards[i].querySelector('.ctext').innerHTML = '<span class="err">' + esc(err.message) + '</span><span class="prov">' + corsHint + '</span>';
+      return { label: String.fromCharCode(65 + i), ok: false };
+    }
+  }));
+  if (!withJury) return;
+  const good = answers.filter((a) => a.ok);
+  if (good.length < 2) { logEl('<div class="msg assistant"><span>Jury needs at least two successful answers.</span></div>'); return; }
+  const judge = chat.roster[Number($('#ch-judge').value)] ?? chat.roster[chat.roster.length - 1];
+  const jEl = logEl(`<div class="panel pad" style="align-self:stretch; border-color:var(--accent)"><div style="display:flex; gap:0.5rem; align-items:baseline"><b style="font-size:0.8rem; color:var(--accent)">VERDICT · judge: ${esc(targetLabel(judge))}</b><span class="mm prov" style="margin:0"></span></div><div class="ctext" style="font-size:0.86rem; white-space:pre-wrap; line-height:1.5; margin-top:0.4rem">deliberating…</div></div>`);
+  const prompt = `${$('#ch-juryprompt').value.trim()}
+
+QUESTION: ${text}
+
+CANDIDATE ANSWERS (models anonymized):
+${good.map((a) => `--- CANDIDATE ${a.label} ---\n${a.text}`).join('\n\n')}
+
+Format your verdict as:
+BEST: [candidate letter]
+SYNTHESIS: [one unified answer combining the best of all candidates]
+SCORES: ${good.map((a) => a.label + '=[0-100]').join(' ')}
+REASON: [two sentences]`;
+  try {
+    const r = await callTarget(judge, [{ role: 'user', content: prompt }], 1024);
+    jEl.querySelector('.ctext').textContent = r.text;
+    jEl.querySelector('.mm').textContent = metaLine(r);
+    const best = r.text.match(/BEST:\s*([A-Z])/)?.[1];
+    if (best) {
+      const idx = best.charCodeAt(0) - 65;
+      if (cards[idx]) { cards[idx].style.borderColor = 'var(--good)'; cards[idx].querySelector('b').innerHTML += ' <span class="micro m-measured">★ BEST</span>'; }
+    }
+  } catch (err) { jEl.querySelector('.ctext').innerHTML = '<span class="err">' + esc(err.message) + '</span>'; }
+}
+
+async function runPipeline(text) {
+  let current = null;
+  for (let i = 0; i < chat.roster.length; i++) {
+    const t = chat.roster[i];
+    const last = i === chat.roster.length - 1;
+    const el = logEl(`<div class="panel pad" style="align-self:stretch${last ? '; border-color:var(--accent)' : ''}"><div style="display:flex; gap:0.5rem; align-items:baseline"><b style="font-size:0.8rem${last ? '; color:var(--accent)' : ''}">STEP ${i + 1}${last ? ' · FINAL' : ''} · ${esc(targetLabel(t))}</b><span class="mm prov" style="margin:0"></span></div><div class="ctext" style="font-size:0.86rem; white-space:pre-wrap; line-height:1.5; margin-top:0.4rem">…</div></div>`);
+    const content = i === 0 ? text
+      : `${$('#ch-seqprompt').value.trim()}\n\nQUESTION: ${text}\n\nPREVIOUS ANSWER:\n${current}`;
+    try {
+      const r = await callTarget(t, [{ role: 'user', content }]);
+      current = r.text;
+      el.querySelector('.ctext').textContent = r.text || '(empty)';
+      el.querySelector('.mm').textContent = metaLine(r);
+    } catch (err) {
+      el.querySelector('.ctext').innerHTML = '<span class="err">' + esc(err.message) + '</span><span class="prov">' + corsHint + ' — pipeline stopped</span>';
+      return;
+    }
+  }
+}
+
+/* ---------- model tests (smoke probes) ---------- */
+const TESTS = [
+  { id: 'count', label: 'letter count (r in strawberry)', prompt: 'How many times does the letter r appear in the word strawberry? Reply with only the number.', check: (t) => /(^|[^\d])3([^\d]|$)/.test(t) },
+  { id: 'math', label: 'arithmetic 17×24', prompt: 'What is 17 multiplied by 24? Reply with only the number.', check: (t) => t.replace(/[,\s]/g, '').includes('408') },
+  { id: 'follow', label: 'instruction: exactly PONG', prompt: 'Reply with exactly the word PONG in uppercase and nothing else.', check: (t) => t.trim() === 'PONG' },
+  { id: 'json', label: 'strict JSON output', prompt: 'Return exactly this JSON object and nothing else: {"a":1,"b":2}', check: (t) => { try { const s = t.trim().replace(/^```(json)?|```$/g, '').trim(); const o = JSON.parse(s); return o.a === 1 && o.b === 2; } catch { return false; } } },
+  { id: 'recall', label: 'context recall (buried secret)', prompt: 'Context: ' + 'The quick brown fox jumps over the lazy dog. '.repeat(50) + 'The secret word is kumquat-742. ' + 'Pack my box with five dozen liquor jugs. '.repeat(20) + 'Question: what is the secret word? Reply with only the secret word.', check: (t) => t.includes('kumquat-742') },
+  { id: 'compare', label: 'is 3.11 > 3.9?', prompt: 'Is 3.11 greater than 3.9? Reply with only yes or no.', check: (t) => /\bno\b/i.test(t) && !/\byes\b/i.test(t) },
+];
+function renderTests() {
+  if ($('#ct-list').children.length) return;
+  $('#ct-list').innerHTML = TESTS.map((t) =>
+    `<label style="display:flex; gap:0.35rem; align-items:center; font-size:0.78rem; cursor:pointer"><input type="checkbox" checked data-test="${t.id}">${esc(t.label)}</label>`).join('');
+}
+$('#ct-run').addEventListener('click', async () => {
+  if (!chat.roster.length) { $('#ct-out').innerHTML = '<p class="sub">Add models to the roster first.</p>'; return; }
+  const picked = TESTS.filter((t) => $(`#ct-list input[data-test="${t.id}"]`)?.checked);
+  if (!picked.length) return;
+  $('#ct-run').disabled = true;
+  $('#ct-out').innerHTML = `<table class="grid num"><thead><tr><th>TEST</th>${chat.roster.map((t) => `<th>${esc(targetLabel(t)).toUpperCase().slice(0, 24)}</th>`).join('')}</tr></thead><tbody>${picked.map((t) => `<tr data-row="${t.id}"><td>${esc(t.label)}</td>${chat.roster.map((_, i) => `<td data-cell="${t.id}-${i}">…</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  await Promise.all(chat.roster.flatMap((target, i) => picked.map(async (test) => {
+    const cell = document.querySelector(`[data-cell="${test.id}-${i}"]`);
+    try {
+      const r = await callTarget(target, [{ role: 'user', content: test.prompt }], 128);
+      const pass = test.check(r.text ?? '');
+      cell.innerHTML = pass
+        ? `<span class="ok">✓</span> <span class="prov" style="display:inline">${r.ms}ms</span>`
+        : `<span class="fail">✗</span> <span class="prov" style="display:inline" title="${esc((r.text ?? '').slice(0, 200))}">${r.ms}ms</span>`;
+    } catch (err) { cell.innerHTML = `<span class="warncol" title="${esc(err.message)}">⚠</span>`; }
+  })));
+  $('#ct-run').disabled = false;
+});
 
 /* ---------- node builder ---------- */
 const nb = { model: null, runtime: null };
