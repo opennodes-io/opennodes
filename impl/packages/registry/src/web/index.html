@@ -348,13 +348,22 @@
         <label class="f">Mode</label>
         <select id="ch-mode" style="width:100%; font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:5px; padding:0.45rem 0.6rem">
           <option value="single">Single — multi-turn with the first model</option>
-          <option value="compare">Compare — all models answer in parallel</option>
+          <option value="compare">Compare — parallel, each model keeps its own memory</option>
           <option value="jury">Jury — parallel answers, one model judges</option>
           <option value="pipeline">Pipeline — sequential refine through the roster</option>
+          <option value="iterative">Iterative — rounds of mutual revision, then verdict</option>
         </select>
+        <p class="prov" id="ch-modenote" style="margin:0.3rem 0 0"></p>
         <div id="ch-juryrow" hidden>
           <label class="f">Judge</label>
           <select id="ch-judge" style="width:100%; font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:5px; padding:0.45rem 0.6rem"></select>
+        </div>
+        <div id="ch-iterrow" hidden>
+          <label class="f">Rounds</label>
+          <select id="ch-rounds" style="width:100%; font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:5px; padding:0.45rem 0.6rem">
+            <option value="2">2 — answer, then revise</option>
+            <option value="3">3 — answer, rebut, revise</option>
+          </select>
         </div>
         <details style="margin-top:0.7rem">
           <summary class="prov" style="cursor:pointer">scenario instructions</summary>
@@ -362,6 +371,22 @@
           <textarea id="ch-seqprompt" rows="3" class="wide" style="font-size:0.76rem; resize:vertical">You receive a question and a previous answer. Improve and correct it. Reply with the improved answer only.</textarea>
           <label class="f">Jury instruction</label>
           <textarea id="ch-juryprompt" rows="3" class="wide" style="font-size:0.76rem; resize:vertical">You are the judge. Compare the candidate answers to the question. Name the best one (by letter), then justify your verdict in two sentences.</textarea>
+          <label class="f">Revision instruction (iterative rounds)</label>
+          <textarea id="ch-revprompt" rows="3" class="wide" style="font-size:0.76rem; resize:vertical">You previously answered this question. Review the other candidates' answers: note where you agree, where you disagree and why, then provide your revised answer. Reply with the revised answer only.</textarea>
+        </details>
+        <details style="margin-top:0.5rem">
+          <summary class="prov" style="cursor:pointer">scenarios — save &amp; load</summary>
+          <div style="display:flex; gap:0.4rem; margin-top:0.5rem">
+            <input class="wide" id="sc-name" placeholder="scenario name" style="font-size:0.76rem">
+            <button class="btn sec" id="sc-save" style="padding:0.35rem 0.7rem; font-size:0.74rem">Save</button>
+          </div>
+          <div style="display:flex; gap:0.4rem; margin-top:0.4rem">
+            <select id="sc-list" style="flex:1; font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:5px; padding:0.35rem 0.5rem; font-size:0.76rem"></select>
+            <button class="btn sec" id="sc-load" style="padding:0.35rem 0.7rem; font-size:0.74rem">Load</button>
+            <button class="btn sec" id="sc-del" style="padding:0.35rem 0.7rem; font-size:0.74rem" title="delete">✕</button>
+          </div>
+          <button class="btn sec" id="sc-export" style="margin-top:0.4rem; padding:0.35rem 0.7rem; font-size:0.74rem">Export as ONP-6 Scenario JSON</button>
+          <p class="prov" id="sc-note" style="margin:0.35rem 0 0">saved in your browser; export produces the portable ONP-6 §5 format</p>
         </details>
         <label class="f">API key <span style="font-weight:400">(per host, kept in your browser)</span></label>
         <input class="wide mono" id="ch-key" type="password" placeholder="optional" style="font-size:0.76rem">
@@ -879,10 +904,13 @@ $('#pg-send').addEventListener('click', async () => {
 /* ---------- chat: roster, modes (single/compare/jury/pipeline), tests ----------
    Jury verdict structure adapted from the author's LLM Jury project (synthesis +
    per-candidate scores + best answer), with candidates anonymized as A/B/C. */
-const chat = { roster: [], history: [], cost: 0, offerings: [] };
+const chat = { roster: [], history: [], mem: {}, cost: 0, offerings: [] };
+const memKey = (t) => targetKeyBase(t) + '|' + (t.offering ? t.offering.binding.model_id : t.custom.model);
 
 async function loadChatTargets() {
   renderTests();
+  scRefreshList();
+  $('#ch-modenote').textContent = MODE_NOTES[$('#ch-mode').value] ?? '';
   if (chat.offerings.length) return;
   try {
     const { offerings } = await api('/v0/offerings?limit=60&modality=text');
@@ -916,12 +944,22 @@ $('#ch-addcustom').addEventListener('click', () => {
   $('#ch-customrow').hidden = true; $('#ch-add').value = '';
   renderRoster();
 });
+const MODE_NOTES = {
+  single: 'streams the reply; full conversation memory',
+  compare: 'each model keeps its own conversation memory',
+  jury: 'stateless per prompt; candidates anonymized for the judge',
+  pipeline: 'stateless per prompt; edit the step instruction below',
+  iterative: 'llm-jury style debate: models see each other’s answers and revise; the judge rules on the final round',
+};
 $('#ch-mode').addEventListener('change', () => {
-  $('#ch-juryrow').hidden = $('#ch-mode').value !== 'jury';
+  const m = $('#ch-mode').value;
+  $('#ch-juryrow').hidden = m !== 'jury' && m !== 'iterative';
+  $('#ch-iterrow').hidden = m !== 'iterative';
+  $('#ch-modenote').textContent = MODE_NOTES[m] ?? '';
   refreshEstimate();
 });
 $('#ch-clear').addEventListener('click', () => {
-  chat.history = []; chat.cost = 0;
+  chat.history = []; chat.mem = {}; chat.cost = 0;
   $('#ch-log').innerHTML = '<p class="sub" style="margin:0">Cleared.</p>';
   $('#ch-cost').textContent = '';
 });
@@ -949,9 +987,14 @@ async function refreshEstimate() {
   const offeringTargets = chat.roster.filter((t) => t.offering);
   if (!offeringTargets.length) { est.textContent = ''; return; }
   const mode = $('#ch-mode').value;
-  const steps = (mode === 'single' ? offeringTargets.slice(0, 1) : offeringTargets)
-    .map((t) => ({ offering: `${t.offering.node_id}/${t.offering.offering_id}`, est_input_tokens: 1000, est_output_tokens: 300 }));
-  if (mode === 'jury') {
+  const rounds = mode === 'iterative' ? Number($('#ch-rounds').value) : 1;
+  const steps = [];
+  for (let r = 0; r < rounds; r++) {
+    for (const t of (mode === 'single' ? offeringTargets.slice(0, 1) : offeringTargets)) {
+      steps.push({ offering: `${t.offering.node_id}/${t.offering.offering_id}`, est_input_tokens: r === 0 ? 1000 : 2500, est_output_tokens: 300 });
+    }
+  }
+  if (mode === 'jury' || mode === 'iterative') {
     const j = chat.roster[Number($('#ch-judge').value)];
     if (j?.offering) steps.push({ offering: `${j.offering.node_id}/${j.offering.offering_id}`, est_input_tokens: 2500, est_output_tokens: 500 });
   }
@@ -992,7 +1035,60 @@ async function callTarget(t, messages, maxTokens = 1024) {
     receipt: Boolean(res.headers.get('onp-receipt')),
   };
 }
-const metaLine = (r) => [r.ms + 'ms', r.usage ? `${r.usage.prompt_tokens}+${r.usage.completion_tokens} tok` : null, r.receipt ? 'receipt ✓' : null].filter(Boolean).join(' · ');
+/** Streaming variant for single mode: SSE deltas via onDelta, usage from the final chunk. */
+async function callTargetStream(t, messages, onDelta, maxTokens = 1024) {
+  const base = targetKeyBase(t);
+  const model = t.offering ? t.offering.binding.model_id : t.custom.model;
+  const keyId = 'onp-key-' + new URL(base).host;
+  const key = $('#ch-key').value.trim() || localStorage.getItem(keyId) || '';
+  const t0 = performance.now();
+  const res = await fetch(base + '/chat/completions', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(key ? { authorization: 'Bearer ' + key } : {}),
+      ...(t.offering ? { 'onp-offering': t.offering.node_id + '/' + t.offering.offering_id, 'onp-card-revision': t.offering.card_revision } : {}),
+    },
+    body: JSON.stringify({ model, messages, max_tokens: maxTokens, stream: true, stream_options: { include_usage: true } }),
+  });
+  if (!res.ok || !res.body) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.detail ?? body?.error?.message ?? ('status ' + res.status));
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '', text = '', usage = null, ttft = null;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, idx).trim();
+      buf = buf.slice(idx + 1);
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (payload === '[DONE]') continue;
+      try {
+        const evt = JSON.parse(payload);
+        usage = evt.usage ?? usage;
+        const delta = evt.choices?.[0]?.delta?.content;
+        if (delta) {
+          if (ttft === null) ttft = Math.round(performance.now() - t0);
+          text += delta;
+          onDelta(text);
+        }
+      } catch { /* partial line */ }
+    }
+  }
+  const cost = (t.offering && usage)
+    ? ((t.offering.pricing.input_per_mtok ?? 0) * usage.prompt_tokens + (t.offering.pricing.output_per_mtok ?? 0) * usage.completion_tokens) / 1e6 : 0;
+  chat.cost += cost;
+  $('#ch-cost').textContent = chat.cost > 0 ? `session cost: $${Math.round(chat.cost * 1e6) / 1e6}` : '';
+  return { text, usage, ms: Math.round(performance.now() - t0), ttft, receipt: Boolean(res.headers.get('onp-receipt')) };
+}
+
+const metaLine = (r) => [r.ttft != null ? `ttft ${r.ttft}ms · ` + r.ms + 'ms total' : r.ms + 'ms', r.usage ? `${r.usage.prompt_tokens}+${r.usage.completion_tokens} tok` : null, r.receipt ? 'receipt ✓' : null].filter(Boolean).join(' · ');
 const corsHint = ' — if this is a CORS/network error, the node must allow browser origins (local Ollama: set OLLAMA_ORIGINS)';
 
 function logEl(html) {
@@ -1019,8 +1115,9 @@ $('#ch-send').addEventListener('click', async () => {
   try {
     userBubble(text);
     if (mode === 'single') await runSingle(text);
-    else if (mode === 'compare') await runFanout(text, false);
-    else if (mode === 'jury') await runFanout(text, true);
+    else if (mode === 'compare') await runCompare(text);
+    else if (mode === 'jury') await runJury(text);
+    else if (mode === 'iterative') await runIterative(text);
     else await runPipeline(text);
   } finally { $('#ch-send').disabled = false; $('#ch-input').focus(); }
 });
@@ -1029,7 +1126,13 @@ async function runSingle(text) {
   chat.history.push({ role: 'user', content: text });
   const el = logEl('<div class="msg assistant"><span>…</span><span class="mm prov"></span></div>');
   try {
-    const r = await callTarget(chat.roster[0], chat.history);
+    let r;
+    try {
+      r = await callTargetStream(chat.roster[0], chat.history, (partial) => { el.firstChild.textContent = partial; });
+    } catch (streamErr) {
+      // some endpoints reject streaming — fall back to a plain call
+      r = await callTarget(chat.roster[0], chat.history);
+    }
     chat.history.push({ role: 'assistant', content: r.text });
     el.firstChild.textContent = r.text || '(empty response)';
     el.querySelector('.mm').textContent = metaLine(r);
@@ -1040,28 +1143,42 @@ async function runSingle(text) {
   }
 }
 
-async function runFanout(text, withJury) {
-  const block = logEl(`<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(16rem, 1fr)); gap:0.6rem; align-self:stretch">${chat.roster.map((t, i) => candCard((withJury ? String.fromCharCode(65 + i) + ' · ' : '') + targetLabel(t))).join('')}</div>`);
+/** One parallel round across the roster. buildMessages(t, i) supplies each model's messages. */
+async function fanoutRound(labelPrefix, buildMessages, { remember = false } = {}) {
+  const block = logEl(`<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(16rem, 1fr)); gap:0.6rem; align-self:stretch">${chat.roster.map((t, i) => candCard(labelPrefix(i) + targetLabel(t))).join('')}</div>`);
   const cards = [...block.children];
   const answers = await Promise.all(chat.roster.map(async (t, i) => {
+    const messages = buildMessages(t, i);
     try {
-      const r = await callTarget(t, [{ role: 'user', content: text }]);
+      const r = await callTarget(t, messages);
       cards[i].querySelector('.ctext').textContent = r.text || '(empty)';
       cards[i].querySelector('.mm').textContent = metaLine(r);
+      if (remember) {
+        const k = memKey(t);
+        chat.mem[k] = [...messages, { role: 'assistant', content: r.text }];
+      }
       return { label: String.fromCharCode(65 + i), text: r.text, ok: true };
     } catch (err) {
       cards[i].querySelector('.ctext').innerHTML = '<span class="err">' + esc(err.message) + '</span><span class="prov">' + corsHint + '</span>';
       return { label: String.fromCharCode(65 + i), ok: false };
     }
   }));
-  if (!withJury) return;
+  return { answers, cards };
+}
+
+async function runCompare(text) {
+  // per-model memory: each model continues its own conversation
+  await fanoutRound(() => '', (t) => [...(chat.mem[memKey(t)] ?? []), { role: 'user', content: text }], { remember: true });
+}
+
+async function runVerdict(question, answers, cards) {
   const good = answers.filter((a) => a.ok);
-  if (good.length < 2) { logEl('<div class="msg assistant"><span>Jury needs at least two successful answers.</span></div>'); return; }
+  if (good.length < 2) { logEl('<div class="msg assistant"><span>The verdict needs at least two successful answers.</span></div>'); return; }
   const judge = chat.roster[Number($('#ch-judge').value)] ?? chat.roster[chat.roster.length - 1];
   const jEl = logEl(`<div class="panel pad" style="align-self:stretch; border-color:var(--accent)"><div style="display:flex; gap:0.5rem; align-items:baseline"><b style="font-size:0.8rem; color:var(--accent)">VERDICT · judge: ${esc(targetLabel(judge))}</b><span class="mm prov" style="margin:0"></span></div><div class="ctext" style="font-size:0.86rem; white-space:pre-wrap; line-height:1.5; margin-top:0.4rem">deliberating…</div></div>`);
   const prompt = `${$('#ch-juryprompt').value.trim()}
 
-QUESTION: ${text}
+QUESTION: ${question}
 
 CANDIDATE ANSWERS (models anonymized):
 ${good.map((a) => `--- CANDIDATE ${a.label} ---\n${a.text}`).join('\n\n')}
@@ -1075,12 +1192,44 @@ REASON: [two sentences]`;
     const r = await callTarget(judge, [{ role: 'user', content: prompt }], 1024);
     jEl.querySelector('.ctext').textContent = r.text;
     jEl.querySelector('.mm').textContent = metaLine(r);
-    const best = r.text.match(/BEST:\s*([A-Z])/)?.[1];
+    const best = r.text.match(/BEST:\s*\[?([A-Z])\]?/)?.[1];
     if (best) {
       const idx = best.charCodeAt(0) - 65;
       if (cards[idx]) { cards[idx].style.borderColor = 'var(--good)'; cards[idx].querySelector('b').innerHTML += ' <span class="micro m-measured">★ BEST</span>'; }
     }
   } catch (err) { jEl.querySelector('.ctext').innerHTML = '<span class="err">' + esc(err.message) + '</span>'; }
+}
+
+async function runJury(text) {
+  const { answers, cards } = await fanoutRound((i) => String.fromCharCode(65 + i) + ' · ', () => [{ role: 'user', content: text }]);
+  await runVerdict(text, answers, cards);
+}
+
+/** Iterative debate (pattern from the LLM Jury project): initial answers, then rounds
+ *  where each model sees the others' answers and revises; the judge rules on the final round. */
+async function runIterative(text) {
+  const rounds = Number($('#ch-rounds').value);
+  logEl('<div class="prov" style="align-self:stretch">ROUND 1 · initial answers</div>');
+  let { answers, cards } = await fanoutRound((i) => String.fromCharCode(65 + i) + ' · ', () => [{ role: 'user', content: text }]);
+  for (let round = 2; round <= rounds; round++) {
+    const prev = answers;
+    logEl(`<div class="prov" style="align-self:stretch">ROUND ${round} · ${round === rounds ? 'final revision' : 'rebuttal'}</div>`);
+    ({ answers, cards } = await fanoutRound((i) => String.fromCharCode(65 + i) + ' · ', (t, i) => {
+      const own = prev[i]?.ok ? prev[i].text : '(your previous attempt failed)';
+      const others = prev.filter((a, j) => j !== i && a.ok)
+        .map((a) => `--- CANDIDATE ${a.label} ---\n${a.text}`).join('\n\n') || '(no other answers succeeded)';
+      return [{ role: 'user', content: `${$('#ch-revprompt').value.trim()}
+
+QUESTION: ${text}
+
+YOUR PREVIOUS ANSWER:
+${own}
+
+OTHER CANDIDATES' ANSWERS:
+${others}` }];
+    }));
+  }
+  await runVerdict(text, answers, cards);
 }
 
 async function runPipeline(text) {
@@ -1102,6 +1251,90 @@ async function runPipeline(text) {
     }
   }
 }
+
+/* ---------- scenarios: save/load locally, export as ONP-6 §5 ---------- */
+$('#ch-rounds')?.addEventListener('change', refreshEstimate);
+const SC_STORE = 'onp-chat-scenarios';
+const scAll = () => { try { return JSON.parse(localStorage.getItem(SC_STORE)) ?? {}; } catch { return {}; } };
+function scRefreshList() {
+  const names = Object.keys(scAll());
+  $('#sc-list').innerHTML = names.length
+    ? names.map((n) => `<option>${esc(n)}</option>`).join('')
+    : '<option value="">(none saved)</option>';
+}
+function scSnapshot(name) {
+  return {
+    name, saved_at: new Date().toISOString(),
+    mode: $('#ch-mode').value,
+    rounds: Number($('#ch-rounds').value),
+    judge: Number($('#ch-judge').value) || 0,
+    roster: chat.roster.map((t) => t.offering
+      ? { pin: `${t.offering.node_id}/${t.offering.offering_id}` }
+      : { custom: t.custom }),
+    instructions: { pipeline: $('#ch-seqprompt').value, jury: $('#ch-juryprompt').value, revise: $('#ch-revprompt').value },
+  };
+}
+$('#sc-save').addEventListener('click', () => {
+  const name = $('#sc-name').value.trim();
+  if (!name || !chat.roster.length) { $('#sc-note').textContent = 'name the scenario and add at least one model'; return; }
+  const all = scAll(); all[name] = scSnapshot(name);
+  localStorage.setItem(SC_STORE, JSON.stringify(all));
+  scRefreshList(); $('#sc-list').value = name;
+  $('#sc-note').textContent = `saved "${name}"`;
+});
+$('#sc-load').addEventListener('click', async () => {
+  const sc = scAll()[$('#sc-list').value];
+  if (!sc) return;
+  await loadChatTargets();
+  chat.roster = [];
+  const missing = [];
+  for (const entry of sc.roster) {
+    if (entry.custom) chat.roster.push({ custom: entry.custom });
+    else {
+      const [nodeId, offId] = entry.pin.split('/');
+      const o = chat.offerings.find((x) => x.node_id === nodeId && x.offering_id === offId);
+      if (o) chat.roster.push({ offering: o }); else missing.push(entry.pin);
+    }
+  }
+  $('#ch-mode').value = sc.mode; $('#ch-mode').dispatchEvent(new Event('change'));
+  $('#ch-rounds').value = String(sc.rounds || 2);
+  $('#ch-seqprompt').value = sc.instructions?.pipeline ?? $('#ch-seqprompt').value;
+  $('#ch-juryprompt').value = sc.instructions?.jury ?? $('#ch-juryprompt').value;
+  $('#ch-revprompt').value = sc.instructions?.revise ?? $('#ch-revprompt').value;
+  renderRoster();
+  if (sc.judge < chat.roster.length) $('#ch-judge').value = String(sc.judge);
+  $('#sc-note').textContent = missing.length
+    ? `loaded; ${missing.length} pinned offering(s) no longer listed: ${missing.join(', ')}`
+    : `loaded "${sc.name}"`;
+});
+$('#sc-del').addEventListener('click', () => {
+  const all = scAll(); delete all[$('#sc-list').value];
+  localStorage.setItem(SC_STORE, JSON.stringify(all)); scRefreshList();
+});
+$('#sc-export').addEventListener('click', () => {
+  // Bridge to the portable ONP-6 §5 Scenario document
+  const s = scSnapshot($('#sc-name').value.trim() || $('#sc-list').value || 'chat-scenario');
+  const roles = {};
+  s.roster.forEach((r, i) => { roles['m' + (i + 1)] = r.pin ? { pin: r.pin } : { custom: r.custom }; });
+  let steps = [];
+  const roleIds = Object.keys(roles);
+  if (s.mode === 'pipeline') {
+    steps = roleIds.map((rid, i) => ({ id: 'step' + (i + 1), role: rid, input: i === 0 ? '$user' : '$prev', ...(i > 0 ? { instruction: s.instructions.pipeline } : {}) }));
+  } else if (s.mode === 'single') {
+    steps = [{ id: 'answer', role: roleIds[0], input: '$user' }];
+  } else {
+    steps = [{ id: 'fanout', mode: 'parallel', roles: roleIds, input: '$user', ...(s.mode === 'iterative' ? { rounds: s.rounds, revise_instruction: s.instructions.revise } : {}) }];
+    if (s.mode === 'jury' || s.mode === 'iterative') {
+      steps.push({ id: 'verdict', role: roleIds[Math.min(s.judge, roleIds.length - 1)], merge: 'judge', instruction: s.instructions.jury });
+    }
+  }
+  const doc = { onp_scenario: '0.1', name: s.name, roles, steps, policy: {} };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }));
+  a.download = s.name.replace(/[^a-z0-9._-]+/gi, '-') + '.onp-scenario.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
 
 /* ---------- model tests (smoke probes) ---------- */
 const TESTS = [
