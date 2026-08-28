@@ -33,6 +33,12 @@ test('full discover → estimate → invoke → receipt loop', async (t) => {
   const offering = offerings[0];
   assert.equal(offering.tier, 'community');
   assert.ok(offering.rank_explanation.weights);
+  // Offering-level hardware allocation wins over the node-level declaration (ONP-2 §6),
+  // and performance sorts promised by ONP-3 §4 are accepted.
+  assert.equal(offering.hardware.accelerators[0].type, 'CPU');
+  assert.equal(offering.hardware.basis, 'claimed');
+  const byTps = await client.search({ sort: 'tps' });
+  assert.equal(byTps.length, 1);
 
   // 4. Estimate is enforceable: carries the card revision
   const est = await client.estimate([{ offering: 'org.opennodes.fixture/echo-1', est_input_tokens: 100, est_output_tokens: 50 }]);

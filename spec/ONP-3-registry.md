@@ -82,7 +82,7 @@ Registration alone never grants a trust tier. Tiers above `unverified` are gated
 &limit=50&cursor=…
 ```
 
-Responses return offering summaries: the card excerpt, trust tier, registry **observations** (measured uptime, TTFT/TPS percentiles from probes, price history), and `rank` with `rank_explanation` (§6). Results MUST distinguish card-claimed vs. registry-observed vs. attested values.
+Responses return offering summaries: the card excerpt, trust tier, the **effective hardware allocation** (the offering-level `hardware` override if present, else the node-level declaration — see ONP-2 §6), registry **observations** (measured uptime, TTFT/TPS percentiles from probes, price history), and `rank` with `rank_explanation` (§6). Results MUST distinguish card-claimed vs. registry-observed vs. attested values; performance sorts (`ttft`, `tps`) MUST prefer observed values over claims.
 
 ## 5a. Estimation
 

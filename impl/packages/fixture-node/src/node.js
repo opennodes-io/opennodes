@@ -33,11 +33,14 @@ function buildCard(origin, revision, claimContextTokens = 8192) {
         supports: ['streaming', 'json_mode'],
         languages: [{ lang: 'en', grade: 'native' }],
       },
+      // Offering-level allocation: overrides the node-level hardware in projections.
+      hardware: { accelerators: [{ type: 'CPU', count: 1 }], basis: 'claimed' },
       binding: { profile: 'onp.openai.chat/v1', model_id: MODEL_ID },
       pricing: { currency: 'USD', input_per_mtok: 0.10, output_per_mtok: 0.40, schemes: ['free', 'prepaid'] },
       availability: { sla: 0.99, interruptible: false },
       data_policy: { retention: 'none', training_on_inputs: false, region_pinning: ['eu'] },
     }],
+    hardware: { accelerators: [{ type: 'H100', count: 2, memory_gb: 80 }], basis: 'claimed' },
     payment: {
       schemes: [{ scheme: 'free' }, { scheme: 'prepaid', signup: `${origin}/signup` }],
       probe_allowance: { requests_per_day: 200 },

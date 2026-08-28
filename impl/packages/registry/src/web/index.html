@@ -228,7 +228,7 @@
     <button class="toggle" data-sup="vision">vision</button>
     <button class="toggle" data-sup="json_mode">json</button>
     <input type="number" id="f-price" placeholder="max $/MTok in" min="0" step="0.05">
-    <select id="f-sort"><option value="rank">sort: rank</option><option value="price">sort: price</option></select>
+    <select id="f-sort"><option value="rank">sort: rank</option><option value="price">sort: price</option><option value="ttft">sort: fastest first token</option><option value="tps">sort: throughput</option></select>
   </div>
   <div class="mgrid">
     <div class="mlist" id="m-list"></div>
@@ -554,6 +554,17 @@ function measuredBits(o) {
   if (obs.availability?.ratio != null) bits.push(`<span>up <b class="num">${Math.round(obs.availability.ratio * 100)}%</b></span>`);
   return bits;
 }
+function hwStr(o, withBasis = true) {
+  const acc = o.hardware?.accelerators;
+  if (!acc?.length) return '';
+  const parts = acc.map((a) => `${a.count}× ${esc(a.type)}${a.memory_gb ? ` ${a.memory_gb}GB` : ''}`).join(' + ');
+  if (!withBasis) return parts;
+  const basis = o.hardware.basis === 'attested'
+    ? '<span class="micro m-measured">✓ ATTESTED</span>' : '<span class="micro m-claimed">CLAIMED</span>';
+  const mlperf = o.hardware.mlperf?.url
+    ? ` <a href="${esc(o.hardware.mlperf.url)}" target="_blank" rel="noopener" class="micro" style="color:var(--accent)">MLPERF ↗</a>` : '';
+  return `${parts} ${basis}${mlperf}`;
+}
 function ctxBit(o) {
   if (!o.serving?.context_window) return '';
   const cap = o.serving.context_capped_from
@@ -642,6 +653,7 @@ window.toggleRow = async function (el, idx) {
         ${o.modalities ? `<dt>modalities</dt><dd>${esc((o.modalities.input || []).join('+'))} → ${esc((o.modalities.output || []).join('+'))}</dd>` : ''}
         ${o.pricing.cached_input_per_mtok != null ? `<dt>cached input</dt><dd class="num">$${fmt(o.pricing.cached_input_per_mtok)}/MTok</dd>` : ''}
         ${o.serving?.max_output_tokens ? `<dt>max output</dt><dd class="num">${fmtInt(o.serving.max_output_tokens)}</dd>` : ''}
+        ${hwStr(o) ? `<dt>hardware</dt><dd>${hwStr(o)}</dd>` : ''}
         <dt>schemes</dt><dd>${esc((o.pricing.schemes || []).join(', '))}</dd>
         ${o.local ? `<dt>run locally</dt><dd><code style="background:var(--panel-2); padding:0.1em 0.4em; border-radius:3px" class="mono">${esc(o.local.run)}</code>${o.local.pulls ? ` <span class="prov" style="display:inline">· ${esc(o.local.pulls)} pulls</span>` : ''}${o.local.sizes ? ` <span class="prov" style="display:inline">· sizes: ${esc(o.local.sizes.join(' '))}</span>` : ''}</dd>` : ''}
       </dl>
@@ -770,7 +782,7 @@ async function loadModel(artifact) {
     $('#pg-out').textContent = '';
     $('#pg-meta').textContent = '';
     $('#md-offerings').innerHTML = `<table class="grid num"><thead><tr>
-      <th>NODE</th><th>PRICE IN/OUT</th><th>CONTEXT</th><th>TTFT</th><th>TOK/S</th><th>UP</th><th>CAPABILITIES</th><th>REVISION</th>
+      <th>NODE</th><th>PRICE IN/OUT</th><th>HARDWARE</th><th>CONTEXT</th><th>TTFT</th><th>TOK/S</th><th>UP</th><th>CAPABILITIES</th><th>REVISION</th>
     </tr></thead><tbody>` + list.map((o) => {
       const obs = o.observed || {};
       const ctx = o.serving?.context_window
@@ -786,6 +798,7 @@ async function loadModel(artifact) {
           <span style="display:flex; gap:0.3rem">${tierChip(o.tier)}${o.institutional ? '<span class="chip inst">institutional</span>' : ''}${o.source === 'import' ? '<span class="chip imp">IMPORTED</span>' : ''}</span>
         </div></td>
         <td><b>${priceStr(o.pricing)}</b></td>
+        <td>${hwStr(o) || '<span style="color:var(--faint)" title="Vendor has not disclosed the hardware behind this offering">undisclosed</span>'}</td>
         <td>${ctx}</td>
         <td>${ttft}</td>
         <td>${obs.tps > 0 ? '<b>' + obs.tps + '</b>' : (o.serving?.expected_tps?.p50 != null ? o.serving.expected_tps.p50 + ' <span class="micro m-claimed">CL</span>' : '—')}</td>
@@ -1543,6 +1556,7 @@ async function loadNode(id) {
       <td><a href="#/model/${encodeURIComponent(o.model?.artifact ?? '')}" style="font-weight:600">${esc(o.model?.name ?? o.offering_id)}</a></td>
       <td><span class="chip">${esc(o.modality)}</span></td>
       <td class="num"><b>${priceStr(o.pricing || {})}</b></td>
+      <td>${hwStr({ hardware: o.hardware ?? card.hardware }) || '<span style="color:var(--faint)">undisclosed</span>'}</td>
       <td class="num">${o.serving?.context_window ? fmtInt(o.serving.context_window) : '—'}</td>
       <td>${(o.serving?.supports || []).filter((s) => s !== 'streaming').map((s) => `<span class="chip">${esc(s)}</span>`).join(' ') || '—'}</td>
     </tr>`).join('');
@@ -1557,10 +1571,11 @@ async function loadNode(id) {
       </div>
       <div class="panel pad" style="max-width:56rem; margin-top:0.6rem"><table class="grid">
         <tr><td style="color:var(--muted); width:8rem" class="mono">endpoint</td><td class="mono" style="font-size:0.74rem">${esc(card.endpoints?.openai ?? '—')}</td></tr>
+        ${card.hardware ? `<tr><td style="color:var(--muted)" class="mono">hardware</td><td style="font-size:0.78rem">${hwStr({ hardware: card.hardware })}</td></tr>` : ''}
         <tr><td style="color:var(--muted)" class="mono">revision</td><td class="mono" style="font-size:0.74rem">${esc(card.revision ?? '—')}</td></tr>
       </table></div>
       ${offers.length ? `<h2>Offerings</h2><div class="panel tablewrap" style="max-width:56rem"><table class="grid num"><thead><tr>
-        <th>MODEL</th><th>MODALITY</th><th>PRICE IN/OUT</th><th>CONTEXT</th><th>CAPABILITIES</th>
+        <th>MODEL</th><th>MODALITY</th><th>PRICE IN/OUT</th><th>HARDWARE</th><th>CONTEXT</th><th>CAPABILITIES</th>
       </tr></thead><tbody>${offerRows}</tbody></table>${offers.length > 50 ? `<div style="padding:0.6rem 0.8rem; border-top:1px solid var(--line)"><span class="prov">showing 50 of ${offers.length} — use the catalog search to browse all</span></div>` : ''}</div>` : ''}
       ${probes ? '<h2>Recent probes</h2><div class="panel pad" style="max-width:56rem">' + probes + '</div>' : ''}
       ${history ? '<h2>Listing history</h2><div class="panel pad" style="max-width:56rem">' + history + '</div>' : ''}`;

@@ -39,6 +39,10 @@ export async function collectOfferings(store) {
         binding: offering.binding,
         pricing: offering.pricing,
         data_policy: offering.data_policy ?? null,
+        // Allocated hardware for THIS offering (offering-level override wins over the
+        // node-level description) — same artifact on different vendors runs on different
+        // silicon, and clients deserve to see which. Always basis-labeled, never measured.
+        hardware: offering.hardware ?? card.hardware ?? null,
         observed: {
           probe_success: round2(probeSuccess),
           probes: stageA.length,
@@ -94,10 +98,17 @@ export async function searchOfferings(store, query) {
     o.rank_explanation = { weights: RANK_COMPONENTS, components };
   }
 
+  // Performance sorts prefer registry-measured values; claimed expected_* is the
+  // fallback, and offerings with neither sink to the bottom (ONP-3 §4).
+  const ttftOf = (o) => o.observed.ttft_ms?.p50 ?? o.serving?.expected_ttft_ms?.p50 ?? Infinity;
+  const tpsOf = (o) => (o.observed.tps > 0 ? o.observed.tps : null) ?? o.serving?.expected_tps?.p50 ?? -Infinity;
   const sort = q('sort') ?? 'rank';
-  items.sort((a, b) => sort === 'price'
-    ? (a.pricing.input_per_mtok ?? Infinity) - (b.pricing.input_per_mtok ?? Infinity)
-    : b.rank - a.rank);
+  items.sort((a, b) => {
+    if (sort === 'price') return (a.pricing.input_per_mtok ?? Infinity) - (b.pricing.input_per_mtok ?? Infinity);
+    if (sort === 'ttft') return ttftOf(a) - ttftOf(b);
+    if (sort === 'tps') return tpsOf(b) - tpsOf(a);
+    return b.rank - a.rank;
+  });
 
   const limit = Math.min(Number(q('limit') ?? 50), 200);
   return items.slice(0, limit);

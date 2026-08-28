@@ -35,6 +35,11 @@ schemes = ["free"]
 retention = "none"
 training_on_inputs = false
 
+# Disclose the silicon behind this node — same model, different hardware, different
+# product. Claimed until attested; the registry's measured TTFT/TPS always wins.
+# [hardware]
+# accelerators = [{ type = "H100", count = 2, memory_gb = 80 }]
+
 [payment]
 probe_allowance_per_day = 200
 """
@@ -93,6 +98,9 @@ def build_card(cfg: dict, model_ids: list[str]) -> dict:
         },
         "endpoints": {"openai": f"{public}/v1", "health": f"{public}/onp/health"},
         "offerings": offerings,
+        **({"hardware": {"accelerators": cfg["hardware"]["accelerators"],
+                         "basis": cfg["hardware"].get("basis", "claimed")}}
+           if cfg.get("hardware", {}).get("accelerators") else {}),
         "payment": {
             "schemes": [{"scheme": s} for s in pricing.get("schemes", ["free"])],
             "probe_allowance": {"requests_per_day": int(cfg.get("payment", {}).get("probe_allowance_per_day", 200))},

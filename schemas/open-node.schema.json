@@ -45,32 +45,7 @@
       "minItems": 1,
       "items": { "$ref": "#/$defs/offering" }
     },
-    "hardware": {
-      "type": "object",
-      "properties": {
-        "accelerators": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["type", "count"],
-            "properties": {
-              "type": { "type": "string" },
-              "count": { "type": "integer", "minimum": 1 },
-              "memory_gb": { "type": "number", "minimum": 0 }
-            }
-          }
-        },
-        "basis": { "$ref": "#/$defs/basis" },
-        "mlperf": {
-          "type": "object",
-          "properties": {
-            "suite": { "type": "string" },
-            "system_id": { "type": "string" },
-            "url": { "type": "string", "format": "uri" }
-          }
-        }
-      }
-    },
+    "hardware": { "$ref": "#/$defs/hardware" },
     "payment": {
       "type": "object",
       "required": ["schemes"],
@@ -119,6 +94,32 @@
   },
   "$defs": {
     "basis": { "enum": ["claimed", "attested"] },
+    "hardware": {
+      "type": "object",
+      "properties": {
+        "accelerators": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type", "count"],
+            "properties": {
+              "type": { "type": "string" },
+              "count": { "type": "integer", "minimum": 1 },
+              "memory_gb": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "basis": { "$ref": "#/$defs/basis" },
+        "mlperf": {
+          "type": "object",
+          "properties": {
+            "suite": { "type": "string" },
+            "system_id": { "type": "string" },
+            "url": { "type": "string", "format": "uri" }
+          }
+        }
+      }
+    },
     "measured": {
       "type": "object",
       "required": ["basis"],
@@ -174,6 +175,7 @@
             "expected_tps": { "$ref": "#/$defs/measured" }
           }
         },
+        "hardware": { "$ref": "#/$defs/hardware" },
         "binding": {
           "type": "object",
           "required": ["profile", "model_id"],

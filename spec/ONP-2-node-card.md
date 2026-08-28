@@ -137,7 +137,15 @@ Field rules:
 }
 ```
 
-Hardware claims are informational for ranking/expectation-setting; the `mlperf.system_id` link is the standard way to make them checkable.
+The same open-weight artifact served by different vendors is **not the same product**: allocated hardware determines the throughput, latency, and batch behavior a client will actually experience. Model catalogs (OpenRouter, HF) describe the software artifact and mostly omit the silicon behind each provider; ONP treats the allocation as first-class metadata. An offering-level `hardware` object (same shape) declares the resources allocated to *that offering* and overrides the node-level description in registry projections — a node with 16× H200 may still serve a given model on a 2-GPU slice, and clients deserve to see which.
+
+Precedence for expectation-setting, weakest claim first:
+
+1. **`hardware` (claimed/attested)** — sizing signal only; never enters rank directly.
+2. **`serving.expected_ttft_ms` / `expected_tps` (claimed)** — the node's own performance promise.
+3. **Registry observations (measured)** — Stage B capacity-ramp and Stage C blind-probe TTFT/TPS percentiles. Where these exist they override both of the above in search results and sorts (`sort=ttft|tps`), because **user outcome is measured performance, not installed hardware**.
+
+The `mlperf.system_id` link is the standard way to make a hardware claim checkable; attested hardware upgrades `basis` but still never outranks a measurement.
 
 ## 7. `compliance` (optional)
 
