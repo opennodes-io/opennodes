@@ -2,8 +2,20 @@
 // proxying discovery to a registry's REST API. This is the install path for
 // editor MCP hosts (Cursor, VS Code, Claude Desktop): one command, no HTTP setup.
 import readline from 'node:readline';
+import { extractFeatures } from '@opennodes/core';
 
 const TOOLS = [
+  {
+    name: 'recommend',
+    description: 'Recommend the best AI node + model for a task, with an enforceable cost estimate and reasons. Pass the task or prompt; features are extracted LOCALLY and only the features (task class, size, language, needs) are sent to the registry — the prompt never leaves this machine. Optional policy: min_tier, max_input_per_mtok, max_total_usd, region, prefer_local, preset (cheap|fast|quality|private), limit. Also returns an optional two-step scenario and MCP tool categories the task likely needs.',
+    inputSchema: {
+      type: 'object', required: ['task'],
+      properties: {
+        task: { type: 'string' }, est_output_tokens: { type: 'number' },
+        policy: { type: 'object' },
+      },
+    },
+  },
   {
     name: 'search_offerings',
     description: 'Search AI inference offerings across the OpenNodes registry — spans registered nodes AND imported catalogs (OpenRouter, Hugging Face Inference Providers, models.dev, local nodes). Filters: modality (text|image|audio|video|embedding|multimodal), family, min_context, supports (comma list: tool_calls,json_mode,vision,streaming), max_input_price (USD per MTok), scheme (free|prepaid), tier (unverified|community|verified), lang ("en:strong"), q (free text), sort (rank|price), limit.',
@@ -52,6 +64,17 @@ export function createStdioMcp({ registry, input = process.stdin, output = proce
 
   async function runTool(name, args = {}) {
     switch (name) {
+      case 'recommend': {
+        // Privacy by construction: extract features here, send only those.
+        const features = extractFeatures(String(args.task ?? ''), { est_output_tokens: args.est_output_tokens ?? null });
+        const res = await fetch(`${base}/v0/recommend`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ features, policy: args.policy ?? {} }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.detail ?? `status ${res.status}`);
+        return body;
+      }
       case 'search_offerings': {
         const qs = new URLSearchParams();
         for (const [k, v] of Object.entries(args)) if (v !== undefined && v !== null) qs.set(k, String(v));

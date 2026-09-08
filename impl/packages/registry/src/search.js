@@ -43,6 +43,7 @@ export async function collectOfferings(store) {
         // node-level description) — same artifact on different vendors runs on different
         // silicon, and clients deserve to see which. Always basis-labeled, never measured.
         hardware: offering.hardware ?? card.hardware ?? null,
+        benchmarks: offering.benchmarks ?? null,
         observed: {
           probe_success: round2(probeSuccess),
           probes: stageA.length,

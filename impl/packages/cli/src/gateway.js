@@ -3,10 +3,13 @@
 // does discovery, policy, revision pinning, price_changed recovery, fallback, and receipts.
 import { appendFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
-import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6 } from '@opennodes/core';
+import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend } from '@opennodes/core';
 import { OnpClient } from './client.js';
 
 const CACHE_TTL_MS = 30_000;
+// Advisor-routed virtual models (the ONP answer to openrouter/auto). Routing runs
+// locally on the gateway's cached catalog: the prompt never leaves the machine.
+const AUTO_MODELS = { 'onp/auto': null, 'onp/auto-cheap': 'cheap', 'onp/auto-fast': 'fast', 'onp/auto-quality': 'quality', 'onp/auto-private': 'private' };
 
 export async function startGateway({
   registry, port = 4141, host = '127.0.0.1', token = null,
@@ -20,6 +23,7 @@ export async function startGateway({
   const jwksCache = new Map();
   const receipts = [];
   let cache = { at: 0, byId: new Map() };
+  let lastAdvice = null;
 
   async function refresh() {
     if (Date.now() - cache.at < CACHE_TTL_MS && cache.byId.size) return;
@@ -28,8 +32,24 @@ export async function startGateway({
   }
 
   /** Resolve a requested model id to an ordered candidate list of offerings. */
-  async function resolve(modelId) {
+  async function resolve(modelId, body = null) {
     await refresh();
+    if (modelId in AUTO_MODELS) {
+      const messages = body?.messages ?? [];
+      const last = [...messages].reverse().find((m) => m.role === 'user');
+      const text = typeof last?.content === 'string' ? last.content
+        : (last?.content ?? []).map((p) => p.text ?? '').join(' ');
+      const features = extractFeatures(text, { messages: messages.slice(0, -1), est_output_tokens: body?.max_tokens ?? null });
+      const preset = AUTO_MODELS[modelId];
+      const result = recommend([...cache.byId.values()], features, {
+        preset, limit: 5,
+        min_tier: preset === 'private' ? 'community' : policy.min_tier,
+        max_input_per_mtok: policy.max_input_per_mtok,
+        prefer_local: preset === 'private',
+      });
+      lastAdvice = { model: modelId, features, recommendations: result.recommendations.map((r) => ({ offering: r.offering, score: r.score, reasons: r.reasons })) };
+      return result.recommendations.map((r) => cache.byId.get(r.offering)).filter(Boolean);
+    }
     if (virtuals[modelId]) {
       const results = await client.search(Object.fromEntries(new URLSearchParams(virtuals[modelId])));
       return results.map((o) => (cache.byId.get(`${o.node_id}/${o.offering_id}`) ?? o));
@@ -131,7 +151,7 @@ export async function startGateway({
     ['GET', '/v1/models', async (req, res) => {
       if (!authed(req, res)) return;
       await refresh();
-      const ids = [...cache.byId.keys(), ...Object.keys(aliases), ...Object.keys(virtuals)];
+      const ids = [...Object.keys(AUTO_MODELS), ...cache.byId.keys(), ...Object.keys(aliases), ...Object.keys(virtuals)];
       sendJson(res, 200, {
         object: 'list',
         data: ids.map((id) => ({ id, object: 'model', owned_by: 'opennodes-gateway' })),
@@ -141,7 +161,7 @@ export async function startGateway({
     ['POST', '/v1/chat/completions', async (req, res) => {
       if (!authed(req, res)) return;
       const body = await readJson(req, 10_000_000);
-      const candidates = await resolve(body.model);
+      const candidates = await resolve(body.model, body);
       if (!candidates.length) return problem(res, 404, 'model-not-found', String(body.model));
 
       const errors = [];
@@ -165,6 +185,11 @@ export async function startGateway({
 
     ['POST', '/v1/embeddings', (req, res) => {
       problem(res, 501, 'not-implemented', 'embeddings profile lands with a fixture that serves it');
+    }],
+
+    ['GET', '/gateway/advice', (req, res) => {
+      if (!authed(req, res)) return;
+      sendJson(res, 200, lastAdvice ?? { model: null, recommendations: [] });
     }],
 
     ['GET', '/gateway/receipts', (req, res) => {

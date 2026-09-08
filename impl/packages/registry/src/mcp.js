@@ -1,7 +1,7 @@
 // DS-MCP-01: the registry as an MCP server (streamable HTTP, stateless).
 // Minimal JSON-RPC handler covering initialize / tools/list / tools/call so any
 // MCP host gets ONP discovery (search_offerings, get_offering, estimate) for free.
-import { readJson, sendJson, problem, estimateBounds, round6 } from '@opennodes/core';
+import { readJson, sendJson, problem, estimateBounds, round6, extractFeatures, recommend } from '@opennodes/core';
 import { searchOfferings, collectOfferings } from './search.js';
 
 const PROTOCOL_VERSION = '2025-06-18';
@@ -52,10 +52,36 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'recommend',
+    description: 'Recommend the best AI node + model for a task. Give the task (a description or the prompt itself) and an optional policy; returns the top offerings with score components, human-readable reasons, an enforceable cost estimate with pinned card_revision, an optional two-step scenario (cheap triage/draft → strong expert/refine) when it would save money, and MCP tool categories the task likely needs. Prefer passing `features` (from a local extractFeatures) instead of `task` when the prompt is private.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task: { type: 'string', description: 'task description or prompt' },
+        features: { type: 'object', description: 'pre-extracted features (privacy-preserving alternative to task)' },
+        est_output_tokens: { type: 'number' },
+        policy: {
+          type: 'object',
+          properties: {
+            min_tier: { type: 'string' }, max_input_per_mtok: { type: 'number' }, max_total_usd: { type: 'number' },
+            region: { type: 'string' }, prefer_local: { type: 'boolean' },
+            preset: { type: 'string', description: 'cheap | fast | quality | private' }, limit: { type: 'number' },
+          },
+        },
+      },
+    },
+  },
 ];
 
 async function runTool(store, name, args = {}) {
   switch (name) {
+    case 'recommend': {
+      const features = args.features ?? (args.task != null
+        ? extractFeatures(String(args.task), { est_output_tokens: args.est_output_tokens ?? null }) : null);
+      if (!features) throw new Error('recommend needs "task" or "features"');
+      return recommend(await collectOfferings(store), features, args.policy ?? {});
+    }
     case 'search_offerings': {
       const query = new URLSearchParams();
       for (const [k, v] of Object.entries(args)) if (v !== undefined && v !== null) query.set(k, String(v));

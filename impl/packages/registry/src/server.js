@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   createApp, listen, closeApp, sendJson, problem, readJson,
   validateCard, verifyCardSignature, keyFromJwk, estimateBounds,
+  extractFeatures, recommend,
 } from '@opennodes/core';
 import { resolveTxt } from 'node:dns/promises';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -284,6 +285,19 @@ export async function startRegistry({
         });
       }
       sendJson(res, 200, { total: { currency, min: round6(min), max: round6(max) }, steps: out });
+    }],
+
+    // ONP-3 §5b: task → ranked offerings with estimate + explanation. Accepts either a
+    // task description (features extracted here) or pre-extracted `features` so a
+    // client never has to send its prompt to the registry.
+    ['POST', '/v0/recommend', async (req, res) => {
+      const body = await readJson(req, 1_000_000);
+      const features = body.features ?? (body.task != null
+        ? extractFeatures(String(body.task), { attachments: body.attachments ?? [], est_output_tokens: body.est_output_tokens ?? null, messages: body.messages ?? [] })
+        : null);
+      if (!features) return problem(res, 400, 'missing-task', 'body must carry "task" (text) or "features" (from extractFeatures)');
+      const all = await collectOfferings(store);
+      sendJson(res, 200, recommend(all, features, body.policy ?? {}));
     }],
 
     // Seed importer (admin): body {catalog} in models.dev shape, or {url} to fetch it.

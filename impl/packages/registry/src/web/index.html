@@ -230,6 +230,17 @@
     <input type="number" id="f-price" placeholder="max $/MTok in" min="0" step="0.05">
     <select id="f-sort"><option value="rank">sort: rank</option><option value="price">sort: price</option><option value="ttft">sort: fastest first token</option><option value="tps">sort: throughput</option></select>
   </div>
+  <details class="panel pad" id="advisor" style="margin:0.2rem 0 0.8rem">
+    <summary style="cursor:pointer; font-weight:600; font-size:0.9rem">Ask the advisor — describe a task, get the best node + model, priced and explained</summary>
+    <textarea id="adv-task" rows="2" class="wide" style="margin-top:0.6rem; font-size:0.86rem" placeholder="e.g. Translate this 20-page contract into Polish and extract the payment terms as JSON"></textarea>
+    <div class="toolbar" style="margin-top:0.4rem">
+      <select id="adv-preset"><option value="">balanced</option><option value="cheap">cheapest</option><option value="fast">fastest</option><option value="quality">best quality</option><option value="private">privacy-first</option></select>
+      <span class="switchrow" id="adv-verified"><span class="switch"></span><b style="font-size:0.78rem">Verified only</b></span>
+      <button class="btn" id="adv-go">Recommend</button>
+      <span class="prov">Deterministic: same catalog + task + policy → same answer, with the score components shown. The <code>onp mcp</code> / gateway advisors extract features locally and never send your prompt; this box sends the text to this registry.</span>
+    </div>
+    <div id="adv-out"></div>
+  </details>
   <div class="mgrid">
     <div class="mlist" id="m-list"></div>
     <div class="mdetail" id="m-detail"><p class="sub">Select a model from the list.</p></div>
@@ -604,6 +615,47 @@ async function search() {
   } catch (e) { $('#m-list').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
 }
 
+/* ---------- advisor (ONP-3 §5b) ---------- */
+$('#adv-verified').addEventListener('click', () => $('#adv-verified').classList.toggle('on'));
+$('#adv-go').addEventListener('click', runAdvisor);
+$('#adv-task').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) runAdvisor(); });
+async function runAdvisor() {
+  const task = $('#adv-task').value.trim();
+  if (!task) return;
+  const policy = { limit: 3 };
+  if ($('#adv-preset').value) policy.preset = $('#adv-preset').value;
+  if ($('#adv-verified').classList.contains('on')) policy.min_tier = 'verified';
+  $('#adv-out').innerHTML = '<p class="sub">ranking…</p>';
+  try {
+    const r = await api('/v0/recommend', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ task, policy }) });
+    renderAdvice(r);
+  } catch (e) { $('#adv-out').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
+}
+function renderAdvice(r) {
+  const f = r.features;
+  const featLine = [f.task_class, f.modality, f.language, `~${fmtInt(f.est_input_tokens)} in / ${fmtInt(f.est_output_tokens)} out`,
+    f.needs.tools ? 'needs tools' : null, f.needs.json ? 'JSON output' : null, f.needs.reasoning === 'high' ? 'hard reasoning' : null,
+    f.privacy === 'sensitive' ? 'sensitive → retention:none only' : null, `${r.eligible}/${r.considered} eligible`].filter(Boolean).join(' · ');
+  const cards = r.recommendations.map((x, i) => `<div class="panel pad" style="margin-top:0.5rem">
+    <div style="display:flex; gap:0.6rem; align-items:baseline; flex-wrap:wrap"><b>#${i + 1}</b>
+      <a href="#/model/${encodeURIComponent(x.artifact ?? '')}" style="font-weight:600">${esc(x.model ?? x.offering)}</a>
+      ${tierChip(x.tier)} <a href="#/node/${encodeURIComponent(x.node_id)}" class="mono" style="font-size:0.72rem">${esc(x.offering)}</a>
+      <span class="num" style="margin-left:auto">score <b>${fmt(x.score)}</b></span></div>
+    <div class="prov" style="margin-top:0.3rem">${x.reasons.map(esc).join(' · ')}</div>
+    <div class="num" style="font-size:0.78rem; margin-top:0.3rem; color:var(--muted)">est. $${fmt(x.estimate.min)}–$${fmt(x.estimate.max)} · quality ${x.components.quality} · price ${x.components.price} · trust ${x.components.trust} · perf ${x.components.perf}${x.measured.ttft_ms != null ? ` · ${x.measured.ttft_ms}ms <span class="micro m-measured">● MEASURED</span>` : ''}</div>
+  </div>`).join('');
+  const scen = r.scenario ? `<div class="panel pad" style="margin-top:0.5rem; font-size:0.84rem"><b>Suggested chain — ${esc(r.scenario.name)}:</b> ${esc(r.scenario.why)}${r.scenario.estimated_savings_usd_if_simple ? ` · saves up to $${fmt(r.scenario.estimated_savings_usd_if_simple)} per simple request` : ''}</div>` : '';
+  const tools = r.tools.length ? `<div class="panel pad" style="margin-top:0.5rem; font-size:0.84rem"><b>MCP tools likely needed:</b> ${r.tools.map((t) => `${esc(t.category)} (${t.servers.map((s) => `<code>${esc(s.name)}</code>`).join(', ')})`).join(' · ')} <span class="prov">seed list — a directory import replaces it</span></div>` : '';
+  const foot = r.recommendations.length
+    ? `<div style="margin-top:0.6rem; display:flex; gap:0.8rem; align-items:center; flex-wrap:wrap"><button class="btn" id="adv-chat">Open top ${r.recommendations.length} in chat (compare)</button><span class="prov">weights: ${Object.entries(r.weights).map(([k, v]) => `${k} ${v}`).join(' · ')}</span></div>`
+    : `<p class="sub">Nothing eligible. Rejected by filter: ${esc(Object.entries(r.rejected).map(([k, v]) => `${k} ${v}`).join(', ') || 'none')}.</p>`;
+  $('#adv-out').innerHTML = `<p class="prov" style="margin-top:0.5rem">${esc(featLine)}</p>${cards}${scen}${tools}${foot}`;
+  $('#adv-chat')?.addEventListener('click', () => {
+    sessionStorage.setItem('onp-advisor-handoff', JSON.stringify(r.recommendations.map((x) => x.offering)));
+    location.hash = '#/chat';
+  });
+}
+
 function selectModel(el) {
   document.querySelectorAll('.mitem').forEach((x) => x.classList.toggle('sel', x === el));
   const host = $('#m-detail');
@@ -924,14 +976,33 @@ async function loadChatTargets() {
   renderTests();
   scRefreshList();
   $('#ch-modenote').textContent = MODE_NOTES[$('#ch-mode').value] ?? '';
-  if (chat.offerings.length) return;
-  try {
-    const { offerings } = await api('/v0/offerings?limit=60&modality=text');
-    chat.offerings = offerings;
-    $('#ch-add').innerHTML = '<option value="">+ Add a model…</option>'
-      + offerings.map((o, i) => `<option value="${i}">${esc(o.model.name)} — ${esc(o.node_id)} — ${priceStr(o.pricing)}</option>`).join('')
-      + '<option value="custom">custom endpoint (local Ollama / any OpenAI server)</option>';
-  } catch { $('#ch-add').innerHTML = '<option value="custom">custom endpoint</option>'; }
+  if (!chat.offerings.length) {
+    try {
+      const { offerings } = await api('/v0/offerings?limit=60&modality=text');
+      chat.offerings = offerings;
+      $('#ch-add').innerHTML = '<option value="">+ Add a model…</option>'
+        + offerings.map((o, i) => `<option value="${i}">${esc(o.model.name)} — ${esc(o.node_id)} — ${priceStr(o.pricing)}</option>`).join('')
+        + '<option value="custom">custom endpoint (local Ollama / any OpenAI server)</option>';
+    } catch { $('#ch-add').innerHTML = '<option value="custom">custom endpoint</option>'; }
+  }
+  await applyAdvisorHandoff();
+}
+
+/** The catalog advisor hands its shortlist to the chat roster via sessionStorage. */
+async function applyAdvisorHandoff() {
+  const raw = sessionStorage.getItem('onp-advisor-handoff');
+  if (!raw) return;
+  sessionStorage.removeItem('onp-advisor-handoff');
+  let keys = [];
+  try { keys = JSON.parse(raw); } catch { return; }
+  for (const key of keys) {
+    const [nodeId, offeringId] = key.split('/');
+    let o = chat.offerings.find((x) => x.node_id === nodeId && x.offering_id === offeringId);
+    if (!o) { try { o = await api(`/v0/offerings/${encodeURIComponent(nodeId)}/${encodeURIComponent(offeringId)}`); } catch { continue; } }
+    if (!chat.roster.some((t) => t.offering && t.offering.node_id === nodeId && t.offering.offering_id === offeringId)) chat.roster.push({ offering: o });
+  }
+  if (chat.roster.length > 1) { $('#ch-mode').value = 'compare'; $('#ch-modenote').textContent = MODE_NOTES.compare; }
+  renderRoster();
 }
 
 const targetLabel = (t) => t.offering ? t.offering.model.name : `${t.custom.model} @ ${new URL(t.custom.base).host}`;

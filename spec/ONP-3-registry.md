@@ -104,6 +104,14 @@ Responses return offering summaries: the card excerpt, trust tier, the **effecti
 
 Steps may name a concrete offering or embed a §5 `select` query (the registry resolves it and reports which offering it priced). Estimates carry the `card_revision` they priced against, so the client can pin the same revision at invocation (ONP-4 §2) and the estimate is enforceable, not advisory. Estimation is free, unauthenticated, and side-effect-free.
 
+## 5b. Recommendation (advisor)
+
+`POST /v0/recommend` turns a task into a ranked shortlist with an enforceable estimate — the primitive an agent calls when it does not want to compose a search query itself (ONP-6 §6). The body carries either `task` (free text) or `features` — the output of a client-side feature extraction (modality, task class, language, estimated input/output tokens, needed capabilities, latency sensitivity, privacy sensitivity) — plus a `policy` (`min_tier`, `max_input_per_mtok`, `max_total_usd`, `region`, `prefer_local`, `preset`). Registries MUST accept `features` so a client never has to disclose its prompt; reference clients (gateway, stdio MCP server) extract features locally and send only those.
+
+The response lists recommendations each with `offering`, pinned `card_revision`, `estimate` (§5a bounds), `score`, its `components` (quality prior, price, trust, measured performance) with the `weights` used, and human-readable `reasons`; the equivalent §5 search `query`; counts of considered/eligible offerings with per-filter rejection reasons; optionally a two-step ONP-6 scenario (cheap triage/draft → strong expert/refine) when it would plausibly save money; and MCP tool categories the task likely needs. Hard requirements (capabilities, context, data policy, tier, price) are filters, never score inputs. Quality priors MUST be labeled by basis (size heuristic, claimed benchmark, attested benchmark, or registry-measured task probes once available) and measured performance MUST outweigh claimed performance — the same discipline as §6.
+
+The advisor is deliberately deterministic and reproducible: same catalog, same features, same policy → same answer, so an agent can audit a recommendation and a registry cannot hide a sponsored placement inside it (sponsorship, if any, is a labeled field per §6, never a score component).
+
 ## 6. Verification, observations, and ranking
 
 Registries earn their place by turning claims into signals:
