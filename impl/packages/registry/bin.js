@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { startRegistry } from './src/server.js';
 
 const dbPath = process.env.ONP_DB ?? ':memory:'; // sqlite path/:memory: or postgres:// URL

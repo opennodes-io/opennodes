@@ -1,7 +1,18 @@
 {
   "name": "@opennodes/registry",
   "version": "0.1.0",
+  "description": "OpenNodes (ONP) reference registry: node registration with proof-of-resource qualification (Stage A/B/C), transparent ranking, enforceable estimates, catalog importers (OpenRouter, Hugging Face, models.dev, Ollama), MCP surface, and the web app (catalog, chat, advisor, Node Builder)",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "src/server.js",
+  "exports": { ".": "./src/server.js", "./src/*": "./src/*" },
+  "bin": { "onp-registry": "bin.js" },
+  "files": ["bin.js", "src", "README.md"],
+  "keywords": ["opennodes", "onp", "registry", "ai", "inference", "discovery", "mcp", "catalog"],
+  "homepage": "https://opennodes.io",
+  "repository": { "type": "git", "url": "git+https://github.com/opennodes-io/opennodes.git", "directory": "impl/packages/registry" },
+  "bugs": { "url": "https://github.com/opennodes-io/opennodes/issues" },
+  "engines": { "node": ">=22.5" },
+  "publishConfig": { "access": "public" },
   "dependencies": { "@opennodes/core": "0.1.0", "pg": "^8.13.1" }
 }

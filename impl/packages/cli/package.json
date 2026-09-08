@@ -1,8 +1,19 @@
 {
   "name": "@opennodes/cli",
   "version": "0.1.0",
+  "description": "OpenNodes (ONP) client: search verified AI nodes, pre-price chains, invoke with signed receipts; OpenAI-compatible gateway with onp/auto routing; stdio MCP server for Cursor, VS Code, and Claude Desktop",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "src/client.js",
+  "exports": { ".": "./src/client.js", "./src/*": "./src/*" },
   "bin": { "onp": "bin.js" },
+  "files": ["bin.js", "src", "README.md", "server.json"],
+  "mcpName": "io.github.opennodes-io/opennodes",
+  "keywords": ["opennodes", "onp", "mcp", "mcp-server", "ai", "inference", "router", "gateway", "openai-compatible", "cursor", "claude-desktop"],
+  "homepage": "https://opennodes.io",
+  "repository": { "type": "git", "url": "git+https://github.com/opennodes-io/opennodes.git", "directory": "impl/packages/cli" },
+  "bugs": { "url": "https://github.com/opennodes-io/opennodes/issues" },
+  "engines": { "node": ">=22.5" },
+  "publishConfig": { "access": "public" },
   "dependencies": { "@opennodes/core": "0.1.0" }
 }

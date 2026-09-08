@@ -1,15 +1,35 @@
 [project]
 name = "onp-node"
 version = "0.1.0"
-description = "OpenNodes Node Kit: turn a vLLM/Ollama/TGI deployment into a conforming ONP Node"
+description = "OpenNodes Node Kit: turn a vLLM/Ollama/TGI deployment into a conforming ONP Node (signed Node Card, receipts, registration, self-test)"
+readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = ["aiohttp>=3.9", "cryptography>=42"]
+keywords = ["opennodes", "onp", "ai", "inference", "vllm", "ollama", "tgi", "registry", "mcp"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Internet :: WWW/HTTP",
+]
+
+[project.urls]
+Homepage = "https://opennodes.io"
+Repository = "https://github.com/opennodes-io/opennodes"
+Specification = "https://github.com/opennodes-io/opennodes/tree/main/spec"
+Issues = "https://github.com/opennodes-io/opennodes/issues"
 
 [project.scripts]
 onp-node = "onp_node.cli:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

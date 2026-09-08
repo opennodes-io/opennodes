@@ -1,0 +1,31 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.json",
+  "name": "io.github.opennodes-io/opennodes",
+  "description": "OpenNodes discovery for AI agents: search verified AI inference nodes across registered operators and imported catalogs, get the best node + model for a task (advisor), and pre-price multi-step chains with enforceable estimates.",
+  "status": "active",
+  "repository": {
+    "url": "https://github.com/opennodes-io/opennodes",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registry_type": "npm",
+      "registry_base_url": "https://registry.npmjs.org",
+      "identifier": "@opennodes/cli",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" },
+      "package_arguments": [
+        { "type": "positional", "value": "mcp", "value_hint": "mcp" }
+      ],
+      "environment_variables": [
+        {
+          "name": "ONP_REGISTRY",
+          "description": "Registry base URL. Default in 0.1.x is a local registry at http://127.0.0.1:4300 (run one with `npx @opennodes/registry`); set to the hosted registry URL once it is live.",
+          "is_required": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
