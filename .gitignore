@@ -21,3 +21,8 @@ private/
 
 # Cloudflare wrangler local state
 .wrangler/
+
+# Python build outputs (node-kit)
+node-kit/dist/
+node-kit/build/
+*.egg-info/
