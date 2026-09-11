@@ -58,16 +58,13 @@ try {
     case 'mcp': {
       if (args.includes('--print-config')) {
         const binPath = new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+        // Installed from npm → portable npx form; running from a checkout → absolute path.
+        const installed = /[\\/]node_modules[\\/]@opennodes[\\/]cli[\\/]/.test(binPath);
+        const server = installed
+          ? { command: 'npx', args: ['-y', '@opennodes/cli', 'mcp'], env: { ONP_REGISTRY: registry } }
+          : { command: process.execPath, args: [binPath, 'mcp'], env: { ONP_REGISTRY: registry } };
         console.log('Add to Cursor (~/.cursor/mcp.json), VS Code (mcp.json), or Claude Desktop config:');
-        console.log(JSON.stringify({
-          mcpServers: {
-            opennodes: {
-              command: process.execPath,
-              args: [binPath, 'mcp'],
-              env: { ONP_REGISTRY: registry },
-            },
-          },
-        }, null, 2));
+        console.log(JSON.stringify({ mcpServers: { opennodes: server } }, null, 2));
         break;
       }
       // Stdio MCP server for editor hosts. stdout carries protocol messages only.

@@ -5,7 +5,9 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { signJson, verifyJws, stableStringify } from './jws.js';
 
-const schemaPath = fileURLToPath(new URL('../../../../schemas/open-node.schema.json', import.meta.url));
+// Package-local copy of the normative schema (repo: schemas/open-node.schema.json);
+// a test asserts the two never drift. Must live inside the package so `npm install` works.
+const schemaPath = fileURLToPath(new URL('../schema/open-node.schema.json', import.meta.url));
 const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
 
 const ajv = new Ajv2020.default({ allErrors: true, strict: false });

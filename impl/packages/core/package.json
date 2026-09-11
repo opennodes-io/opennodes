@@ -1,18 +1,43 @@
 {
   "name": "@opennodes/core",
   "version": "0.1.0",
-  "description": "OpenNodes Protocol (ONP) core: Node Card validation, JWS signing/verification, pricing and receipt math, HTTP helpers, and the task→node advisor",
+  "description": "OpenNodes Protocol (ONP) core: Node Card validation, JWS signing/verification, pricing and receipt math, HTTP helpers, and the task\u2192node advisor",
   "license": "Apache-2.0",
   "type": "module",
   "main": "src/index.js",
-  "exports": { ".": "./src/index.js" },
-  "files": ["src", "README.md"],
-  "keywords": ["opennodes", "onp", "ai", "inference", "registry", "discovery", "mcp", "llm"],
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "schema",
+    "README.md"
+  ],
+  "keywords": [
+    "opennodes",
+    "onp",
+    "ai",
+    "inference",
+    "registry",
+    "discovery",
+    "mcp",
+    "llm"
+  ],
   "homepage": "https://opennodes.io",
-  "repository": { "type": "git", "url": "git+https://github.com/opennodes-io/opennodes.git", "directory": "impl/packages/core" },
-  "bugs": { "url": "https://github.com/opennodes-io/opennodes/issues" },
-  "engines": { "node": ">=22.5" },
-  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/opennodes-io/opennodes.git",
+    "directory": "impl/packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/opennodes-io/opennodes/issues"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1"

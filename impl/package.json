@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "test": "node --test test/e2e.test.js test/gateway.test.js test/mcp.test.js test/stageb.test.js test/stagec.test.js test/store.test.js test/persistence.test.js test/importers.test.js test/byok-reimport.test.js",
+    "test": "node --test test/e2e.test.js test/gateway.test.js test/mcp.test.js test/stageb.test.js test/stagec.test.js test/store.test.js test/persistence.test.js test/importers.test.js test/byok-reimport.test.js test/advisor.test.js test/schema-sync.test.js",
     "registry": "node packages/registry/bin.js",
     "fixture": "node packages/fixture-node/bin.js"
   },
