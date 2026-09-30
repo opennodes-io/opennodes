@@ -113,16 +113,15 @@
   <p class="eyebrow">Quickstart</p>
   <h2>Three ways in</h2>
   <h3 style="font-size:1.05rem">The registry app — browse, rank, register</h3>
-  <p style="font-size:0.92rem;color:var(--muted)">Every registry serves an OpenRouter-style web app at its root: searchable catalog with transparent per-result rank explanations, node pages with probe and listing history, and the full registration + qualification flow (submit card → namespace challenge → Stage A → Stage B). A hosted instance is coming at <code>registry.opennodes.io</code>; run one locally today:</p>
-  <pre><code>git clone https://github.com/opennodes-io/opennodes && cd opennodes/impl && npm install
-node packages/registry/bin.js                # app + API on http://127.0.0.1:4300</code></pre>
-  <h3 style="font-size:1.05rem">Model search &amp; chain pricing inside your editor (MCP)</h3>
-  <pre><code>node packages/cli/bin.js mcp --print-config  # paste into Cursor / VS Code / Claude Desktop</code></pre>
+  <p style="font-size:0.92rem;color:var(--muted)">Every registry serves an OpenRouter-style web app at its root: searchable catalog with transparent per-result rank explanations, node pages with probe and listing history, and the full registration + qualification flow (submit card → namespace challenge → Stage A → Stage B). A hosted instance is coming at <code>registry.opennodes.io</code>; run one locally today (Node ≥ 22.5):</p>
+  <pre><code>npx @opennodes/registry                      # app + API + MCP on http://127.0.0.1:4300</code></pre>
+  <h3 style="font-size:1.05rem">Model search, the advisor &amp; chain pricing inside your editor (MCP)</h3>
+  <pre><code>npx @opennodes/cli mcp --print-config        # paste into Cursor / VS Code / Claude Desktop</code></pre>
   <h3 style="font-size:1.05rem">Any OpenAI-compatible app, routed through discovery (gateway)</h3>
-  <pre><code>node packages/cli/bin.js gateway --port 4141 --virtual "auto-cheap=modality=text&amp;sort=price"
+  <pre><code>npx @opennodes/cli gateway --port 4141       # models onp/auto, onp/auto-cheap, onp/auto-private, …
 # point the app's OpenAI base URL at http://127.0.0.1:4141/v1</code></pre>
   <h3 style="font-size:1.05rem">Serve your own model as a node (Python kit, engine untouched)</h3>
-  <pre><code>pipx install ./node-kit
+  <pre><code>pipx install onp-node
 onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.mybox --public-url https://ai.example.org
 onp-node serve && onp-node check && onp-node register https://registry.example.org</code></pre>
   <h3 style="font-size:1.05rem">A desktop client that speaks both layers (Surge)</h3>

@@ -57,7 +57,7 @@ Two reference stacks, cross-verified against each other:
 
 The supply-side on-ramp: a reverse proxy that turns any OpenAI-compatible engine (vLLM, Ollama, TGI) into a conforming node *without touching the engine* — card generation from engine interrogation, Ed25519 signing byte-compatible with the JS verifier, receipts (inline; by-URL for streams), a Stage A self-test that gates registration, and one-command register.
 
-**Verification state:** 28 automated tests (27 passing, 1 opt-in real-Postgres run), including cross-language e2e (Python-signed cards verified by the JS registry), a spawned-child-process MCP handshake, and adversarial cases (an impersonating node is detected and delisted; an overclaimed context window is capped). Validated live against a real deployment: a CPU Ollama box serving Gemma was wrapped, registered, challenge-verified, Stage-A probed, and chatted with through the full gateway chain with a signed receipt.
+**Verification state:** 35 automated tests (34 passing, 1 opt-in real-Postgres run), including cross-language e2e (Python-signed cards verified by the JS registry), a spawned-child-process MCP handshake, and adversarial cases (an impersonating node is detected and delisted; an overclaimed context window is capped). Validated live against a real deployment: a CPU Ollama box serving Gemma was wrapped, registered, challenge-verified, Stage-A probed, and chatted with through the full gateway chain with a signed receipt.
 
 ## 4. Development stages completed
 
@@ -70,15 +70,15 @@ The supply-side on-ramp: a reverse proxy that turns any OpenAI-compatible engine
 | **4 — Real-model validation** | Live Ollama/Gemma deployment through the entire chain | First real node; two real bugs found and fixed by real-world testing (cross-language float serialization; reasoning-model token budgets) |
 | **5 — Production storage & identity** | Async store contract with sqlite + PostgreSQL drivers; persistent registry signing key; connection-lifecycle fixes | Restart-safe registry: same signing key, same data, same tiers |
 | **6 — Catalog reach & editor distribution** | OpenRouter/HF importers, modalities (input/output) field, `onp mcp` stdio server, BYOK gateway routing, re-import scheduler | Cross-catalog search + chain pricing installable in Cursor/VS Code — a surface no single incumbent offers |
-| **7 — Publication readiness** | Licenses (Apache-2.0 code, CC-BY-4.0 spec), sanitized public history, opennodes.io registered, GitHub org + repo (`opennodes-io/opennodes`), landing site + Pages deploy workflow | One visibility flip away from public |
+| **7 — Publication readiness** | Licenses (Apache-2.0 code, CC-BY-4.0 spec), sanitized public history, opennodes.io registered, GitHub org + repo (`opennodes-io/opennodes`), landing site | One visibility flip away from public |
+| **8 — Hardware, advisor, and publication** | Per-offering hardware allocation as first-class metadata with `sort=ttft\|tps`; the advisor (`POST /v0/recommend`, `recommend` MCP tool, `onp/auto` gateway routing, catalog box); repo public; opennodes.io live on Cloudflare; `@opennodes/core`, `@opennodes/cli`, `@opennodes/registry` on npm and `onp-node` on PyPI, each verified from a clean install | Installable by anyone in one line; the standard and the reference stack are public |
 
 ## 5. Next steps
 
 **Immediate**
-1. Hands-on editor validation (Cursor/VS Code with the generated MCP config) and an Open WebUI pass over the gateway.
-2. One test-suite run against a real PostgreSQL server (`ONP_PG_URL`).
-3. Flip the repo public, enable Pages, point opennodes.io DNS, announce quietly.
-4. Deploy a hosted registry (`registry.opennodes.io`): the web app + API on a small VM/PaaS with PostgreSQL, the re-import scheduler, and Stage C enabled — the public, OpenRouter-comparable discovery surface.
+1. Deploy the hosted registry (`registry.opennodes.io`): `@opennodes/registry` on an EU VM/PaaS with PostgreSQL, a persistent signing key, the re-import scheduler, and Stage C enabled — the public, OpenRouter-comparable discovery surface; the real-Postgres suite (`ONP_PG_URL`) is the go-live gate.
+2. "OpenNodes for Ollama": one Ollama-compatible endpoint routing across local, LAN (Node Kit, mDNS) and verified public nodes, with `auto-private` never leaving the LAN.
+3. Hands-on editor validation (Cursor/VS Code via `npx @opennodes/cli mcp --print-config`) and an Open WebUI pass over the gateway; then the MCP directory listings and the launch announcement.
 
 **Near term (Draft 0.2 and hardening)**
 4. Spec: promote `modalities: {input, output}` to normative; finalize detached-JWS card serialization; settlement OpenAPI.

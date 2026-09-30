@@ -14,11 +14,19 @@ Requires Node ≥ 22.5 (uses `node:sqlite`, built-in Ed25519). Zero runtime depe
 | `packages/fixture-node` | A conforming ONP node serving a deterministic echo model: signed card at `/.well-known/open-node.json`, JWKS, challenge endpoint, OpenAI-compatible chat (+streaming) with `usage`, ONP header validation (409 on offering mismatch / `price_changed`), signed receipts, `reprice()` for testing |
 | `packages/cli` | REQ-002 subset: `OnpClient` SDK (search, estimate, direct card resolution + signature check, policy gate, pinned invoke with one `price_changed` retry, receipt verification incl. amount = usage × pinned price), the `onp` CLI, and the **ONP Gateway** (`onp gateway`) — a local OpenAI-compatible server (`/v1/models`, `/v1/chat/completions` incl. streaming) exposing discovered offerings to unmodified third-party clients, with aliases, select-backed virtual models, fallback across candidates, bearer auth, transparent reprice recovery, and a receipts ledger (`/gateway/receipts`, `--ledger` JSONL) |
 
-## Run
+## Install (published)
+
+```
+npx @opennodes/registry                  # registry: web app + API + MCP on :4300
+npx @opennodes/cli mcp --print-config    # stdio MCP server config for Cursor / VS Code / Claude Desktop
+npx @opennodes/cli gateway --port 4141   # OpenAI-compatible gateway with onp/auto routing
+```
+
+## Develop
 
 ```
 npm install
-npm test                 # 3 e2e tests, in-process
+npm test                 # 35 tests, in-process (1 opt-in real-Postgres run)
 ```
 
 Live demo (three terminals, or background the first two):
@@ -37,14 +45,15 @@ node packages/cli/bin.js invoke --offering org.opennodes.fixture/echo-1 --prompt
 
 ### MCP: model search & chain pricing inside Cursor / VS Code / Claude Desktop
 
-`onp mcp` is a stdio MCP server exposing `search_offerings` / `get_offering` / `estimate`
+`onp mcp` is a stdio MCP server exposing `recommend` (the advisor — features are extracted
+locally, the prompt never leaves the machine) / `search_offerings` / `get_offering` / `estimate`
 across everything the registry knows — registered nodes plus the imported OpenRouter,
-Hugging Face, and models.dev catalogs (727+ live offerings when seeded). Editor config:
+Hugging Face, models.dev, and Ollama catalogs. Editor config (`npx @opennodes/cli mcp --print-config`):
 
 ```json
 { "mcpServers": { "opennodes": {
-    "command": "node",
-    "args": ["<path>/impl/packages/cli/bin.js", "mcp"],
+    "command": "npx",
+    "args": ["-y", "@opennodes/cli", "mcp"],
     "env": { "ONP_REGISTRY": "http://127.0.0.1:4300" } } } }
 ```
 
@@ -53,13 +62,14 @@ Hugging Face, and models.dev catalogs (727+ live offerings when seeded). Editor 
 ### Gateway: use discovered nodes from Cursor / VS Code / any OpenAI client
 
 ```
-node packages/cli/bin.js gateway --port 4141 --token dev-secret --virtual "auto-cheap=modality=text&sort=price"
+npx @opennodes/cli gateway --port 4141 --token dev-secret --virtual "eu-cheap=modality=text&sort=price"
 ```
 
 Then in the third-party client set the OpenAI-compatible base URL to `http://127.0.0.1:4141/v1`
-(API key: `dev-secret`) — discovered offerings, aliases, and virtual models appear in its model
-list; every request is pinned, policy-checked, receipted, and logged. Spend so far:
-`GET /gateway/receipts`.
+(API key: `dev-secret`) — discovered offerings, aliases, query-defined virtual models, and the
+advisor-routed `onp/auto`, `onp/auto-cheap`, `onp/auto-fast`, `onp/auto-quality`, `onp/auto-private`
+appear in its model list; every request is pinned, policy-checked, receipted, and logged. Spend so far:
+`GET /gateway/receipts`; the last routing decision: `GET /gateway/advice`.
 
 ## Deliberate MVP-0 shortcuts (tracked against requirements)
 

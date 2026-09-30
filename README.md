@@ -32,9 +32,20 @@ MCP standardized how AI applications reach *tools*; the OpenAI API shape standar
 - [REQ-002 — Test client](requirements/REQ-002-test-client.md) — CLI + OpenAI-compatible gateway + MCP modes; compatibility matrix (Cursor, VS Code, Open WebUI…).
 - [REQ-003 — Node Kit](requirements/REQ-003-node-kit.md) — reverse-proxy wrapper turning vLLM/Ollama/TGI into a conforming node: card generation, receipts, registration, self-test.
 
+### Install (published packages)
+
+```bash
+npx @opennodes/cli mcp --print-config   # discovery + advisor tools for Cursor / VS Code / Claude Desktop
+npx @opennodes/cli gateway --port 4141  # OpenAI-compatible gateway with onp/auto routing; base URL http://127.0.0.1:4141/v1
+npx @opennodes/registry                 # run a registry: web app + API + MCP on http://127.0.0.1:4300
+pipx install onp-node                   # Node Kit: turn a vLLM / Ollama / TGI deployment into a conforming node
+```
+
+npm: [@opennodes/core](https://www.npmjs.com/package/@opennodes/core) · [@opennodes/cli](https://www.npmjs.com/package/@opennodes/cli) · [@opennodes/registry](https://www.npmjs.com/package/@opennodes/registry) — PyPI: [onp-node](https://pypi.org/project/onp-node/)
+
 ### Implementation
 - [schemas/open-node.schema.json](schemas/open-node.schema.json) — normative JSON Schema for the Node Card (Phase 0 deliverable).
-- [impl/](impl/README.md) — runnable reference stack (registry + fixture node + `onp` CLI/gateway); `npm install && npm test` in `impl/`.
+- [impl/](impl/README.md) — reference stack source (registry + fixture node + `onp` CLI/gateway); `npm install && npm test` in `impl/`.
 - [node-kit/](node-kit/README.md) — Python Node Kit (REQ-003): wraps any OpenAI-compatible engine (vLLM/Ollama/TGI) into a conforming node; cross-language e2e against the JS registry.
 
 ## Ecosystem

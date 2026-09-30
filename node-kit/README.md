@@ -39,7 +39,7 @@ python -m venv .venv
 ## Real deployment (e.g. Ollama on this machine)
 
 ```
-pipx install ./node-kit          # or: pip install -e .
+pipx install onp-node            # from PyPI; from a checkout: pipx install ./node-kit
 onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.mybox --public-url https://ai.example.org
 # review onp-node.toml (pricing, data_policy), then:
 onp-node serve
