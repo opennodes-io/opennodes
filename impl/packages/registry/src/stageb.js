@@ -12,7 +12,7 @@ export const FINGERPRINT_PROMPTS = [
   'ONP identity probe 3: repeat exactly: basalt-7301',
 ];
 
-async function chatOnce(safeFetch, card, offering, content, maxTokens = 64) {
+async function chatOnce(safeFetch, card, offering, content, maxTokens = 64, timeoutMs = 60_000) {
   const t0 = performance.now();
   const { status, body } = await fetchJsonCapped(safeFetch, `${card.endpoints.openai}/chat/completions`, {
     method: 'POST',
@@ -27,7 +27,7 @@ async function chatOnce(safeFetch, card, offering, content, maxTokens = 64) {
       temperature: 0,
       max_tokens: maxTokens,
     }),
-  }, 60_000);
+  }, timeoutMs);
   return {
     status,
     text: body?.choices?.[0]?.message?.content ?? null,
@@ -61,6 +61,14 @@ async function probeIdentity(safeFetch, card, offering, refs) {
   return { ok: matches === refs.length, matches, total: refs.length };
 }
 
+/** A needle counts as retrieved if the reply carries the full token or just its digits (small models drop the prefix). */
+export function needleFound(text, needle) {
+  if (typeof text !== 'string') return false;
+  if (text.includes(needle)) return true;
+  const digits = needle.split(':')[1];
+  return new RegExp(`(^|[^0-9])${digits}([^0-9]|$)`).test(text);
+}
+
 /** DS-ADM-03: needle retrieval at 25/50/90% of the claimed window; returns the verified cap. */
 async function probeContext(safeFetch, card, offering) {
   const claimed = offering.serving?.context_window ?? 4096;
@@ -76,12 +84,14 @@ async function probeContext(safeFetch, card, offering) {
       + ` ${needle} `
       + fillerUnit.repeat(Math.ceil(afterNeedle / fillerUnit.length)).slice(0, afterNeedle)
       + ' Return the NEEDLE token from this text.';
-    let found = false;
+    let found = false, why = null;
     try {
-      const { status, text } = await chatOnce(safeFetch, card, offering, prompt, 64);
-      found = status === 200 && typeof text === 'string' && text.includes(needle);
-    } catch { found = false; }
-    results.push({ fraction, tokens, found });
+      // Prefill on modest hardware is slow: allow ~30 ms per claimed token on top of the base timeout.
+      const { status, text } = await chatOnce(safeFetch, card, offering, prompt, 64, 60_000 + tokens * 30);
+      found = status === 200 && needleFound(text, needle);
+      if (!found) why = status !== 200 ? `status ${status}` : 'needle not in reply';
+    } catch (err) { found = false; why = /abort|timeout/i.test(String(err?.message)) ? 'timeout' : String(err?.message ?? err).slice(0, 80); }
+    results.push({ fraction, tokens, found, ...(why ? { why } : {}) });
     if (found) cap = Math.max(cap, tokens);
   }
   const allPassed = results.every((r) => r.found);
@@ -145,7 +155,8 @@ export async function runStageB(store, nodeId, card, { safeFetch, capacity = {} 
     await store.recordProbe(nodeId, offering.offering_id, 'B', 'context', verdict.context.ok,
       `claimed ${verdict.context.claimed}, verified ${verdict.context.verified_cap}`,
       verdict.context);
-    if (!verdict.context.ok && verdict.context.verified_cap > 0) {
+    if (!verdict.context.ok) {
+      // 0 = nothing verified: search projects the window as unverified rather than trusting the claim.
       await store.setObservation(nodeId, offering.offering_id, 'context_cap', verdict.context.verified_cap);
     }
 

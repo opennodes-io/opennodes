@@ -20,7 +20,7 @@ export async function collectOfferings(store) {
       // Measured values override claims (DS-ADM-03/04): cap the advertised context to
       // the verified size, and surface registry-measured latency/throughput.
       const serving = { ...offering.serving };
-      if (obs.context_cap && obs.context_cap < (serving.context_window ?? Infinity)) {
+      if (obs.context_cap != null && obs.context_cap < (serving.context_window ?? Infinity)) {
         serving.context_window = obs.context_cap;
         serving.context_capped_from = offering.serving.context_window;
       }

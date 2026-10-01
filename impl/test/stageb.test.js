@@ -137,3 +137,11 @@ test('SSRF guard blocks private targets when enabled', async (t) => {
   const body = await res.json();
   assert.match(body.detail, /ssrf-blocked/);
 });
+
+test('needle counts when the model answers with the digits only', async () => {
+  const { needleFound } = await import('@opennodes/registry/src/stageb.js');
+  assert.equal(needleFound('The NEEDLE token is NEEDLE:16211456.', 'NEEDLE:16211456'), true);
+  assert.equal(needleFound('16211456', 'NEEDLE:16211456'), true);
+  assert.equal(needleFound('The token is 1621145', 'NEEDLE:16211456'), false);
+  assert.equal(needleFound(null, 'NEEDLE:1'), false);
+});
