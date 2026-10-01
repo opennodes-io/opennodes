@@ -2,7 +2,7 @@
 // Deployed by Cloudflare Workers Builds on every push to main (`npx wrangler deploy`).
 {
   "$schema": "https://developers.cloudflare.com/schemas/wrangler.json",
-  "name": "opennodes",
+  "name": "opennodes-site",
   "compatibility_date": "2026-09-01",
   "assets": {
     "directory": "./site",
