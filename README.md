@@ -55,7 +55,7 @@ npm: [@opennodes/core](https://www.npmjs.com/package/@opennodes/core) · [@openn
 
 Clients and products consuming ONP — independent of the standard, listed here for discovery:
 
-- **[Surge](https://github.com/opennodes-io/surge)** — a desktop "browser for MCP" with a native OpenNodes provider: model discovery with trust tiers and measured latency in the picker, enforceable pre-pricing, pinned direct-to-node invocation. The first client to span both discovery layers (models via ONP, tools via MCP).
+- **Surge** (desktop client, pre-release — repository opens with its first public build) — a desktop "browser for MCP" with a native OpenNodes provider: model discovery with trust tiers and measured latency in the picker, enforceable pre-pricing, pinned direct-to-node invocation. The first client to span both discovery layers (models via ONP, tools via MCP).
 - **Your client here** — ONP is an open standard; any client can implement discovery via [ONP-3](spec/ONP-3-registry.md) and invocation via [ONP-4](spec/ONP-4-invocation.md). Open a PR to be listed.
 
 ## Design principles
