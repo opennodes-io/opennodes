@@ -55,12 +55,47 @@ def make_server() -> tuple[NodeKitServer, dict]:
     return NodeKitServer(card, key, cfg["engine"]["base_url"], challenge_file=CHALLENGE), cfg
 
 
+def _advertise_mdns(node_id: str, public_url: str, port: int):
+    """Announce this node as _onp._tcp on the LAN so `onp-ollama` and other ONP clients find it.
+    Optional dependency: pip install 'onp-node[mdns]'."""
+    try:
+        import socket
+        from zeroconf import ServiceInfo, Zeroconf
+    except ImportError:
+        print("mdns: zeroconf not installed — pip install 'onp-node[mdns]'", file=sys.stderr)
+        return None
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("10.255.255.255", 1))
+        ip = s.getsockname()[0]
+    except OSError:
+        ip = "127.0.0.1"
+    finally:
+        s.close()
+    info = ServiceInfo(
+        "_onp._tcp.local.", f"{node_id}._onp._tcp.local.",
+        addresses=[socket.inet_aton(ip)], port=port,
+        properties={"origin": public_url.rstrip("/"), "onp": "0.1"},
+        server=f"{node_id.replace('.', '-')}.local.",
+    )
+    zc = Zeroconf()
+    zc.register_service(info)
+    print(f"mdns: advertising {node_id} as _onp._tcp at {ip}:{port}")
+    return zc
+
+
 def cmd_serve(args):
     server, cfg = make_server()
     port = args.port or int(cfg["node"]["public_url"].rsplit(":", 1)[-1].split("/")[0])
     print(f"onp-node serving {len(server.offering_by_model)} offering(s) on port {port}")
     print(f"card: {cfg['node']['public_url'].rstrip('/')}/.well-known/open-node.json")
-    web.run_app(server.build_app(), host=args.host, port=port, print=None)
+    zc = _advertise_mdns(cfg["node"]["id"], cfg["node"]["public_url"], port) if args.mdns else None
+    try:
+        web.run_app(server.build_app(), host=args.host, port=port, print=None)
+    finally:
+        if zc is not None:
+            zc.unregister_all_services()
+            zc.close()
 
 
 def cmd_check(args):
@@ -121,6 +156,7 @@ def main():
     sp = sub.add_parser("serve", help="serve the card + proxy in front of the engine")
     sp.add_argument("--host", default="0.0.0.0")
     sp.add_argument("--port", type=int)
+    sp.add_argument("--mdns", action="store_true", help="advertise this node on the LAN as _onp._tcp (needs onp-node[mdns])")
     sp.set_defaults(fn=cmd_serve)
 
     sp = sub.add_parser("check", help="run the Stage A self-test against this node")

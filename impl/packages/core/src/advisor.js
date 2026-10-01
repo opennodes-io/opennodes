@@ -126,7 +126,10 @@ export function extractFeatures(task, { attachments = [], est_output_tokens = nu
 
 /* ------------------------------------------------------------------ ranking */
 
-const TIER_SCORE = { unverified: 0, community: 0.4, verified: 0.8, attested: 1.0 };
+// 'local' and 'lan' are client-side tiers (your own machines): fully trusted by definition.
+const TIER_SCORE = { unverified: 0, community: 0.4, verified: 0.8, attested: 1.0, lan: 1.0, local: 1.0 };
+const TIER_ORDER = ['unverified', 'community', 'verified', 'attested'];
+const tierRank = (t) => (t === 'local' || t === 'lan') ? TIER_ORDER.length : TIER_ORDER.indexOf(t);
 const LANG_GRADE = { basic: 0.4, strong: 0.8, native: 1.0 };
 const BENCH_FOR_CLASS = {
   code: /humaneval|mbpp|swe-?bench|livecodebench|codeforces/i,
@@ -213,8 +216,7 @@ function languageFit(o, lang) {
  * policy: { min_tier, max_input_per_mtok, max_total_usd, region, prefer_local, preset, limit }
  */
 export function recommend(offerings, features, policy = {}) {
-  const tiers = ['unverified', 'community', 'verified', 'attested'];
-  const minTier = tiers.indexOf(policy.min_tier ?? 'unverified');
+  const minTier = TIER_ORDER.indexOf(policy.min_tier ?? 'unverified');
   const needCtx = Math.ceil((features.est_input_tokens + features.est_output_tokens) * 1.15);
   const required = [];
   if (features.needs.tools) required.push('tool_calls');
@@ -225,7 +227,7 @@ export function recommend(offerings, features, policy = {}) {
   const reject = (why) => { rejected[why] = (rejected[why] ?? 0) + 1; return false; };
   const candidates = offerings.filter((o) => {
     if (o.modality !== features.modality && !(features.modality === 'text' && o.modality === 'multimodal')) return reject('modality');
-    if (tiers.indexOf(o.tier) < minTier) return reject('tier');
+    if (tierRank(o.tier) < minTier) return reject('tier');
     if ((o.pricing?.input_per_mtok ?? 0) > (policy.max_input_per_mtok ?? Infinity)) return reject('price');
     const ctx = o.serving?.context_window;
     if (ctx && ctx < needCtx) return reject('context');

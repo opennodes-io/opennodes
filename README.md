@@ -38,10 +38,13 @@ MCP standardized how AI applications reach *tools*; the OpenAI API shape standar
 npx @opennodes/cli mcp --print-config   # discovery + advisor tools for Cursor / VS Code / Claude Desktop
 npx @opennodes/cli gateway --port 4141  # OpenAI-compatible gateway with onp/auto routing; base URL http://127.0.0.1:4141/v1
 npx @opennodes/registry                 # run a registry: web app + API + MCP on http://127.0.0.1:4300
+npx @opennodes/ollama-router            # OpenNodes for Ollama: one Ollama endpoint over local + LAN + verified public models
 pipx install onp-node                   # Node Kit: turn a vLLM / Ollama / TGI deployment into a conforming node
 ```
 
-npm: [@opennodes/core](https://www.npmjs.com/package/@opennodes/core) · [@opennodes/cli](https://www.npmjs.com/package/@opennodes/cli) · [@opennodes/registry](https://www.npmjs.com/package/@opennodes/registry) — PyPI: [onp-node](https://pypi.org/project/onp-node/)
+npm: [@opennodes/core](https://www.npmjs.com/package/@opennodes/core) · [@opennodes/cli](https://www.npmjs.com/package/@opennodes/cli) · [@opennodes/registry](https://www.npmjs.com/package/@opennodes/registry) · [@opennodes/ollama-router](https://www.npmjs.com/package/@opennodes/ollama-router) — PyPI: [onp-node](https://pypi.org/project/onp-node/)
+
+**OpenNodes for Ollama** ([impl/packages/ollama-router](impl/packages/ollama-router/README.md)): point Open WebUI, Continue, Zed, or the `ollama` CLI at `OLLAMA_HOST=127.0.0.1:11435` and one model list spans your local Ollama, other machines on your LAN (plain Ollama servers or Node Kit nodes, auto-discovered via mDNS), and verified public nodes from the registry — with `auto`, `auto-cheap`, `auto-fast`, `auto-quality`, and `auto-private` (never leaves the LAN) routed by the advisor, pinned prices, budget caps, and signed receipts for public calls.
 
 ### Implementation
 - [schemas/open-node.schema.json](schemas/open-node.schema.json) — normative JSON Schema for the Node Card (Phase 0 deliverable).

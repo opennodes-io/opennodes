@@ -42,7 +42,7 @@ python -m venv .venv
 pipx install onp-node            # from PyPI; from a checkout: pipx install ./node-kit
 onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.mybox --public-url https://ai.example.org
 # review onp-node.toml (pricing, data_policy), then:
-onp-node serve
+onp-node serve                   # add --mdns (pip install 'onp-node[mdns]') so LAN clients such as onp-ollama discover it
 onp-node check
 onp-node register https://registry.example.org
 ```

@@ -1,0 +1,22 @@
+{
+  "name": "@opennodes/ollama-router",
+  "version": "0.1.0",
+  "description": "OpenNodes for Ollama: one Ollama-compatible endpoint across your local models, LAN machines (auto-discovered), and verified public nodes from the OpenNodes registry — with advisor routing (auto, auto-cheap, auto-private) and signed receipts for public calls",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "src/router.js",
+  "exports": { ".": "./src/router.js", "./src/*": "./src/*" },
+  "bin": { "onp-ollama": "bin.js" },
+  "files": ["bin.js", "src", "README.md"],
+  "keywords": ["ollama", "opennodes", "onp", "router", "load-balancer", "lan", "local-llm", "open-webui", "mcp", "ai"],
+  "homepage": "https://opennodes.io",
+  "repository": { "type": "git", "url": "git+https://github.com/opennodes-io/opennodes.git", "directory": "impl/packages/ollama-router" },
+  "bugs": { "url": "https://github.com/opennodes-io/opennodes/issues" },
+  "engines": { "node": ">=22.5" },
+  "publishConfig": { "access": "public" },
+  "dependencies": {
+    "@opennodes/core": "0.1.0",
+    "@opennodes/cli": "0.1.0",
+    "multicast-dns": "^7.2.5"
+  }
+}
