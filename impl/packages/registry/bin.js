@@ -5,6 +5,7 @@ const dbPath = process.env.ONP_DB ?? ':memory:'; // sqlite path/:memory: or post
 const persistent = dbPath !== ':memory:' && !dbPath.startsWith('postgres');
 const registry = await startRegistry({
   port: Number(process.env.PORT ?? 4300),
+  host: process.env.HOST ?? '127.0.0.1',   // 0.0.0.0 inside containers / behind a reverse proxy
   dbPath,
   // Persistent signing identity: explicit path, or derived from a file db; pg deployments set ONP_REGISTRY_KEY.
   keyPath: process.env.ONP_REGISTRY_KEY ?? (persistent ? `${dbPath}.key.pem` : (dbPath.startsWith('postgres') ? 'onp-registry-key.pem' : null)),

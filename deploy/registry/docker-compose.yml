@@ -1,0 +1,52 @@
+# OpenNodes hosted registry — single-host deployment (Postgres + registry + Caddy TLS).
+# Usage: copy this directory to the server, create .env (see setup.sh), `docker compose up -d --build`.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: onp
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: onp
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U onp -d onp"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  registry:
+    build: .
+    environment:
+      HOST: 0.0.0.0
+      PORT: "4300"
+      ONP_DB: postgres://onp:${PG_PASSWORD}@db:5432/onp
+      ONP_REGISTRY_KEY: /data/registry-key.pem      # persistent signing identity (export feed)
+      ONP_ADMIN_TOKEN: ${ONP_ADMIN_TOKEN}            # admin routes (imports, fingerprint capture)
+      ONP_REIMPORT: "1"                              # keep imported catalogs fresh (6h)
+      ONP_REIMPORT_SOURCES: openrouter,huggingface,models-dev,ollama
+    volumes:
+      - ./data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - registry
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

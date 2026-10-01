@@ -1,0 +1,4 @@
+registry.opennodes.io {
+	encode zstd gzip
+	reverse_proxy registry:4300
+}
