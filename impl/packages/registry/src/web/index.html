@@ -600,9 +600,10 @@ async function search() {
   if (sup.size) p.set('supports', [...sup].join(','));
   p.set('sort', $('#f-sort').value);
   try {
-    const { offerings } = await api('/v0/offerings?' + p);
+    const { offerings, total } = await api('/v0/offerings?' + p);
     lastResults = offerings;
-    $('#m-counts').textContent = offerings.length + (offerings.length === 60 ? '+' : '') + ' offerings';
+    const n = total ?? offerings.length;
+    $('#m-counts').textContent = fmtInt(n) + ' offerings' + (offerings.length < n ? ` · showing top ${offerings.length}` : '');
     $('#m-list').innerHTML = offerings.map(renderItem).join('')
       || '<p class="sub">No offerings match. A fresh registry fills up via catalog imports and node registrations.</p>';
     document.querySelectorAll('.mitem').forEach((el) => el.addEventListener('click', () => selectModel(el)));

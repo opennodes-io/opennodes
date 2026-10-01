@@ -15,7 +15,7 @@ import { runStageB, captureFingerprints } from './stageb.js';
 import { startStageC } from './stagec.js';
 import { startReimport } from './reimport.js';
 import { makeSafeFetch } from './safefetch.js';
-import { searchOfferings, collectOfferings, RANK_COMPONENTS } from './search.js';
+import { searchOfferings, searchOfferingsPaged, collectOfferings, RANK_COMPONENTS } from './search.js';
 import { mcpRoutes } from './mcp.js';
 import { exportRoutes } from './export.js';
 import {
@@ -244,7 +244,8 @@ export async function startRegistry({
     }],
 
     ['GET', '/v0/offerings', async (req, res, { query }) => {
-      sendJson(res, 200, { offerings: await searchOfferings(store, query) });
+      const { offerings, total } = await searchOfferingsPaged(store, query);
+      sendJson(res, 200, { offerings, total });   // total = matches before `limit`
     }],
 
     ['GET', '/v0/offerings/:nodeId/:offeringId', async (req, res, { params }) => {

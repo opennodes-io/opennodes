@@ -58,7 +58,8 @@ export async function collectOfferings(store) {
   return out;
 }
 
-export async function searchOfferings(store, query) {
+/** Search returning the page plus the total number of matches (before `limit`). */
+export async function searchOfferingsPaged(store, query) {
   let items = await collectOfferings(store);
 
   const q = (k) => query.get(k);
@@ -112,7 +113,11 @@ export async function searchOfferings(store, query) {
   });
 
   const limit = Math.min(Number(q('limit') ?? 50), 200);
-  return items.slice(0, limit);
+  return { offerings: items.slice(0, limit), total: items.length };
+}
+
+export async function searchOfferings(store, query) {
+  return (await searchOfferingsPaged(store, query)).offerings;
 }
 
 const round2 = (n) => Math.round(n * 100) / 100;
