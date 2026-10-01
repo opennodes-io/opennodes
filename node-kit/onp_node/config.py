@@ -38,7 +38,7 @@ training_on_inputs = false
 # Disclose the silicon behind this node — same model, different hardware, different
 # product. Claimed until attested; the registry's measured TTFT/TPS always wins.
 # [hardware]
-# accelerators = [{ type = "H100", count = 2, memory_gb = 80 }]
+# accelerators = [{{ type = "H100", count = 2, memory_gb = 80 }}]
 
 [payment]
 probe_allowance_per_day = 200
