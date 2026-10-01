@@ -3,8 +3,8 @@
 One Ollama-compatible endpoint for **your local models, your other machines, and verified public nodes** — so Open WebUI, Continue, Zed, JetBrains AI, Msty, Enchanted, Raycast, and anything else that speaks Ollama gains three tiers behind one model list, without changing a line.
 
 ```bash
-npx @opennodes/ollama-router                       # LAN-only: local Ollama + discovered peers
-ONP_REGISTRY=https://registry.opennodes.io npx @opennodes/ollama-router   # + verified public nodes
+npx @opennodes/ollama-router                  # local Ollama + LAN peers + public nodes from registry.opennodes.io
+npx @opennodes/ollama-router --registry none  # LAN-only: nothing leaves your network
 ```
 
 Then set `OLLAMA_HOST=127.0.0.1:11435` in your app.

@@ -5,7 +5,8 @@ import { startGateway } from './src/gateway.js';
 import { createStdioMcp } from './src/mcpserver.js';
 
 const [cmd, ...args] = process.argv.slice(2);
-const registry = process.env.ONP_REGISTRY ?? 'http://127.0.0.1:4300';
+// Default: the hosted OpenNodes registry. Point ONP_REGISTRY at http://127.0.0.1:4300 for a local one.
+const registry = process.env.ONP_REGISTRY ?? 'https://registry.opennodes.io';
 const client = new OnpClient({ registry });
 
 const flag = (name, fallback) => {
@@ -118,7 +119,7 @@ usage:
   onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--ledger receipts.jsonl]
   onp mcp [--print-config]    # stdio MCP server for Cursor / VS Code / Claude Desktop
   onp health
-env: ONP_REGISTRY (default http://127.0.0.1:4300)`);
+env: ONP_REGISTRY (default https://registry.opennodes.io; a local registry runs at http://127.0.0.1:4300)`);
   }
 } catch (err) {
   console.error('error:', err.message);

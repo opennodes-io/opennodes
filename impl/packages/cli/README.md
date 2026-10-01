@@ -12,6 +12,6 @@ npx @opennodes/cli gateway --port 4141     # then set OPENAI_BASE_URL=http://127
 npx @opennodes/cli search --modality text --tier verified --sort tps
 ```
 
-Registry: `ONP_REGISTRY` (default `http://127.0.0.1:4300` — run one locally with `npx @opennodes/registry`, or point at a hosted registry).
+Registry: `ONP_REGISTRY` — defaults to the hosted registry at `https://registry.opennodes.io` (9,000+ offerings); set it to `http://127.0.0.1:4300` to use your own (`npx @opennodes/registry`).
 
 Part of [OpenNodes](https://opennodes.io) · [specification](https://github.com/opennodes-io/opennodes/tree/main/spec) · Apache-2.0.

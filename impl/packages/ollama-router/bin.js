@@ -17,13 +17,14 @@ if (has('help') || args[0] === '-h') {
 Then point any Ollama app at it:   OLLAMA_HOST=127.0.0.1:11435
 Models:  <your local models>  lan/<peer>/<model>  onp/<node>/<offering>
          auto  auto-cheap  auto-fast  auto-quality  auto-private (never leaves the LAN)
-Env:     ONP_REGISTRY (public tier; omit for LAN-only), OLLAMA_UPSTREAM (local Ollama)
+Env:     ONP_REGISTRY (public tier; default https://registry.opennodes.io; --registry none for LAN-only), OLLAMA_UPSTREAM (local Ollama)
 Publish this machine as a node:    pipx install onp-node && onp-node init --engine ${flag('ollama', process.env.OLLAMA_UPSTREAM ?? 'http://127.0.0.1:11434')}/v1 ...`);
   process.exit(0);
 }
 
 const keys = Object.fromEntries(flags('key').map((kv) => { const i = kv.indexOf('='); return [kv.slice(0, i), kv.slice(i + 1)]; }));
-const registry = flag('registry', process.env.ONP_REGISTRY ?? null);
+const registryArg = flag('registry', process.env.ONP_REGISTRY ?? 'https://registry.opennodes.io');
+const registry = registryArg === 'none' || registryArg === '' ? null : registryArg;
 const host = has('public-bind') ? '0.0.0.0' : '127.0.0.1';
 
 const router = await startOllamaRouter({
