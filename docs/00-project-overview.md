@@ -75,10 +75,11 @@ The supply-side on-ramp: a reverse proxy that turns any OpenAI-compatible engine
 
 ## 5. Next steps
 
+**Done since (October 2026):** the hosted registry is live at [registry.opennodes.io](https://registry.opennodes.io) (Hetzner EU, PostgreSQL, persistent signing key, 6-hour re-imports, 9,000+ offerings; deployment recipe in `deploy/registry/`); "OpenNodes for Ollama" shipped as `@opennodes/ollama-router`; the CLI and router default to the hosted registry.
+
 **Immediate**
-1. Deploy the hosted registry (`registry.opennodes.io`): `@opennodes/registry` on an EU VM/PaaS with PostgreSQL, a persistent signing key, the re-import scheduler, and Stage C enabled — the public, OpenRouter-comparable discovery surface; the real-Postgres suite (`ONP_PG_URL`) is the go-live gate.
-2. "OpenNodes for Ollama": one Ollama-compatible endpoint routing across local, LAN (Node Kit, mDNS) and verified public nodes, with `auto-private` never leaving the LAN.
-3. Hands-on editor validation (Cursor/VS Code via `npx @opennodes/cli mcp --print-config`) and an Open WebUI pass over the gateway; then the MCP directory listings and the launch announcement.
+1. Hands-on editor validation (Cursor/VS Code via `npx @opennodes/cli mcp --print-config`) and an Open WebUI pass over the Ollama router; then the MCP directory listings and the launch announcement.
+2. First external nodes: "claim your listing" for imported providers; direct outreach to EU/Polish operators; Stage B reference fingerprints for the top open-weight families.
 
 **Near term (Draft 0.2 and hardening)**
 4. Spec: promote `modalities: {input, output}` to normative; finalize detached-JWS card serialization; settlement OpenAPI.
