@@ -46,7 +46,42 @@ services:
       - registry
     restart: unless-stopped
 
+  # ---- optional: the registry's own reference node (docker compose --profile demo up -d) ----
+  # A real, registered, free node so the catalog has a key-less target for the playground/chat:
+  # Ollama (CPU) + the Python Node Kit. Honest about being small and slow; declares its hardware.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["demo"]
+    environment:
+      OLLAMA_KEEP_ALIVE: 24h
+      OLLAMA_NUM_PARALLEL: "2"
+      OLLAMA_CONTEXT_LENGTH: "4096"
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+  demo-node:
+    build: ./demo-node
+    profiles: ["demo"]
+    environment:
+      ENGINE_URL: http://ollama:11434/v1
+      NODE_ID: ${DEMO_NODE_ID:-io.opennodes.demo-node}
+      PUBLIC_URL: ${DEMO_PUBLIC_URL:-https://demo-node.opennodes.io}
+      NODE_NAME: "OpenNodes demo node"
+      OPERATOR: "OpenNodes Project"
+      COUNTRY: DE
+      DESCRIPTION: "Reference node run by the OpenNodes project: llama3.2 1B on a 2 vCPU CPU-only VM (Hetzner CPX22, Nuremberg). Free, slow, honest - here so the catalog always has a key-less node to try."
+      HW_TYPE: "AMD EPYC vCPU (CPU-only)"
+      HW_COUNT: "2"
+    volumes:
+      - ./demo-node/data:/data
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
 volumes:
   pgdata:
   caddy_data:
   caddy_config:
+  ollama:
+    external: true

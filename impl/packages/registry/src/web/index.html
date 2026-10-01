@@ -938,6 +938,7 @@ $('#pg-send').addEventListener('click', async () => {
   const key = $('#pg-key').value.trim();
   if (key) localStorage.setItem(keyStoreId, key); else $('#pg-key').value = localStorage.getItem(keyStoreId) ?? '';
   const useKey = key || localStorage.getItem(keyStoreId) || '';
+  { const hint = importKeyHint(offering, base, useKey); if (hint) { out.innerHTML = '<span class="err">' + esc(hint) + '</span>'; $('#pg-send').disabled = false; return; } }
   $('#pg-send').disabled = true;
   out.textContent = '…';
   meta.textContent = '';
@@ -948,7 +949,7 @@ $('#pg-send').addEventListener('click', async () => {
       headers: {
         'content-type': 'application/json',
         ...(useKey ? { authorization: 'Bearer ' + useKey } : {}),
-        ...(offering ? { 'onp-offering': offering.node_id + '/' + offering.offering_id, 'onp-card-revision': offering.card_revision } : {}),
+        ...(offering && offering.source !== 'import' ? { 'onp-offering': offering.node_id + '/' + offering.offering_id, 'onp-card-revision': offering.card_revision } : {}),
       },
       body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: 512 }),
     });
@@ -1090,6 +1091,15 @@ async function refreshEstimate() {
 }
 $('#ch-judge').addEventListener('change', refreshEstimate);
 
+
+/** Imported catalog listings (OpenRouter, HF providers, …) need the user's own key for that host. */
+function importKeyHint(offering, base, key) {
+  if (!offering || offering.source !== 'import' || key) return null;
+  const host = new URL(base).host;
+  const where = host.includes('huggingface') ? 'a Hugging Face token (huggingface.co/settings/tokens)'
+    : host.includes('openrouter') ? 'an OpenRouter API key (openrouter.ai/keys)' : `an API key for ${host}`;
+  return `This is an imported catalog listing served by ${host}: your browser calls it directly, which needs ${where} — paste it in the API key field (stored only in this browser). Or run it locally with BYOK: npx @opennodes/cli gateway --key ${host}=<key>. Registered OpenNodes nodes need no key.`;
+}
 async function callTarget(t, messages, maxTokens = 1024) {
   const base = targetKeyBase(t);
   const model = t.offering ? t.offering.binding.model_id : t.custom.model;
@@ -1097,13 +1107,14 @@ async function callTarget(t, messages, maxTokens = 1024) {
   const typed = $('#ch-key').value.trim();
   if (typed) localStorage.setItem(keyId, typed);
   const key = typed || localStorage.getItem(keyId) || '';
+  { const hint = importKeyHint(t.offering, base, key); if (hint) throw new Error(hint); }
   const t0 = performance.now();
   const res = await fetch(base + '/chat/completions', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       ...(key ? { authorization: 'Bearer ' + key } : {}),
-      ...(t.offering ? { 'onp-offering': t.offering.node_id + '/' + t.offering.offering_id, 'onp-card-revision': t.offering.card_revision } : {}),
+      ...(t.offering && t.offering.source !== 'import' ? { 'onp-offering': t.offering.node_id + '/' + t.offering.offering_id, 'onp-card-revision': t.offering.card_revision } : {}),
     },
     body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
   });
@@ -1126,13 +1137,14 @@ async function callTargetStream(t, messages, onDelta, maxTokens = 1024) {
   const model = t.offering ? t.offering.binding.model_id : t.custom.model;
   const keyId = 'onp-key-' + new URL(base).host;
   const key = $('#ch-key').value.trim() || localStorage.getItem(keyId) || '';
+  { const hint = importKeyHint(t.offering, base, key); if (hint) throw new Error(hint); }
   const t0 = performance.now();
   const res = await fetch(base + '/chat/completions', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       ...(key ? { authorization: 'Bearer ' + key } : {}),
-      ...(t.offering ? { 'onp-offering': t.offering.node_id + '/' + t.offering.offering_id, 'onp-card-revision': t.offering.card_revision } : {}),
+      ...(t.offering && t.offering.source !== 'import' ? { 'onp-offering': t.offering.node_id + '/' + t.offering.offering_id, 'onp-card-revision': t.offering.card_revision } : {}),
     },
     body: JSON.stringify({ model, messages, max_tokens: maxTokens, stream: true, stream_options: { include_usage: true } }),
   });

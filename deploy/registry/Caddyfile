@@ -2,3 +2,9 @@ registry.opennodes.io {
 	encode zstd gzip
 	reverse_proxy registry:4300
 }
+
+# The registry's own reference node (compose profile "demo").
+demo-node.opennodes.io {
+	encode zstd gzip
+	reverse_proxy demo-node:8800
+}
