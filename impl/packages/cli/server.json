@@ -1,35 +1,36 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.json",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.opennodes-io/opennodes",
-  "description": "OpenNodes discovery for AI agents: search verified AI inference nodes across registered operators and imported catalogs, get the best node + model for a task (advisor), and pre-price multi-step chains with enforceable estimates.",
-  "status": "active",
+  "title": "OpenNodes",
+  "description": "Discover verified AI inference nodes, get the best node+model per task, pre-price chains.",
+  "websiteUrl": "https://opennodes.io",
   "repository": {
     "url": "https://github.com/opennodes-io/opennodes",
-    "source": "github"
+    "source": "github",
+    "subfolder": "impl/packages/cli"
   },
   "version": "0.1.2",
   "packages": [
     {
-      "registry_type": "npm",
-      "registry_base_url": "https://registry.npmjs.org",
+      "registryType": "npm",
       "identifier": "@opennodes/cli",
       "version": "0.1.2",
       "transport": {
         "type": "stdio"
       },
-      "package_arguments": [
+      "packageArguments": [
         {
           "type": "positional",
-          "value": "mcp",
-          "value_hint": "mcp"
+          "value": "mcp"
         }
       ],
-      "environment_variables": [
+      "environmentVariables": [
         {
           "name": "ONP_REGISTRY",
-          "description": "Registry base URL. Defaults to the hosted registry https://registry.opennodes.io; set http://127.0.0.1:4300 to use a local registry (`npx @opennodes/registry`).",
-          "is_required": false,
-          "format": "string"
+          "description": "Registry base URL. Defaults to https://registry.opennodes.io; set http://127.0.0.1:4300 for a local registry.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
         }
       ]
     }

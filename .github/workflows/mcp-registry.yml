@@ -1,0 +1,30 @@
+name: Publish to the MCP Registry
+
+# Lists the OpenNodes MCP server (io.github.opennodes-io/opennodes) in the official MCP Registry.
+# Token-free: authenticates with GitHub OIDC, which proves this workflow runs in the opennodes-io org.
+# Run manually after a new @opennodes/cli version is on npm and server.json carries that version.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install mcp-publisher
+        run: |
+          curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher --help | head -1
+      - name: Validate server.json
+        working-directory: impl/packages/cli
+        run: ../../../mcp-publisher validate
+      - name: Login (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+      - name: Publish
+        working-directory: impl/packages/cli
+        run: ../../../mcp-publisher publish
