@@ -1,6 +1,6 @@
 {
   "name": "@opennodes/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenNodes Protocol (ONP) core: Node Card validation, JWS signing/verification, pricing and receipt math, HTTP helpers, and the task\u2192node advisor",
   "license": "Apache-2.0",
   "type": "module",

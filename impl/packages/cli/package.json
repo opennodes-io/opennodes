@@ -1,6 +1,6 @@
 {
   "name": "@opennodes/cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "OpenNodes (ONP) client: search verified AI nodes, pre-price chains, invoke with signed receipts; OpenAI-compatible gateway with onp/auto routing; stdio MCP server for Cursor, VS Code, and Claude Desktop",
   "license": "Apache-2.0",
   "type": "module",
@@ -48,6 +48,6 @@
     "access": "public"
   },
   "dependencies": {
-    "@opennodes/core": "0.1.0"
+    "@opennodes/core": "0.1.1"
   }
 }

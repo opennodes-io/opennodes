@@ -1,6 +1,6 @@
 {
   "name": "@opennodes/ollama-router",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "OpenNodes for Ollama: one Ollama-compatible endpoint across your local models, LAN machines (auto-discovered), and verified public nodes from the OpenNodes registry \u2014 with advisor routing (auto, auto-cheap, auto-private) and signed receipts for public calls",
   "license": "Apache-2.0",
   "type": "module",
@@ -45,8 +45,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@opennodes/core": "0.1.0",
-    "@opennodes/cli": "0.1.1",
+    "@opennodes/core": "0.1.1",
+    "@opennodes/cli": "0.1.2",
     "multicast-dns": "^7.2.5"
   }
 }

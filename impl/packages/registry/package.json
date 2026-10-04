@@ -43,7 +43,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@opennodes/core": "0.1.0",
+    "@opennodes/core": "0.1.1",
     "pg": "^8.13.1"
   }
 }

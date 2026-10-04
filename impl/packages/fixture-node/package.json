@@ -3,5 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "main": "src/node.js",
-  "dependencies": { "@opennodes/core": "0.1.0" }
+  "dependencies": {
+    "@opennodes/core": "0.1.1"
+  }
 }
