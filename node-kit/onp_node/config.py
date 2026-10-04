@@ -55,6 +55,28 @@ def load_config(path: Path) -> dict:
         return tomllib.load(f)
 
 
+def stable_revision(card: dict, state_path: Path) -> dict:
+    """Keep the card revision unchanged across restarts when the content is unchanged.
+
+    A revision is what clients and registries pin (prices, offerings); minting a new one on
+    every start makes every pinned estimate and probe stale for no reason. The state file
+    remembers the hash of the card content and the revision that was issued for it.
+    """
+    import hashlib
+    import json
+    body = {k: v for k, v in card.items() if k not in ("revision", "signatures")}
+    digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        if state.get("hash") == digest and state.get("revision"):
+            card["revision"] = state["revision"]
+            return card
+    except (OSError, ValueError):
+        pass
+    state_path.write_text(json.dumps({"hash": digest, "revision": card["revision"]}), encoding="utf-8")
+    return card
+
+
 def build_card(cfg: dict, model_ids: list[str]) -> dict:
     node, serving, pricing = cfg["node"], cfg.get("serving", {}), cfg.get("pricing", {})
     data_policy = cfg.get("data_policy", {})

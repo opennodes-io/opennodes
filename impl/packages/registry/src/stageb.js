@@ -52,13 +52,14 @@ export async function captureFingerprints(safeFetch, card, offering) {
 
 /** DS-ADM-02: identity check against stored references. */
 async function probeIdentity(safeFetch, card, offering, refs) {
-  let matches = 0;
+  let matches = 0, stale = false;
   for (const ref of refs) {
     const { status, text } = await chatOnce(safeFetch, card, offering, ref.prompt);
+    if (status === 409) stale = true;   // pinned revision is no longer current: not evidence about identity
     if (status === 200 && text !== null && sha256(text) === ref.expected_hash) matches++;
   }
   // Deterministic battery: require all prompts to match the reference distribution.
-  return { ok: matches === refs.length, matches, total: refs.length };
+  return { ok: matches === refs.length, matches, total: refs.length, ...(stale ? { stale: true } : {}) };
 }
 
 /** A needle counts as retrieved if the reply carries the full token or just its digits (small models drop the prefix). */
@@ -145,6 +146,10 @@ export async function runStageB(store, nodeId, card, { safeFetch, capacity = {} 
     const refs = await store.getFingerprints(offering.model.artifact);
     if (refs.length) {
       verdict.identity = await probeIdentity(safeFetch, card, offering, refs);
+      if (verdict.identity.stale) {
+        // The node rejected our pinned revision (409). Abort without judging: the caller re-indexes and retries.
+        return { ok: false, identityFailed: false, stale: true, verdicts: [...verdicts, verdict] };
+      }
       await store.recordProbe(nodeId, offering.offering_id, 'B', 'identity', verdict.identity.ok,
         `${verdict.identity.matches}/${verdict.identity.total} reference matches`);
     } else {

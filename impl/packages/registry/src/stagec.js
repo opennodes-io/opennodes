@@ -9,6 +9,7 @@ const OBSERVED_STATES = ['community', 'verified', 'attested'];
 
 export function startStageC(store, {
   safeFetch,
+  refreshCard = null,             // re-index a node's card when its revision moved (restart / reprice)
   livenessIntervalMs = 300_000,   // spec: <=5 min; tests shorten this
   blindIntervalMs = 3_600_000,
   failThreshold = 3,
@@ -47,6 +48,7 @@ export function startStageC(store, {
   async function blindSweep() {
     for (const node of await store.allNodes()) {
       if (!OBSERVED_STATES.includes(node.state)) continue;
+      await refreshCard?.(node.id);
       const card = await store.latestCard(node.id);
       if (!card) continue;
       const chatOfferings = card.offerings.filter((o) => o.binding.profile === 'onp.openai.chat/v1');
@@ -66,6 +68,7 @@ export function startStageC(store, {
             max_tokens: 32,
           }),
         }, 30_000);
+        if (status === 409) { await refreshCard?.(node.id); continue; }   // stale pin, not a failure of the node
         const usage = body?.usage;
         const ok = status === 200 && Number.isFinite(usage?.prompt_tokens) && Number.isFinite(usage?.completion_tokens);
         await store.recordProbe(node.id, offering.offering_id, 'C', 'blind', ok,

@@ -145,3 +145,22 @@ test('needle counts when the model answers with the digits only', async () => {
   assert.equal(needleFound('The token is 1621145', 'NEEDLE:16211456'), false);
   assert.equal(needleFound(null, 'NEEDLE:1'), false);
 });
+
+test('a node whose card revision moved (restart / reprice) is re-indexed, not disputed', async (t) => {
+  const node = await startFixtureNode();
+  const registry = await startRegistry({ allowPrivateTargets: true, stageBCapacity: FAST_CAPACITY });
+  t.after(async () => { await node.close(); await registry.close(); });
+  await registerAndVerify(registry, node);
+  await captureRefs(registry, 'org.opennodes.fixture', 'echo-1');
+  const before = (await (await fetch(`${registry.origin}/v0/offerings`)).json()).offerings[0].card_revision;
+
+  const newRevision = node.reprice(0.55);          // same model, new card revision: old pins now get 409
+  assert.notEqual(newRevision, before);
+
+  const result = await admit(registry, 'org.opennodes.fixture');
+  assert.equal(result.state, 'verified', JSON.stringify(result.stage_b));
+  assert.equal(result.stage_b.verdicts[0].identity.ok, true);
+  const after = (await (await fetch(`${registry.origin}/v0/offerings`)).json()).offerings[0];
+  assert.equal(after.card_revision, newRevision, 'registry re-indexed the newer card');
+  assert.equal(after.pricing.output_per_mtok, 0.55);
+});

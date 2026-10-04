@@ -100,6 +100,22 @@ export async function startRegistry({
     return { card, sigOk };
   }
 
+  /**
+   * Re-index a registered node's card when its origin serves a newer revision (restart,
+   * reprice, config change). Probes pin the revision they hold; without this a restarted
+   * node answers 409 to every probe and would look like an identity mismatch.
+   */
+  async function refreshCard(nodeId) {
+    try {
+      const node = await store.getNode(nodeId);
+      if (!node?.card_url || node.source === 'import') return;
+      const current = await store.latestCard(nodeId);
+      const fresh = await fetchCard(node.card_url);
+      if (current && fresh.revision === current.revision) return;
+      await indexCard(nodeId, node.card_url);
+    } catch { /* unreachable or invalid: probes will record the failure themselves */ }
+  }
+
   const app = createApp([
     ['POST', '/v0/nodes', async (req, res) => {
       const { card_url } = await readJson(req);
@@ -172,8 +188,12 @@ export async function startRegistry({
       if (node.state !== 'community' && node.state !== 'verified') {
         return problem(res, 409, 'wrong-state', `Stage B requires community tier, node is ${node.state}`);
       }
+      await refreshCard(params.id);
       const card = await store.latestCard(params.id);
       const stageB = await runStageB(store, params.id, card, { safeFetch, capacity: stageBCapacity });
+      if (stageB.stale) {
+        return problem(res, 409, 'stale-card', 'the node changed its card revision during the battery; retry');
+      }
       if (stageB.identityFailed) {
         await store.setState(params.id, 'disputed', 'Stage B identity fingerprint mismatch');
       } else if (stageB.ok) {
@@ -372,7 +392,7 @@ export async function startRegistry({
     ...exportRoutes(store, registryKeys),
   ], { cors: true }); // public read API: third-party web clients may call it directly
 
-  const stageCHandle = stageC ? startStageC(store, { safeFetch, ...stageC }) : null;
+  const stageCHandle = stageC ? startStageC(store, { safeFetch, refreshCard, ...stageC }) : null;
   const reimportHandle = reimport ? startReimport(store, { safeFetch, ...reimport }) : null;
   const actualPort = await listen(app, port, host);
   return {

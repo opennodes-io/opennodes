@@ -7,7 +7,7 @@ from pathlib import Path
 
 from aiohttp import web, ClientSession, ClientTimeout
 
-from .config import DEFAULT_CONFIG, load_config, build_card
+from .config import DEFAULT_CONFIG, load_config, build_card, stable_revision
 from .check import run_check
 from .jws import generate_private_key, private_key_to_pem, private_key_from_pem
 from .server import NodeKitServer
@@ -15,6 +15,7 @@ from .server import NodeKitServer
 CONFIG = Path("onp-node.toml")
 KEYFILE = Path("onp-node-key.pem")
 CHALLENGE = Path("onp-node-challenge.txt")
+REVISION_STATE = Path("onp-node-revision.json")
 
 
 async def interrogate_engine(base_url: str) -> list[str]:
@@ -51,7 +52,7 @@ def make_server() -> tuple[NodeKitServer, dict]:
         if missing:
             raise SystemExit(f"config lists models the engine does not serve: {missing}")
         models = [m for m in models if m in include]
-    card = build_card(cfg, models)
+    card = stable_revision(build_card(cfg, models), REVISION_STATE)
     return NodeKitServer(card, key, cfg["engine"]["base_url"], challenge_file=CHALLENGE), cfg
 
 
