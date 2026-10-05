@@ -40,7 +40,9 @@ python -m venv .venv
 
 ```
 pipx install onp-node            # from PyPI; from a checkout: pipx install ./node-kit
-onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.mybox --public-url https://ai.example.org
+onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.ai --public-url https://ai.example.org
+# The node id must be the reverse of the host that serves it (ai.example.org -> org.example.ai, or a
+# name below it such as org.example.ai.box): registries accept a card only from a host that controls the id.
 # review onp-node.toml (pricing, data_policy), then:
 onp-node serve                   # add --mdns (pip install 'onp-node[mdns]') so LAN clients such as onp-ollama discover it
 onp-node check

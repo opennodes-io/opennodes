@@ -17,6 +17,7 @@ import { startReimport } from './reimport.js';
 import { makeSafeFetch } from './safefetch.js';
 import { searchOfferings, searchOfferingsPaged, collectOfferings, RANK_COMPONENTS } from './search.js';
 import { mcpRoutes } from './mcp.js';
+import { hostControlsNamespace, isPrivateHost, makeRateLimiter } from './namespace.js';
 import { exportRoutes } from './export.js';
 import {
   importModelsDev, importHuggingFace, importOpenRouter,
@@ -33,6 +34,10 @@ export async function startRegistry({
   reimport = null,                      // { intervalMs, sources } to keep imported catalogs fresh
   adminToken = null,                    // bearer for admin routes; without it, loopback-only
   keyPath = null,                       // PEM file for a persistent signing identity; null = ephemeral
+  enforceNamespace = null,              // null = enforce except for private hosts in dev mode; true/false to force
+  registerPerHour = 0,                  // per-client cap on register/verify calls (0 = unlimited; set in production)
+  admitCooldownMs = 0,                  // minimum gap between Stage B runs per node (0 = none; set in production)
+  trustProxy = false,                   // read the client address from X-Forwarded-For (behind Caddy / a CDN)
 } = {}) {
   const store = await createStore(dbPath); // sqlite path/:memory: or postgres:// URL
   const safeFetch = makeSafeFetch({ allowPrivate: allowPrivateTargets });
@@ -76,10 +81,23 @@ export async function startRegistry({
   /** node.id is reverse-DNS: org.opennodes.fixture -> fixture.opennodes.org */
   const domainForNodeId = (nodeId) => nodeId.split('.').reverse().join('.');
 
+  /** May `originUrl`'s host register `nodeId`? (ONP-3 §4: the host must control the id's DNS namespace.) */
+  const namespaceOk = (originUrl, nodeId) => {
+    const host = new URL(originUrl).hostname;
+    if (enforceNamespace === false) return true;
+    if (enforceNamespace !== true && allowPrivateTargets && isPrivateHost(host)) return true;   // dev / e2e on loopback
+    return hostControlsNamespace(host, nodeId);
+  };
+  const registerLimiter = makeRateLimiter(registerPerHour);
+  const clientOf = (req) => (trustProxy && req.headers['x-forwarded-for']?.split(',')[0].trim()) || req.socket.remoteAddress || 'unknown';
+  const isAdmin = (req) => Boolean(adminToken) && req.headers.authorization === `Bearer ${adminToken}`;
+
   async function challengeSatisfied(node, challenge) {
-    try { // HTTP method
-      const resp = await safeFetch(`${node.origin}/.well-known/onp-challenge/${challenge.token}`, {}, 10_000);
-      if (resp.ok) return { ok: true, method: 'http' };
+    try { // HTTP method — only from a host that controls the id's namespace
+      if (namespaceOk(node.origin, node.id)) {
+        const resp = await safeFetch(`${node.origin}/.well-known/onp-challenge/${challenge.token}`, {}, 10_000);
+        if (resp.ok) return { ok: true, method: 'http' };
+      }
     } catch { /* fall through to DNS */ }
     try { // DNS TXT method: _onp-challenge.{domain} TXT "{token}"
       const records = await dnsResolveTxt(`_onp-challenge.${domainForNodeId(node.id)}`);
@@ -118,6 +136,7 @@ export async function startRegistry({
 
   const app = createApp([
     ['POST', '/v0/nodes', async (req, res) => {
+      if (!registerLimiter(clientOf(req))) return problem(res, 429, 'rate-limited', 'too many registration attempts from this address; try again later');
       const { card_url } = await readJson(req);
       if (!card_url) return problem(res, 400, 'missing-card-url', 'body must be {"card_url": "..."}');
       let card;
@@ -127,13 +146,22 @@ export async function startRegistry({
 
       const nodeId = card.node.id;
       const origin = new URL(card_url).origin;
+      // The card must be served by a host that controls the claimed id (reverse-DNS). Otherwise anyone
+      // could host a card naming someone else's node and pass the HTTP challenge on their own server.
+      if (!namespaceOk(origin, nodeId)) {
+        return problem(res, 403, 'namespace-mismatch',
+          `node id ${nodeId} maps to ${domainForNodeId(nodeId)}; its card must be served from that host or a parent domain, not ${new URL(origin).hostname}`);
+      }
+      const existing = await store.getNode(nodeId);
+      const listed = existing && !['challenged', 'submitted'].includes(existing.state) && existing.source !== 'import';
       await store.upsertNode(nodeId, origin, card_url, 'challenged');
-      await store.setState(nodeId, 'challenged', 'registration received');
+      // Re-registration of a listed node issues a fresh challenge but never delists it: state moves at /verify.
+      if (!listed) await store.setState(nodeId, 'challenged', 'registration received');
       const token = randomUUID();
       await store.setChallenge(nodeId, token);
       sendJson(res, 202, {
         node_id: nodeId,
-        state: 'challenged',
+        state: listed ? existing.state : 'challenged',
         challenge: {
           methods: {
             http: `${origin}/.well-known/onp-challenge/${token}`,
@@ -146,6 +174,7 @@ export async function startRegistry({
     }],
 
     ['POST', '/v0/nodes/:id/verify', async (req, res, { params }) => {
+      if (!registerLimiter(clientOf(req))) return problem(res, 429, 'rate-limited', 'too many verification attempts from this address; try again later');
       const node = await store.getNode(params.id);
       if (!node) return problem(res, 404, 'unknown-node', params.id);
       const challenge = await store.getChallenge(params.id);
@@ -187,6 +216,13 @@ export async function startRegistry({
       if (!node) return problem(res, 404, 'unknown-node', params.id);
       if (node.state !== 'community' && node.state !== 'verified') {
         return problem(res, 409, 'wrong-state', `Stage B requires community tier, node is ${node.state}`);
+      }
+      if (admitCooldownMs > 0 && !isAdmin(req)) {
+        const lastB = (await store.probesFor(params.id)).find((p) => p.stage === 'B');
+        const age = lastB ? Date.now() - Date.parse(lastB.at) : Infinity;
+        if (age < admitCooldownMs) {
+          return problem(res, 429, 'admission-cooldown', `Stage B ran ${Math.round(age / 60000)} min ago; next run allowed in ${Math.ceil((admitCooldownMs - age) / 60000)} min`);
+        }
       }
       await refreshCard(params.id);
       const card = await store.latestCard(params.id);

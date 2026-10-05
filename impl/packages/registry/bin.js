@@ -10,6 +10,9 @@ const registry = await startRegistry({
   // Persistent signing identity: explicit path, or derived from a file db; pg deployments set ONP_REGISTRY_KEY.
   keyPath: process.env.ONP_REGISTRY_KEY ?? (persistent ? `${dbPath}.key.pem` : (dbPath.startsWith('postgres') ? 'onp-registry-key.pem' : null)),
   allowPrivateTargets: process.env.ONP_ALLOW_PRIVATE === '1', // dev only: permit localhost nodes
+  registerPerHour: Number(process.env.ONP_REGISTER_PER_HOUR ?? 30),          // per client address
+  admitCooldownMs: Number(process.env.ONP_ADMIT_COOLDOWN_MS ?? 30 * 60_000),  // Stage B per node
+  trustProxy: process.env.ONP_TRUST_PROXY === '1',                            // behind Caddy / a CDN
   adminToken: process.env.ONP_ADMIN_TOKEN ?? null,
   stageC: process.env.ONP_STAGE_C === '0' ? null : {
     livenessIntervalMs: Number(process.env.ONP_LIVENESS_MS ?? 300_000),

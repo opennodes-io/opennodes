@@ -24,6 +24,7 @@ services:
       ONP_DB: postgres://onp:${PG_PASSWORD}@db:5432/onp
       ONP_REGISTRY_KEY: /data/registry-key.pem      # persistent signing identity (export feed)
       ONP_ADMIN_TOKEN: ${ONP_ADMIN_TOKEN}            # admin routes (imports, fingerprint capture)
+      ONP_TRUST_PROXY: "1"                           # client address from X-Forwarded-For (Caddy in front)
       ONP_REIMPORT: "1"                              # keep imported catalogs fresh (6h)
       ONP_REIMPORT_SOURCES: openrouter,huggingface,models-dev,ollama
     volumes:

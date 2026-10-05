@@ -26,7 +26,26 @@ async def interrogate_engine(base_url: str) -> list[str]:
             return [m["id"] for m in (await r.json()).get("data", [])]
 
 
+def namespace_ok(node_id: str, public_url: str) -> bool:
+    """A registry only accepts a card served by a host that controls the node id (reverse-DNS):
+    the host itself or a parent domain. ai.example.org may serve org.example.ai[.anything]."""
+    from urllib.parse import urlparse
+    host = (urlparse(public_url).hostname or "").lower().rstrip(".")
+    domain = ".".join(reversed(node_id.lower().split(".")))
+    if host in ("localhost", "::1") or host.startswith(("127.", "10.", "192.168.")) or "." not in host:
+        return True   # LAN / dev: registries in dev mode accept these
+    return domain == host or domain.endswith("." + host)
+
+
+def _suggest_id(public_url: str) -> str:
+    from urllib.parse import urlparse
+    return ".".join(reversed((urlparse(public_url).hostname or "example.org").lower().split(".")))
+
+
 def cmd_init(args):
+    if not namespace_ok(args.id, args.public_url):
+        print(f"warning: node id {args.id} does not match {args.public_url} - public registries will refuse it. "
+              f"Use the reverse of the host, e.g. --id {_suggest_id(args.public_url)}", file=sys.stderr)
     if CONFIG.exists() and not args.force:
         raise SystemExit(f"{CONFIG} exists (use --force to overwrite)")
     models = asyncio.run(interrogate_engine(args.engine))
@@ -128,6 +147,11 @@ async def _register(registry: str, card_url: str):
 
 
 def cmd_register(args):
+    _cfg = load_config(CONFIG)
+    if not namespace_ok(_cfg["node"]["id"], _cfg["node"]["public_url"]) and not args.force:
+        raise SystemExit(f"node id {_cfg['node']['id']} does not match host {_cfg['node']['public_url']}: registries accept a card only "
+                         f"from the host the id names (or a parent domain). Set id = \"{_suggest_id(_cfg['node']['public_url'])}\" in "
+                         f"{CONFIG}, or prove the namespace by DNS TXT and re-run with --force.")
     cfg = load_config(CONFIG)
     report = asyncio.run(run_check(cfg["node"]["public_url"]))
     if not report["ok"] and not args.force:
