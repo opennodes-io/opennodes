@@ -396,8 +396,13 @@
             <button class="btn sec" id="sc-load" style="padding:0.35rem 0.7rem; font-size:0.74rem">Load</button>
             <button class="btn sec" id="sc-del" style="padding:0.35rem 0.7rem; font-size:0.74rem" title="delete">✕</button>
           </div>
-          <button class="btn sec" id="sc-export" style="margin-top:0.4rem; padding:0.35rem 0.7rem; font-size:0.74rem">Export as ONP-6 Scenario JSON</button>
-          <p class="prov" id="sc-note" style="margin:0.35rem 0 0">saved in your browser; export produces the portable ONP-6 §5 format</p>
+          <div style="display:flex; gap:0.4rem; margin-top:0.4rem; flex-wrap:wrap">
+            <button class="btn sec" id="sc-export" style="padding:0.35rem 0.7rem; font-size:0.74rem">Export JSON</button>
+            <button class="btn sec" id="sc-import" style="padding:0.35rem 0.7rem; font-size:0.74rem">Import JSON</button>
+            <button class="btn sec" id="sc-share" style="padding:0.35rem 0.7rem; font-size:0.74rem">Copy share link</button>
+            <input type="file" id="sc-file" accept=".json,application/json" hidden>
+          </div>
+          <p class="prov" id="sc-note" style="margin:0.35rem 0 0">Saved in your browser — no account. Export/import use the portable ONP-6 §5 format; a share link carries the whole scenario in the URL (never your API keys).</p>
         </details>
         <label class="f">API key <span style="font-weight:400">(per host, kept in your browser)</span></label>
         <input class="wide mono" id="ch-key" type="password" placeholder="optional" style="font-size:0.76rem">
@@ -1002,7 +1007,7 @@ async function loadChatTargets() {
         + (local.length ? `<optgroup label="On your machine — needs a local Ollama with this model pulled">${local.map((o, i) => opt(o, ready.length + i)).join('')}</optgroup>` : '')
         + (imports.length ? `<optgroup label="Imported catalogs — your own API key required">${imports.map((o, i) => opt(o, ready.length + local.length + i)).join('')}</optgroup>` : '')
         + '<option value="custom">custom endpoint (local Ollama / any OpenAI server)</option>';
-      if (!chat.roster.length && ready.length && !sessionStorage.getItem('onp-advisor-handoff')) {
+      if (!chat.roster.length && ready.length && !sessionStorage.getItem('onp-advisor-handoff') && !/[?&]s=/.test(location.hash)) {
         chat.roster.push({ offering: ready[0] });   // a newcomer can just type
         renderRoster();
         const log = $('#ch-log');
@@ -1011,6 +1016,7 @@ async function loadChatTargets() {
     } catch { $('#ch-add').innerHTML = '<option value="custom">custom endpoint</option>'; }
   }
   await applyAdvisorHandoff();
+  await applySharedScenario();
 }
 
 /** The catalog advisor hands its shortlist to the chat roster via sessionStorage. */
@@ -1404,38 +1410,47 @@ $('#sc-save').addEventListener('click', () => {
   scRefreshList(); $('#sc-list').value = name;
   $('#sc-note').textContent = `saved "${name}"`;
 });
-$('#sc-load').addEventListener('click', async () => {
-  const sc = scAll()[$('#sc-list').value];
-  if (!sc) return;
-  await loadChatTargets();
+/** Apply a scenario snapshot to the chat (roster, mode, instructions). Used by Load, Import, and share links. */
+async function scApply(sc, verb = 'loaded') {
   chat.roster = [];
   const missing = [];
-  for (const entry of sc.roster) {
-    if (entry.custom) chat.roster.push({ custom: entry.custom });
-    else {
-      const [nodeId, offId] = entry.pin.split('/');
-      const o = chat.offerings.find((x) => x.node_id === nodeId && x.offering_id === offId);
-      if (o) chat.roster.push({ offering: o }); else missing.push(entry.pin);
+  for (const entry of sc.roster ?? []) {
+    if (entry.custom) { chat.roster.push({ custom: entry.custom }); continue; }
+    let o = null;
+    if (entry.pin) {
+      const [nodeId, ...rest] = entry.pin.split('/'); const offId = rest.join('/');
+      o = chat.offerings.find((x) => x.node_id === nodeId && x.offering_id === offId);
+      if (!o) { try { o = await api(`/v0/offerings/${encodeURIComponent(nodeId)}/${encodeURIComponent(offId)}`); } catch { o = null; } }
+    } else if (entry.select) {            // ONP-6 late binding: resolve the requirement against this registry now
+      try { o = (await api('/v0/offerings?limit=1&' + new URLSearchParams(entry.select))).offerings[0] ?? null; } catch { o = null; }
     }
+    if (o) chat.roster.push({ offering: o }); else missing.push(entry.pin ?? JSON.stringify(entry.select));
   }
-  $('#ch-mode').value = sc.mode; $('#ch-mode').dispatchEvent(new Event('change'));
+  const MODES = ['single', 'compare', 'jury', 'pipeline', 'iterative'];
+  $('#ch-mode').value = MODES.includes(sc.mode) ? sc.mode : 'single'; $('#ch-mode').dispatchEvent(new Event('change'));
   $('#ch-rounds').value = String(sc.rounds || 2);
   $('#ch-seqprompt').value = sc.instructions?.pipeline ?? $('#ch-seqprompt').value;
   $('#ch-juryprompt').value = sc.instructions?.jury ?? $('#ch-juryprompt').value;
   $('#ch-revprompt').value = sc.instructions?.revise ?? $('#ch-revprompt').value;
   renderRoster();
   if (sc.judge < chat.roster.length) $('#ch-judge').value = String(sc.judge);
+  if (sc.name) $('#sc-name').value = sc.name;
   $('#sc-note').textContent = missing.length
-    ? `loaded; ${missing.length} pinned offering(s) no longer listed: ${missing.join(', ')}`
-    : `loaded "${sc.name}"`;
+    ? `${verb}; ${missing.length} model(s) could not be resolved here: ${missing.join(', ')}`
+    : `${verb} "${sc.name ?? 'scenario'}" — ${chat.roster.length} model(s), mode ${$('#ch-mode').value}`;
+}
+$('#sc-load').addEventListener('click', async () => {
+  const sc = scAll()[$('#sc-list').value];
+  if (!sc) return;
+  await loadChatTargets();
+  await scApply(sc);
 });
 $('#sc-del').addEventListener('click', () => {
   const all = scAll(); delete all[$('#sc-list').value];
   localStorage.setItem(SC_STORE, JSON.stringify(all)); scRefreshList();
 });
-$('#sc-export').addEventListener('click', () => {
-  // Bridge to the portable ONP-6 §5 Scenario document
-  const s = scSnapshot($('#sc-name').value.trim() || $('#sc-list').value || 'chat-scenario');
+/** Snapshot -> portable ONP-6 §5 Scenario document. */
+function scToDoc(s) {
   const roles = {};
   s.roster.forEach((r, i) => { roles['m' + (i + 1)] = r.pin ? { pin: r.pin } : { custom: r.custom }; });
   let steps = [];
@@ -1450,7 +1465,78 @@ $('#sc-export').addEventListener('click', () => {
       steps.push({ id: 'verdict', role: roleIds[Math.min(s.judge, roleIds.length - 1)], merge: 'judge', instruction: s.instructions.jury });
     }
   }
-  const doc = { onp_scenario: '0.1', name: s.name, roles, steps, policy: {} };
+  return { onp_scenario: '0.1', name: s.name, roles, steps, policy: {} };
+}
+
+/** ONP-6 Scenario document (or a native snapshot) -> snapshot the chat can apply. */
+function scFromDoc(doc) {
+  if (!doc || typeof doc !== 'object') throw new Error('not a JSON object');
+  if (Array.isArray(doc.roster) && doc.mode) return doc;                      // already a native snapshot
+  if (!doc.onp_scenario || !doc.roles || !Array.isArray(doc.steps)) throw new Error('not an ONP-6 scenario (needs onp_scenario, roles, steps)');
+  const roleIds = Object.keys(doc.roles);
+  const roster = roleIds.map((id) => {
+    const r = doc.roles[id] ?? {};
+    if (r.custom) return { custom: r.custom };
+    if (r.pin) return { pin: r.pin };
+    if (r.node_id && r.offering_id) return { pin: `${r.node_id}/${r.offering_id}` };
+    if (r.select) return { select: r.select };
+    return { select: {} };
+  });
+  const fan = doc.steps.find((st) => st.mode === 'parallel');
+  const verdict = doc.steps.find((st) => st.merge === 'judge' || st.merge?.role);
+  let mode = 'single';
+  if (fan) mode = fan.rounds ? 'iterative' : (verdict ? 'jury' : 'compare');
+  else if (doc.steps.length > 1) mode = 'pipeline';
+  const judgeRole = verdict?.role ?? verdict?.merge?.role;
+  return {
+    name: doc.name ?? 'imported-scenario', mode,
+    rounds: fan?.rounds ?? 2,
+    judge: Math.max(0, roleIds.indexOf(judgeRole)),
+    roster,
+    instructions: {
+      pipeline: doc.steps.find((st) => st.instruction && !st.merge)?.instruction ?? doc.steps.find((st) => st.prompt && st.input && st.input !== '$user')?.prompt,
+      jury: verdict?.instruction,
+      revise: fan?.revise_instruction,
+    },
+  };
+}
+const b64u = {
+  enc: (str) => btoa(String.fromCharCode(...new TextEncoder().encode(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+  dec: (b) => new TextDecoder().decode(Uint8Array.from(atob(b.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))),
+};
+const scCurrentDoc = () => scToDoc(scSnapshot($('#sc-name').value.trim() || $('#sc-list').value || 'chat-scenario'));
+
+$('#sc-import').addEventListener('click', () => $('#sc-file').click());
+$('#sc-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0]; e.target.value = '';
+  if (!file) return;
+  try {
+    const sc = scFromDoc(JSON.parse(await file.text()));
+    await loadChatTargets();
+    await scApply(sc, 'imported');
+  } catch (err) { $('#sc-note').textContent = 'import failed: ' + err.message; }
+});
+$('#sc-share').addEventListener('click', async () => {
+  if (!chat.roster.length) { $('#sc-note').textContent = 'add at least one model before sharing'; return; }
+  const url = `${location.origin}${location.pathname}#/chat?s=${b64u.enc(JSON.stringify(scCurrentDoc()))}`;
+  try { await navigator.clipboard.writeText(url); $('#sc-note').textContent = `share link copied (${url.length} chars) — it contains the roster, mode and instructions, never API keys`; }
+  catch { prompt('Copy this share link:', url); }
+});
+/** A #/chat?s=… link carries a whole scenario; apply it once, then clean the address bar. */
+async function applySharedScenario() {
+  const m = location.hash.match(/[?&]s=([A-Za-z0-9_-]+)/);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + '#/chat');
+  try {
+    await scApply(scFromDoc(JSON.parse(b64u.dec(m[1]))), 'opened shared scenario');
+    const log = $('#ch-log');
+    if (log && !chat.history.length) log.innerHTML = `<p class="sub" style="margin:0">Shared scenario <b>${esc($('#sc-name').value || 'scenario')}</b> loaded: ${chat.roster.length} model(s), mode <b>${esc($('#ch-mode').value)}</b>. Review the roster on the right, then say something.</p>`;
+  } catch (err) { $('#sc-note').textContent = 'could not open the shared scenario: ' + err.message; }
+}
+
+$('#sc-export').addEventListener('click', () => {
+  const doc = scCurrentDoc();
+  const s = { name: doc.name };
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }));
   a.download = s.name.replace(/[^a-z0-9._-]+/gi, '-') + '.onp-scenario.json';
