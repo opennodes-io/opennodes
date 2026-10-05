@@ -983,11 +983,31 @@ async function loadChatTargets() {
   $('#ch-modenote').textContent = MODE_NOTES[$('#ch-mode').value] ?? '';
   if (!chat.offerings.length) {
     try {
-      const { offerings } = await api('/v0/offerings?limit=60&modality=text');
-      chat.offerings = offerings;
+      // Registered nodes answer straight from the browser with no key; imported catalog listings
+      // (OpenRouter, HF providers, models.dev) need the visitor's own key for that provider.
+      const [reg, all] = await Promise.all([
+        api('/v0/offerings?limit=60&modality=text&tier=community'),
+        api('/v0/offerings?limit=60&modality=text'),
+      ]);
+      const key = (o) => o.node_id + '/' + o.offering_id;
+      const ready = reg.offerings.filter((o) => o.source !== 'import');
+      const seen = new Set(ready.map(key));
+      const rest = all.offerings.filter((o) => !seen.has(key(o)));
+      const local = rest.filter((o) => o.local);            // Ollama library: runs on the visitor's own machine
+      const imports = rest.filter((o) => !o.local);
+      chat.offerings = [...ready, ...local, ...imports];
+      const opt = (o, i) => `<option value="${i}">${esc(o.model.name)} — ${esc(o.node_id)} — ${priceStr(o.pricing)}</option>`;
       $('#ch-add').innerHTML = '<option value="">+ Add a model…</option>'
-        + offerings.map((o, i) => `<option value="${i}">${esc(o.model.name)} — ${esc(o.node_id)} — ${priceStr(o.pricing)}</option>`).join('')
+        + (ready.length ? `<optgroup label="Ready to use — no key needed (${ready.length})">${ready.map((o, i) => opt(o, i)).join('')}</optgroup>` : '')
+        + (local.length ? `<optgroup label="On your machine — needs a local Ollama with this model pulled">${local.map((o, i) => opt(o, ready.length + i)).join('')}</optgroup>` : '')
+        + (imports.length ? `<optgroup label="Imported catalogs — your own API key required">${imports.map((o, i) => opt(o, ready.length + local.length + i)).join('')}</optgroup>` : '')
         + '<option value="custom">custom endpoint (local Ollama / any OpenAI server)</option>';
+      if (!chat.roster.length && ready.length && !sessionStorage.getItem('onp-advisor-handoff')) {
+        chat.roster.push({ offering: ready[0] });   // a newcomer can just type
+        renderRoster();
+        const log = $('#ch-log');
+        if (log && !chat.history.length) log.innerHTML = `<p class="sub" style="margin:0">Ready: <b>${esc(ready[0].model.name)}</b> on ${esc(ready[0].node_id)} (${esc(ready[0].tier)}, no key needed) is preselected — say something, or add more models on the right to compare.</p>`;
+      }
     } catch { $('#ch-add').innerHTML = '<option value="custom">custom endpoint</option>'; }
   }
   await applyAdvisorHandoff();
@@ -1099,6 +1119,7 @@ $('#ch-judge').addEventListener('change', refreshEstimate);
 function importKeyHint(offering, base, key) {
   if (!offering || offering.source !== 'import' || key) return null;
   const host = new URL(base).host;
+  if (offering.local || /^(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(host)) return null;   // your own machine: no key
   const where = host.includes('huggingface') ? 'a Hugging Face token (huggingface.co/settings/tokens)'
     : host.includes('openrouter') ? 'an OpenRouter API key (openrouter.ai/keys)' : `an API key for ${host}`;
   return `This is an imported catalog listing served by ${host}: your browser calls it directly, which needs ${where} — paste it in the API key field (stored only in this browser). Or run it locally with BYOK: npx @opennodes/cli gateway --key ${host}=<key>. Registered OpenNodes nodes need no key.`;
@@ -1189,7 +1210,8 @@ async function callTargetStream(t, messages, onDelta, maxTokens = 1024) {
 }
 
 const metaLine = (r) => [r.ttft != null ? `ttft ${r.ttft}ms · ` + r.ms + 'ms total' : r.ms + 'ms', r.usage ? `${r.usage.prompt_tokens}+${r.usage.completion_tokens} tok` : null, r.receipt ? 'receipt ✓' : null].filter(Boolean).join(' · ');
-const corsHint = ' — if this is a CORS/network error, the node must allow browser origins (local Ollama: set OLLAMA_ORIGINS)';
+const corsHint = (err) => /failed to fetch|networkerror|load failed/i.test(String(err?.message))
+  ? ' — network/CORS error: the node must allow browser origins (local Ollama: set OLLAMA_ORIGINS)' : '';
 
 function logEl(html) {
   if ($('#ch-log').querySelector('p.sub')) $('#ch-log').innerHTML = '';
@@ -1239,7 +1261,7 @@ async function runSingle(text) {
   } catch (err) {
     chat.history.pop();
     el.firstChild.textContent = '';
-    el.querySelector('.mm').innerHTML = '<span class="err">' + esc(err.message) + '</span>' + corsHint;
+    el.querySelector('.mm').innerHTML = '<span class="err">' + esc(err.message) + '</span>' + corsHint(err);
   }
 }
 
@@ -1259,7 +1281,7 @@ async function fanoutRound(labelPrefix, buildMessages, { remember = false } = {}
       }
       return { label: String.fromCharCode(65 + i), text: r.text, ok: true };
     } catch (err) {
-      cards[i].querySelector('.ctext').innerHTML = '<span class="err">' + esc(err.message) + '</span><span class="prov">' + corsHint + '</span>';
+      cards[i].querySelector('.ctext').innerHTML = '<span class="err">' + esc(err.message) + '</span><span class="prov">' + corsHint(err) + '</span>';
       return { label: String.fromCharCode(65 + i), ok: false };
     }
   }));
@@ -1346,7 +1368,7 @@ async function runPipeline(text) {
       el.querySelector('.ctext').textContent = r.text || '(empty)';
       el.querySelector('.mm').textContent = metaLine(r);
     } catch (err) {
-      el.querySelector('.ctext').innerHTML = '<span class="err">' + esc(err.message) + '</span><span class="prov">' + corsHint + ' — pipeline stopped</span>';
+      el.querySelector('.ctext').innerHTML = '<span class="err">' + esc(err.message) + '</span><span class="prov">' + corsHint(err) + ' — pipeline stopped</span>';
       return;
     }
   }
