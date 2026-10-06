@@ -57,7 +57,7 @@ npm: [@opennodes/core](https://www.npmjs.com/package/@opennodes/core) · [@openn
 
 Clients and products consuming ONP — independent of the standard, listed here for discovery:
 
-- **Surge** (desktop client, pre-release — repository opens with its first public build) — a desktop "browser for MCP" and the reference OpenNodes client: the model picker is fed live from the registry (trust tier, measured latency, price), **Auto** runs the advisor on your machine to pick a node per prompt, and every call is pinned to the node's card revision and comes back with a signed receipt Surge verifies. A spend policy is on from first launch, a dashboard keeps the ledger, and one click switches to private mode (local Ollama and LAN only). The first client to span both discovery layers (models via ONP, tools via MCP).
+- **[Surge](https://github.com/opennodes-io/surge)** (desktop client, pre-release — build from source, no installers yet) — a desktop "browser for MCP" and the reference OpenNodes client: the model picker is fed live from the registry (trust tier, measured latency, price), **Auto** runs the advisor on your machine to pick a node per prompt, and every call is pinned to the node's card revision and comes back with a signed receipt Surge verifies. A spend policy is on from first launch, a dashboard keeps the ledger, and one click switches to private mode (local Ollama and LAN only). The first client to span both discovery layers (models via ONP, tools via MCP).
 
   ![Surge: OpenNodes models with verified receipts, a spend dashboard and one-click private mode](docs/media/surge-demo.gif)
 
