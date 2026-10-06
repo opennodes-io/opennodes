@@ -57,7 +57,10 @@ npm: [@opennodes/core](https://www.npmjs.com/package/@opennodes/core) · [@openn
 
 Clients and products consuming ONP — independent of the standard, listed here for discovery:
 
-- **Surge** (desktop client, pre-release — repository opens with its first public build) — a desktop "browser for MCP" with a native OpenNodes provider: model discovery with trust tiers and measured latency in the picker, enforceable pre-pricing, pinned direct-to-node invocation. The first client to span both discovery layers (models via ONP, tools via MCP).
+- **Surge** (desktop client, pre-release — repository opens with its first public build) — a desktop "browser for MCP" and the reference OpenNodes client: the model picker is fed live from the registry (trust tier, measured latency, price), **Auto** runs the advisor on your machine to pick a node per prompt, and every call is pinned to the node's card revision and comes back with a signed receipt Surge verifies. A spend policy is on from first launch, a dashboard keeps the ledger, and one click switches to private mode (local Ollama and LAN only). The first client to span both discovery layers (models via ONP, tools via MCP).
+
+  ![Surge: OpenNodes models with verified receipts, a spend dashboard and one-click private mode](docs/media/surge-demo.gif)
+
 - **Your client here** — ONP is an open standard; any client can implement discovery via [ONP-3](spec/ONP-3-registry.md) and invocation via [ONP-4](spec/ONP-4-invocation.md). Open a PR to be listed.
 
 ## Design principles

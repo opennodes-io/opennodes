@@ -130,7 +130,15 @@ ollama run auto-private "summarize this confidential note"   # routes only to lo
 onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.ai --public-url https://ai.example.org
 onp-node serve && onp-node check && onp-node register https://registry.example.org</code></pre>
   <h3 style="font-size:1.05rem">A desktop client that speaks both layers (Surge)</h3>
-  <p style="font-size:0.92rem;color:var(--muted)">Surge (pre-release; the repository opens with its first public build) is a desktop "browser for MCP" with a native OpenNodes provider: the model picker is fed live from an ONP registry (trust tier, measured latency, per-MTok price), prompts are pre-priced with enforceable estimates, and invocation goes direct to the node with pinned offering headers — models via OpenNodes, tools via MCP, in one app.</p>
+  <p style="font-size:0.92rem;color:var(--muted)">Surge (pre-release; the repository opens with its first public build) is a desktop "browser for MCP" and the reference OpenNodes client. The model picker is fed live from an ONP registry — trust tier, measured latency, per-MTok price — and <strong>Auto</strong> runs the advisor on your machine to pick a node per prompt. Every call goes direct to the node, pinned to its card revision, and comes back with a signed receipt that Surge verifies (<code>amount = usage × pinned price</code>) and shows under the reply. A spend policy is on from first launch (spending off until you set a budget), a dashboard keeps the ledger, and one click switches to <strong>private mode</strong>: your local Ollama and LAN machines only. Models via OpenNodes, tools via MCP, in one app.</p>
+  <figure style="margin:1rem 0 0">
+    <picture>
+      <source srcset="media/surge-browser-receipt-dark.png" media="(prefers-color-scheme: dark)">
+      <img src="media/surge-browser-receipt-light.png" width="900" height="700" loading="lazy" style="width:100%;height:auto;border:1px solid var(--line);border-radius:6px"
+        alt="Surge with opennodes.io open in its browser: a page tool read the site, and the answer came from an OpenNodes node chosen by the advisor, with its verified receipt shown under the reply">
+    </picture>
+    <figcaption style="font-size:0.8rem;color:var(--muted)">A page read with an MCP browser tool, answered by a node the advisor picked — tier, measured latency, price, and the verified receipt under the reply.</figcaption>
+  </figure>
 </div></section>
 
 <section><div class="wrap">
