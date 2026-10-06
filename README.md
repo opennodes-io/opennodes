@@ -44,6 +44,8 @@ pipx install onp-node                   # Node Kit: turn a vLLM / Ollama / TGI d
 
 npm: [@opennodes/core](https://www.npmjs.com/package/@opennodes/core) · [@opennodes/cli](https://www.npmjs.com/package/@opennodes/cli) · [@opennodes/registry](https://www.npmjs.com/package/@opennodes/registry) · [@opennodes/ollama-router](https://www.npmjs.com/package/@opennodes/ollama-router) — PyPI: [onp-node](https://pypi.org/project/onp-node/)
 
+![OpenNodes for Ollama: one endpoint for local, LAN and verified public models](docs/media/opennodes-for-ollama.gif)
+
 **OpenNodes for Ollama** ([impl/packages/ollama-router](impl/packages/ollama-router/README.md)): point Open WebUI, Continue, Zed, or the `ollama` CLI at `OLLAMA_HOST=127.0.0.1:11435` and one model list spans your local Ollama, other machines on your LAN (plain Ollama servers or Node Kit nodes, auto-discovered via mDNS), and verified public nodes from the registry — with `auto`, `auto-cheap`, `auto-fast`, `auto-quality`, and `auto-private` (never leaves the LAN) routed by the advisor, pinned prices, budget caps, and signed receipts for public calls.
 
 ### Implementation
