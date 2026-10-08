@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Integrations — OpenNodes</title>
+<meta name="description" content="How to use OpenNodes from Cursor, Claude Desktop, Claude Code, VS Code, Windsurf, Open WebUI, Continue, Zed, the Ollama CLI, the OpenAI SDK, LangChain, LiteLLM and any MCP-capable agent.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🛰️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #F7F9FA; --panel: #FFFFFF; --panel-2: #EEF2F4;
+    --ink: #1C2733; --muted: #5C6E7E; --line: #D6DEE3;
+    --accent: #0F7A80; --accent-soft: #E0EFF0; --good: #2F6B3A;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #101820; --panel: #16202A; --panel-2: #1C2833;
+      --ink: #E4EBF0; --muted: #8FA1B0; --line: #2C3B48;
+      --accent: #4FC0C6; --accent-soft: #12333A; --good: #7CC08A;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 1.05rem; line-height: 1.62;
+  }
+  .wrap { max-width: 46rem; margin: 0 auto; padding: 0 1.25rem; }
+  h1, h2, h3 { font-family: "Archivo", "Helvetica Neue", Arial, sans-serif; line-height: 1.12; text-wrap: balance; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; font-size: 0.85em; background: var(--panel-2); padding: 0.08em 0.35em; border-radius: 3px; }
+  pre { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.9rem 1.1rem; overflow-x: auto; font-size: 0.82rem; line-height: 1.5; }
+  pre code { background: none; padding: 0; font-size: 1em; }
+  .eyebrow { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 0 0 0.4rem; }
+
+  header.hero { padding: 4.5rem 0 3rem; border-bottom: 1px solid var(--line); }
+  .hero h1 { font-size: 3rem; font-weight: 700; letter-spacing: -0.02em; margin: 0.4rem 0 1rem; }
+  .hero .lede { font-size: 1.2rem; max-width: 40rem; }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 1.4rem 0 0; }
+  .chip { font-family: "IBM Plex Mono", monospace; font-size: 0.74rem; padding: 0.34rem 0.7rem; border-radius: 2px; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 1.8rem; }
+  .btn { display: inline-block; font-family: "Archivo", sans-serif; font-weight: 600; font-size: 0.95rem; text-decoration: none; padding: 0.65rem 1.2rem; border-radius: 4px; border: 1px solid var(--accent); }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.secondary { color: var(--accent); background: transparent; }
+
+  section { padding: 2.6rem 0; border-bottom: 1px solid var(--line); }
+  section h2 { font-size: 1.5rem; margin: 0 0 1rem; }
+
+  .steps { display: flex; flex-direction: column; gap: 0.45rem; margin-top: 1.2rem; }
+  .step { display: grid; grid-template-columns: 8.5rem 1fr; gap: 0.8rem; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); padding: 0.7rem 0.9rem; align-items: baseline; }
+  .step .k { font-family: "IBM Plex Mono", monospace; font-size: 0.76rem; font-weight: 600; color: var(--accent); }
+  .step .d { font-size: 0.92rem; color: var(--muted); font-family: "Archivo", sans-serif; }
+  @media (max-width: 560px) { .step { grid-template-columns: 1fr; gap: 0.15rem; } .hero h1 { font-size: 2.3rem; } }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.2rem; }
+  @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
+  .card { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: 1rem 1.1rem; }
+  .card h3 { font-size: 1rem; margin: 0 0 0.4rem; }
+  .card p { font-size: 0.92rem; color: var(--muted); margin: 0; }
+
+  ul.spec { list-style: none; padding: 0; margin: 1rem 0 0; }
+  ul.spec li { padding: 0.5rem 0; border-bottom: 1px dashed var(--line); font-size: 0.95rem; }
+  ul.spec .mono { margin-right: 0.5rem; }
+
+  footer { padding: 2.2rem 0 3rem; font-family: "Archivo", sans-serif; font-size: 0.85rem; color: var(--muted); }
+</style>
+<style>
+  .wrap { max-width: 56rem; }
+  .kind { font-family: "IBM Plex Mono", monospace; font-size: 0.66rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); padding: 0.15rem 0.45rem; border-radius: 2px; margin-left: 0.4rem; vertical-align: middle; }
+  .card p { margin: 0.35rem 0 0; }
+  .card pre { margin: 0.5rem 0 0; font-size: 0.78rem; }
+  .lede-s { color: var(--muted); font-size: 0.98rem; max-width: 48rem; margin: 0 0 0.4rem; }
+  nav.top { font-family: "Archivo", sans-serif; font-size: 0.9rem; padding: 1rem 0; border-bottom: 1px solid var(--line); }
+  nav.top a { margin-right: 1.2rem; text-decoration: none; }
+  .toc { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+  .toc a { font-family: "IBM Plex Mono", monospace; font-size: 0.74rem; text-decoration: none; padding: 0.3rem 0.6rem; border: 1px solid var(--line); border-radius: 2px; background: var(--panel-2); color: var(--ink); }
+</style>
+</head>
+<body>
+<nav class="top"><div class="wrap"><a href="/">OpenNodes</a><a href="https://registry.opennodes.io/">Registry</a><a href="/integrations">Integrations</a><a href="https://github.com/opennodes-io/opennodes/tree/main/spec">Spec</a><a href="https://github.com/opennodes-io/opennodes">GitHub</a></div></nav>
+<header class="hero"><div class="wrap">
+  <p class="eyebrow">Integrations</p>
+  <h1>Use OpenNodes from the tools you already have</h1>
+  <p class="lede">Three ways in, all free and open source: an <strong>MCP server</strong> for editors and agents, an <strong>Ollama-compatible router</strong> for local-AI apps, and an <strong>OpenAI-compatible gateway</strong> for SDKs and frameworks. Nothing here routes your prompts through OpenNodes: discovery is metadata, invocation goes straight to the node.</p>
+  <div class="toc">
+    <a href="#claude-code">Claude Code</a><a href="#claude-desktop">Claude Desktop</a><a href="#cursor">Cursor</a><a href="#vs-code-copilot-agent-mode">VS Code</a><a href="#windsurf">Windsurf</a><a href="#ollama-cli">Ollama</a><a href="#open-webui">Open WebUI</a><a href="#continue-vs-code-jetbrains">Continue</a><a href="#zed">Zed</a><a href="#openai-sdk-python">OpenAI SDK</a><a href="#langchain-llamaindex-litellm-vercel-ai-sdk-n8n-dify">LangChain / LiteLLM</a><a href="#any-remote-mcp-host-or-agent-framework">Agents (remote MCP)</a><a href="#serve-your-own-model">Operators</a>
+  </div>
+</div></header>
+<section><div class="wrap"><h2>Editors and assistants (MCP)</h2><p class="lede-s">Any MCP host gets four tools — <code>recommend</code>, <code>search_offerings</code>, <code>get_offering</code>, <code>estimate</code> — from one stdio server. The advisor extracts features from your prompt locally and sends only those to the registry; the prompt itself never leaves your machine.</p><div class="grid2">
+<div class="card" id="claude-code">
+  <h3>Claude Code <span class="kind">MCP</span></h3>
+  <p>One command:</p><pre><code>claude mcp add --scope user opennodes -- npx -y @opennodes/cli mcp</code></pre>
+</div>
+<div class="card" id="claude-desktop">
+  <h3>Claude Desktop <span class="kind">MCP</span></h3>
+  <p>Add to <code>claude_desktop_config.json</code> (Settings → Developer → Edit Config):</p><pre><code>{ "mcpServers": { "opennodes": { "command": "npx", "args": ["-y", "@opennodes/cli", "mcp"] } } }</code></pre>
+</div>
+<div class="card" id="cursor">
+  <h3>Cursor <span class="kind">MCP</span></h3>
+  <p>Add to <code>~/.cursor/mcp.json</code> (or Settings → MCP → Add new server):</p><pre><code>{ "mcpServers": { "opennodes": { "command": "npx", "args": ["-y", "@opennodes/cli", "mcp"] } } }</code></pre>
+</div>
+<div class="card" id="vs-code-copilot-agent-mode">
+  <h3>VS Code (Copilot agent mode) <span class="kind">MCP</span></h3>
+  <p>Add to <code>.vscode/mcp.json</code> in the workspace, or the user <code>mcp.json</code>:</p><pre><code>{ "servers": { "opennodes": { "type": "stdio", "command": "npx", "args": ["-y", "@opennodes/cli", "mcp"] } } }</code></pre>
+</div>
+<div class="card" id="windsurf">
+  <h3>Windsurf <span class="kind">MCP</span></h3>
+  <p>Add to <code>~/.codeium/windsurf/mcp_config.json</code>:</p><pre><code>{ "mcpServers": { "opennodes": { "command": "npx", "args": ["-y", "@opennodes/cli", "mcp"] } } }</code></pre>
+</div>
+<div class="card" id="any-remote-mcp-host-or-agent-framework">
+  <h3>Any remote-MCP host or agent framework <span class="kind">MCP over HTTP</span></h3>
+  <p>The hosted registry is itself an MCP server (streamable HTTP, stateless) — no install at all:</p><pre><code>https://registry.opennodes.io/mcp</code></pre><p>Point LangGraph, the OpenAI Agents SDK, n8n, or any MCP-capable agent at it to give the agent discovery, task-based recommendation and enforceable pre-pricing as tools.</p>
+</div></div></div></section><section><div class="wrap"><h2>Ollama apps (local, LAN, and verified public models)</h2><p class="lede-s"><code>npx @opennodes/ollama-router</code> starts an Ollama-compatible endpoint on port 11435 whose model list spans your local Ollama, other machines on your LAN, and verified public nodes — plus <code>auto</code>, <code>auto-cheap</code>, <code>auto-fast</code>, <code>auto-quality</code> and <code>auto-private</code> (never leaves your network). Every app below works unchanged: it only needs the Ollama address.</p><div class="grid2">
+<div class="card" id="ollama-cli">
+  <h3>Ollama CLI <span class="kind">Ollama</span></h3>
+  <pre><code>npx @opennodes/ollama-router
+export OLLAMA_HOST=127.0.0.1:11435      # PowerShell: $env:OLLAMA_HOST="127.0.0.1:11435"
+ollama list
+ollama run auto-private "summarize this confidential note …"</code></pre>
+</div>
+<div class="card" id="open-webui">
+  <h3>Open WebUI <span class="kind">Ollama</span></h3>
+  <p>Admin Panel → Settings → Connections → Ollama API: set the URL to the router. From Docker, use the host alias:</p><pre><code>http://host.docker.internal:11435</code></pre><p>Or, as an OpenAI connection, use the gateway (below) with its token as the key.</p>
+</div>
+<div class="card" id="continue-vs-code-jetbrains">
+  <h3>Continue (VS Code / JetBrains) <span class="kind">Ollama</span></h3>
+  <p>In <code>config.yaml</code>:</p><pre><code>models:
+  - name: OpenNodes auto
+    provider: ollama
+    model: auto
+    apiBase: http://localhost:11435</code></pre>
+</div>
+<div class="card" id="zed">
+  <h3>Zed <span class="kind">Ollama</span></h3>
+  <p>In <code>settings.json</code>:</p><pre><code>{ "language_models": { "ollama": { "api_url": "http://localhost:11435" } } }</code></pre>
+</div>
+<div class="card" id="jetbrains-ai-assistant-msty-enchanted-raycast-lm-studio-clients">
+  <h3>JetBrains AI Assistant · Msty · Enchanted · Raycast · LM Studio clients <span class="kind">Ollama</span></h3>
+  <p>Wherever the app asks for the Ollama host or URL, enter <code>http://localhost:11435</code>. The merged model list appears in the app's picker; choose <code>auto-private</code> for anything that must stay on your machines.</p>
+</div></div></div></section><section><div class="wrap"><h2>OpenAI-compatible SDKs, frameworks and apps (gateway)</h2><p class="lede-s"><code>npx @opennodes/cli gateway --port 4141 --token dev-secret</code> runs a local OpenAI-compatible server over discovered nodes. Models are concrete offerings (<code>node_id/offering_id</code>), your aliases, query-defined virtual models, and the advisor-routed <code>onp/auto</code> family. Every call is pinned to a card revision, policy-checked, receipted and logged; a price change is recovered transparently.</p><div class="grid2">
+<div class="card" id="openai-sdk-python">
+  <h3>OpenAI SDK — Python <span class="kind">OpenAI API</span></h3>
+  <pre><code>from openai import OpenAI
+client = OpenAI(base_url="http://127.0.0.1:4141/v1", api_key="dev-secret")
+r = client.chat.completions.create(model="onp/auto", messages=[{"role": "user", "content": "Hello"}])
+print(r.choices[0].message.content)</code></pre>
+</div>
+<div class="card" id="openai-sdk-javascript-typescript">
+  <h3>OpenAI SDK — JavaScript / TypeScript <span class="kind">OpenAI API</span></h3>
+  <pre><code>import OpenAI from "openai";
+const client = new OpenAI({ baseURL: "http://127.0.0.1:4141/v1", apiKey: "dev-secret" });
+const r = await client.chat.completions.create({ model: "onp/auto-cheap", messages: [{ role: "user", content: "Hello" }] });</code></pre>
+</div>
+<div class="card" id="langchain-llamaindex-litellm-vercel-ai-sdk-n8n-dify">
+  <h3>LangChain · LlamaIndex · LiteLLM · Vercel AI SDK · n8n · Dify <span class="kind">OpenAI API</span></h3>
+  <p>Use their OpenAI provider with the base URL <code>http://127.0.0.1:4141/v1</code> and the gateway token as the key; pick <code>onp/auto</code> or a concrete offering as the model name. LiteLLM: <code>openai/onp/auto</code> with <code>api_base</code> set to the gateway.</p>
+</div>
+<div class="card" id="spend-and-receipts">
+  <h3>Spend and receipts <span class="kind">OpenAI API</span></h3>
+  <p>Read the ledger at any time:</p><pre><code>curl http://127.0.0.1:4141/gateway/receipts   # total cost, per-call receipts
+curl http://127.0.0.1:4141/gateway/advice     # why onp/auto picked what it picked</code></pre><p>Imported catalog providers (OpenRouter, Hugging Face) need your own key for that host: <code>--key openrouter.ai=sk-or-…</code>.</p>
+</div></div></div></section><section><div class="wrap"><h2>In the browser, on the desktop, and for operators</h2><div class="grid2">
+<div class="card" id="the-registry-web-app">
+  <h3>The registry web app <span class="kind">Browser</span></h3>
+  <p><a href="https://registry.opennodes.io/">registry.opennodes.io</a>: catalog with hardware and measured performance, model and node pages, the advisor, a playground, and a multi-model chat (compare, jury, pipeline, iterative) that talks straight from your browser to the nodes — scenarios save locally and share by link, no account.</p>
+</div>
+<div class="card" id="surge-desktop">
+  <h3>Surge (desktop) <span class="kind">Desktop</span></h3>
+  <p>A desktop client that spans both layers — models through OpenNodes, tools through MCP — with the advisor, receipts and a one-click private mode. Pre-release; its repository opens with the first public build.</p>
+</div>
+<div class="card" id="serve-your-own-model">
+  <h3>Serve your own model <span class="kind">Operator</span></h3>
+  <pre><code>pipx install onp-node
+onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.ai --public-url https://ai.example.org
+onp-node serve &amp;&amp; onp-node check &amp;&amp; onp-node register https://registry.opennodes.io</code></pre><p>The node id is the reverse of the host that serves it; registration proves control of that host, then the automated battery earns the tier.</p>
+</div>
+<div class="card" id="run-your-own-registry">
+  <h3>Run your own registry <span class="kind">Operator</span></h3>
+  <pre><code>npx @opennodes/registry        # web app + API + MCP on http://127.0.0.1:4300</code></pre><p>Production recipe (Postgres, TLS, backups, re-imports): <a href="https://github.com/opennodes-io/opennodes/tree/main/deploy/registry">deploy/registry</a>. Point any client above at it with <code>ONP_REGISTRY</code>.</p>
+</div></div></div></section>
+<footer><div class="wrap">Requirements: Node ≥ 22.5 for <code>npx</code> commands; Python ≥ 3.11 for the Node Kit. Registry default <code>https://registry.opennodes.io</code>, override with <code>ONP_REGISTRY</code>. Packages: <a href="https://www.npmjs.com/package/@opennodes/cli">@opennodes/cli</a> · <a href="https://www.npmjs.com/package/@opennodes/ollama-router">@opennodes/ollama-router</a> · <a href="https://www.npmjs.com/package/@opennodes/registry">@opennodes/registry</a> · <a href="https://pypi.org/project/onp-node/">onp-node</a>. Apache-2.0.</div></footer>
+</body>
+</html>
