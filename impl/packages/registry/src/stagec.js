@@ -13,12 +13,27 @@ export function startStageC(store, {
   livenessIntervalMs = 300_000,   // spec: <=5 min; tests shorten this
   blindIntervalMs = 3_600_000,
   failThreshold = 3,
+  recoverThreshold = 3,           // consecutive liveness successes that lift a liveness suspension
 } = {}) {
   let stopped = false;
 
+  /**
+   * A suspension for liveness is temporary: the node is still probed, and after
+   * `recoverThreshold` consecutive successes it returns to the tier it held. Suspensions
+   * for any other reason (dispute, fraud, operator request) are never lifted here.
+   * Returns the tier to restore to, or null when the node is not eligible.
+   */
+  async function livenessSuspension(node) {
+    if (node.state !== 'suspended') return null;
+    const last = [...(await store.transitionsFor(node.id))].reverse().find((t) => t.to_state === 'suspended');
+    if (!last || !String(last.reason ?? '').startsWith('liveness:')) return null;
+    return OBSERVED_STATES.includes(last.from_state) ? last.from_state : 'community';
+  }
+
   async function livenessSweep() {
     for (const node of await store.allNodes()) {
-      if (!OBSERVED_STATES.includes(node.state)) continue;
+      const restoreTo = await livenessSuspension(node);
+      if (!OBSERVED_STATES.includes(node.state) && !restoreTo) continue;
       const card = await store.latestCard(node.id);
       if (!card) continue;
       let ok = false;
@@ -37,6 +52,15 @@ export function startStageC(store, {
         ratio: recent.length ? Math.round((up / recent.length) * 1000) / 1000 : null,
       });
 
+      if (restoreTo) {
+        let consecutiveOk = 0;
+        for (const p of recent) { if (!p.ok) break; consecutiveOk++; }
+        if (consecutiveOk >= recoverThreshold) {
+          await store.setState(node.id, restoreTo, `reinstated: ${consecutiveOk} consecutive liveness successes`);
+          await refreshCard?.(node.id);   // it may have restarted with a new card revision
+        }
+        continue;
+      }
       let consecutiveFails = 0;
       for (const p of recent) { if (p.ok) break; consecutiveFails++; }
       if (consecutiveFails >= failThreshold) {

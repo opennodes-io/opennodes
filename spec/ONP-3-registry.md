@@ -57,7 +57,7 @@ Registration alone never grants a trust tier. Tiers above `unverified` are gated
 7. **Capability spot-checks** — if `supports` declares `tool_calls`/`json_mode`/`vision`, one functional probe each.
 
 **Stage C — Sustained observation (gate to full `verified` weight in rank, 7 days):**
-8. Liveness probes at ≥5-minute cadence over a rolling window; availability below the card's declared `sla` blocks promotion.
+8. Liveness probes at ≥5-minute cadence over a rolling window; availability below the card's declared `sla` blocks promotion. Consecutive liveness failures MAY suspend a node, but a liveness suspension is temporary: registries MUST keep probing a node suspended for liveness and SHOULD restore it to the tier it held after a small number of consecutive successes (the reference registry: 3 failures to suspend, 3 successes to reinstate). Suspensions for disputes, fraud, or operator request are not lifted this way. A transient outage — the operator's or the registry's own — must not become a permanent delisting.
 9. Random low-volume blind invocations at unpredictable times (anti-"benchmark mode": a node cannot serve a bigger model only when it detects testing). Receipt sampling cross-checks `usage` honesty (§6.2).
 
 **Re-verification.** Stage A re-runs on every card revision and at least every 6 h (the HF cadence); Stage B re-runs on any change to `model`, `serving`, or `hardware` blocks and quarterly otherwise; Stage C runs continuously. Failures demote tier and are visible in listing history (§3).

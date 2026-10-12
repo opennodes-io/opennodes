@@ -154,3 +154,39 @@ test('admin routes demand the bearer token when configured', async (t) => {
   });
   assert.equal(ok.status, 200);
 });
+
+test('Stage C: a node suspended for liveness is reinstated to its tier once it answers again', async (t) => {
+  let node = await startFixtureNode();
+  const port = node.port;
+  const registry = await startRegistry({
+    allowPrivateTargets: true,
+    stageC: { livenessIntervalMs: 60, blindIntervalMs: 10_000, failThreshold: 3, recoverThreshold: 3 },
+  });
+  t.after(async () => { await registry.close(); await node.close().catch(() => {}); });
+  await registerAndVerify(registry, node);
+  const state = async () => (await (await fetch(`${registry.origin}/v0/nodes/org.opennodes.fixture`)).json());
+
+  await node.close();                                             // outage
+  assert.ok(await waitFor(async () => (await state()).state === 'suspended', 8000), 'suspended during the outage');
+
+  node = await startFixtureNode({ port });                        // back on the same origin
+  assert.ok(await waitFor(async () => (await state()).state === 'community', 8000), 'reinstated after it answers again');
+  const reasons = (await state()).history.map((h) => h.reason ?? '');
+  assert.ok(reasons.some((r) => r.startsWith('reinstated:')), JSON.stringify(reasons));
+  const offerings = (await (await fetch(`${registry.origin}/v0/offerings`)).json()).offerings;
+  assert.equal(offerings.length, 1, 'listed again');
+});
+
+test('Stage C: suspensions for other reasons are never lifted by liveness', async (t) => {
+  const node = await startFixtureNode();
+  const registry = await startRegistry({
+    allowPrivateTargets: true,
+    stageC: { livenessIntervalMs: 60, blindIntervalMs: 10_000, failThreshold: 3, recoverThreshold: 3 },
+  });
+  t.after(async () => { await registry.close(); await node.close(); });
+  await registerAndVerify(registry, node);
+  await registry.store.setState('org.opennodes.fixture', 'suspended', 'operator request');
+  await sleep(600);                                               // ~10 liveness sweeps against a healthy node
+  const detail = await (await fetch(`${registry.origin}/v0/nodes/org.opennodes.fixture`)).json();
+  assert.equal(detail.state, 'suspended');
+});
