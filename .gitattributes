@@ -3,3 +3,4 @@
 deploy/** text eol=lf
 Dockerfile text eol=lf
 Caddyfile text eol=lf
+impl/packages/*/bin.js text eol=lf
