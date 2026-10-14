@@ -16,7 +16,8 @@ export async function runStageA(store, nodeId, card, { safeFetch } = {}) {
   try {
     const t0 = performance.now();
     const { status, body } = await fetchJson(card.endpoints.health);
-    const ok = status === 200 && body?.status === 'ok';
+    // ONP health ({status:'ok'}), or an OpenAI /models listing for card-only operators.
+    const ok = status === 200 && (body?.status === 'ok' || Array.isArray(body?.data));
     await record(null, 'health', ok, ok ? null : `status ${status}`, { latency_ms: Math.round(performance.now() - t0) });
   } catch (err) {
     await record(null, 'health', false, String(err.message ?? err));

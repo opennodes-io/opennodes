@@ -79,7 +79,7 @@
 </style>
 </head>
 <body>
-<nav class="top"><div class="wrap"><a href="/">OpenNodes</a><a href="https://registry.opennodes.io/">Registry</a><a href="/integrations">Integrations</a><a href="https://github.com/opennodes-io/opennodes/tree/main/spec">Spec</a><a href="https://github.com/opennodes-io/opennodes">GitHub</a></div></nav>
+<nav class="top"><div class="wrap"><a href="/">OpenNodes</a><a href="https://registry.opennodes.io/">Registry</a><a href="/integrations">Integrations</a><a href="https://github.com/opennodes-io/opennodes/tree/main/spec">Spec</a><a href="/about">About &amp; privacy</a><a href="https://github.com/opennodes-io/opennodes">GitHub</a></div></nav>
 <header class="hero"><div class="wrap">
   <p class="eyebrow">Integrations</p>
   <h1>Use OpenNodes from the tools you already have</h1>
@@ -174,7 +174,7 @@ curl http://127.0.0.1:4141/gateway/advice     # why onp/auto picked what it pick
   <h3>Serve your own model <span class="kind">Operator</span></h3>
   <pre><code>pipx install onp-node
 onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.ai --public-url https://ai.example.org
-onp-node serve &amp;&amp; onp-node check &amp;&amp; onp-node register https://registry.opennodes.io</code></pre><p>The node id is the reverse of the host that serves it; registration proves control of that host, then the automated battery earns the tier.</p>
+onp-node serve &amp;&amp; onp-node check &amp;&amp; onp-node register https://registry.opennodes.io</code></pre><p>The node id is the reverse of the host that serves it; registration proves control of that host, then the automated battery earns the tier.</p><p><b>Already run an OpenAI-compatible API?</b> List it without a proxy: <code>onp-node card</code> signs a static card you host on your domain, and the registry probes your real API with a key you provide — see <a href="https://github.com/opennodes-io/opennodes/tree/main/node-kit#card-only-listing-you-already-run-an-openai-compatible-api">card-only listing</a>. Imported listings that point at your own API are retired once you're verified.</p>
 </div>
 <div class="card" id="run-your-own-registry">
   <h3>Run your own registry <span class="kind">Operator</span></h3>

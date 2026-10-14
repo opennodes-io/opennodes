@@ -7,7 +7,7 @@ const TIER_SCORE = { unverified: 0, community: 0.4, verified: 0.8, attested: 1.0
 export async function collectOfferings(store) {
   const out = [];
   for (const node of await store.allNodes()) {
-    if (['delisted', 'suspended', 'submitted', 'challenged', 'disputed'].includes(node.state)) continue;
+    if (['delisted', 'suspended', 'submitted', 'challenged', 'disputed', 'claimed'].includes(node.state)) continue;
     const card = await store.latestCard(node.id);
     if (!card) continue;
     const probes = await store.probesFor(node.id);

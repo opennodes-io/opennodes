@@ -9,6 +9,7 @@ const OBSERVED_STATES = ['community', 'verified', 'attested'];
 
 export function startStageC(store, {
   safeFetch,
+  fetchFor = null,                // (nodeId, card) -> fetch that carries the node's probe key
   refreshCard = null,             // re-index a node's card when its revision moved (restart / reprice)
   livenessIntervalMs = 300_000,   // spec: <=5 min; tests shorten this
   blindIntervalMs = 3_600_000,
@@ -38,8 +39,9 @@ export function startStageC(store, {
       if (!card) continue;
       let ok = false;
       try {
-        const { status, body } = await fetchJsonCapped(safeFetch, card.endpoints.health, {}, 5_000);
-        ok = status === 200 && body?.status === 'ok';
+        const f = fetchFor ? await fetchFor(node.id, card) : safeFetch;
+        const { status, body } = await fetchJsonCapped(f, card.endpoints.health, {}, 5_000);
+        ok = status === 200 && (body?.status === 'ok' || Array.isArray(body?.data));
       } catch { ok = false; }
       await store.recordProbe(node.id, null, 'C', 'liveness', ok);
 
@@ -79,7 +81,8 @@ export function startStageC(store, {
       if (!chatOfferings.length) continue;
       const offering = chatOfferings[Math.floor(Math.random() * chatOfferings.length)];
       try {
-        const { status, body } = await fetchJsonCapped(safeFetch, `${card.endpoints.openai}/chat/completions`, {
+        const f = fetchFor ? await fetchFor(node.id, card) : safeFetch;
+        const { status, body } = await fetchJsonCapped(f, `${card.endpoints.openai}/chat/completions`, {
           method: 'POST',
           headers: {
             'content-type': 'application/json',

@@ -30,6 +30,11 @@ export async function createSqliteStore(path = ':memory:') {
     CREATE TABLE IF NOT EXISTS challenges (
       node_id TEXT PRIMARY KEY, token TEXT NOT NULL, expires_at TEXT NOT NULL
     );
+    -- Operator-provided probe credentials. A separate table so they can never leak through
+    -- SELECT * FROM nodes; the pending key is activated only after the namespace challenge passes.
+    CREATE TABLE IF NOT EXISTS probe_keys (
+      node_id TEXT PRIMARY KEY, secret TEXT, pending TEXT, updated_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS probes (
       id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT NOT NULL, offering_id TEXT,
       stage TEXT NOT NULL, kind TEXT NOT NULL, ok INTEGER NOT NULL,
@@ -75,6 +80,16 @@ export async function createSqliteStore(path = ':memory:') {
     async latestCard(nodeId) {
       const row = db.prepare('SELECT raw FROM card_revisions WHERE node_id = ? ORDER BY revision DESC LIMIT 1').get(nodeId);
       return row ? JSON.parse(row.raw) : null;
+    },
+    async setPendingProbeKey(nodeId, key) {
+      db.prepare(`INSERT INTO probe_keys (node_id, secret, pending, updated_at) VALUES (?, NULL, ?, ?)
+        ON CONFLICT(node_id) DO UPDATE SET pending=excluded.pending, updated_at=excluded.updated_at`).run(nodeId, key, now());
+    },
+    async promoteProbeKey(nodeId) {
+      db.prepare('UPDATE probe_keys SET secret = pending, pending = NULL, updated_at = ? WHERE node_id = ? AND pending IS NOT NULL').run(now(), nodeId);
+    },
+    async getProbeKey(nodeId) {
+      return db.prepare('SELECT secret FROM probe_keys WHERE node_id = ?').get(nodeId)?.secret ?? null;
     },
     async setChallenge(nodeId, token, ttlMs = 72 * 3600 * 1000) {
       db.prepare('INSERT OR REPLACE INTO challenges (node_id, token, expires_at) VALUES (?, ?, ?)')

@@ -1,15 +1,18 @@
-"""onp-node CLI: init | serve | check | register  (REQ-003 subset)."""
+"""onp-node CLI: init | serve | check | register | card  (REQ-003 subset)."""
 import argparse
 import asyncio
 import json
+import os
 import sys
+import time
+from urllib.parse import urlparse
 from pathlib import Path
 
 from aiohttp import web, ClientSession, ClientTimeout
 
 from .config import DEFAULT_CONFIG, load_config, build_card, stable_revision
 from .check import run_check
-from .jws import generate_private_key, private_key_to_pem, private_key_from_pem
+from .jws import generate_private_key, private_key_to_pem, private_key_from_pem, sign_card, public_jwk
 from .server import NodeKitServer
 
 CONFIG = Path("onp-node.toml")
@@ -18,9 +21,10 @@ CHALLENGE = Path("onp-node-challenge.txt")
 REVISION_STATE = Path("onp-node-revision.json")
 
 
-async def interrogate_engine(base_url: str) -> list[str]:
+async def interrogate_engine(base_url: str, key: str | None = None) -> list[str]:
+    headers = {"authorization": f"Bearer {key}"} if key else {}
     async with ClientSession(timeout=ClientTimeout(total=15)) as session:
-        async with session.get(f"{base_url.rstrip('/')}/models") as r:
+        async with session.get(f"{base_url.rstrip('/')}/models", headers=headers) as r:
             if r.status != 200:
                 raise SystemExit(f"engine /models returned {r.status} — is the engine running at {base_url}?")
             return [m["id"] for m in (await r.json()).get("data", [])]
@@ -48,7 +52,7 @@ def cmd_init(args):
               f"Use the reverse of the host, e.g. --id {_suggest_id(args.public_url)}", file=sys.stderr)
     if CONFIG.exists() and not args.force:
         raise SystemExit(f"{CONFIG} exists (use --force to overwrite)")
-    models = asyncio.run(interrogate_engine(args.engine))
+    models = asyncio.run(interrogate_engine(args.engine, os.environ.get("ONP_ENGINE_KEY")))
     if not models:
         raise SystemExit("engine lists no models")
     CONFIG.write_text(DEFAULT_CONFIG.format(
@@ -147,6 +151,17 @@ async def _register(registry: str, card_url: str):
 
 
 def cmd_register(args):
+    probe_key = os.environ.get(args.probe_key_env) if args.probe_key_env else None
+    if args.probe_key_env and not probe_key:
+        raise SystemExit(f"environment variable {args.probe_key_env} is empty")
+    if args.card_url:   # card-only listing: the card is a static file on the operator's own domain
+        node_id = load_config(CONFIG)["node"]["id"] if CONFIG.exists() else None
+        if node_id and not namespace_ok(node_id, args.card_url) and not args.force:
+            raise SystemExit(f"node id {node_id} does not match {args.card_url}; the card must be served from the host the id names.")
+        verify = asyncio.run(_register_static(args.registry, args.card_url, probe_key, args.wait))
+        print(f"registered: state={verify['state']}, signature_verified={verify.get('signature_verified')}, "
+              f"stage_a_ok={verify.get('stage_a', {}).get('ok')}, claimed_imports={verify.get('claimed_imports')}")
+        return
     _cfg = load_config(CONFIG)
     if not namespace_ok(_cfg["node"]["id"], _cfg["node"]["public_url"]) and not args.force:
         raise SystemExit(f"node id {_cfg['node']['id']} does not match host {_cfg['node']['public_url']}: registries accept a card only "
@@ -163,6 +178,74 @@ def cmd_register(args):
     verify = asyncio.run(_register(args.registry, card_url))
     print(f"registered: state={verify['state']}, signature_verified={verify.get('signature_verified')}, "
           f"stage_a_ok={verify.get('stage_a', {}).get('ok')}")
+
+
+# ---------------------------------------------------------------- card-only listing
+# For operators who already run an OpenAI-compatible API and will not put a proxy in front of
+# it: the kit signs a Node Card once; the operator hosts it (and the JWKS) as static files on
+# their own domain, and registries probe their real API with a probe key they provide.
+
+def make_static_card(cfg: dict, models: list[str], api_base: str, health_url: str | None,
+                     signup: str | None, key, state_path: Path) -> tuple[dict, dict]:
+    card = build_card(cfg, models)
+    base = api_base.rstrip("/")
+    card["endpoints"] = {"openai": base, "health": health_url or f"{base}/models"}
+    if signup:
+        card["payment"]["schemes"] = [
+            ({"scheme": "prepaid", "signup": signup} if s.get("scheme") == "prepaid" else s)
+            for s in card["payment"]["schemes"]]
+    card = stable_revision(card, state_path)
+    return sign_card(card, key), {"keys": [public_jwk(key)]}
+
+
+def cmd_card(args):
+    cfg = load_config(CONFIG)
+    key = private_key_from_pem(KEYFILE.read_text(encoding="utf-8"))
+    api_base = args.api_base or cfg["engine"]["base_url"]
+    engine_key = os.environ.get(args.engine_key_env) if args.engine_key_env else None
+    models = asyncio.run(interrogate_engine(api_base, engine_key))
+    include = cfg["engine"].get("models")
+    if include:
+        missing = [m for m in include if m not in models]
+        if missing:
+            raise SystemExit(f"config lists models the API does not serve: {missing}")
+        models = [m for m in models if m in include]
+    card, jwks = make_static_card(cfg, models, api_base, args.health, args.signup, key, REVISION_STATE)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "open-node.json").write_text(json.dumps(card, indent=2), encoding="utf-8")
+    (out / "jwks.json").write_text(json.dumps(jwks, indent=2), encoding="utf-8")
+    host = cfg["node"]["public_url"].rstrip("/")
+    print(f"signed card for {len(card['offerings'])} offering(s), revision {card['revision']}")
+    print(f"publish both files as static JSON on the host the node id names:")
+    print(f"  {host}/.well-known/open-node.json   <- {out / 'open-node.json'}")
+    print(f"  {host}/.well-known/jwks.json        <- {out / 'jwks.json'}")
+    print("then register (the probe key lets the registry call your API for its checks; it is never shown publicly):")
+    print(f"  onp-node register https://registry.opennodes.io --card-url {host}/.well-known/open-node.json --probe-key-env ONP_PROBE_KEY")
+
+
+async def _register_static(registry: str, card_url: str, probe_key: str | None, wait_s: int):
+    body = {"card_url": card_url, **({"probe_key": probe_key} if probe_key else {})}
+    async with ClientSession(timeout=ClientTimeout(total=120)) as session:
+        async with session.post(f"{registry.rstrip('/')}/v0/nodes", json=body) as r:
+            reg = await r.json()
+            if r.status not in (200, 202):
+                raise SystemExit(f"registration rejected: {json.dumps(reg)}")
+        token = reg["challenge"]["token"]
+        origin = f"{urlparse(card_url).scheme}://{urlparse(card_url).netloc}"
+        print("prove you control the namespace — either one is enough:", flush=True)
+        print(f"  HTTP: serve the text {token} at {origin}/.well-known/onp-challenge/{token}", flush=True)
+        print(f"  DNS:  {reg['challenge']['methods'].get('dns', 'n/a')}", flush=True)
+        deadline = time.time() + wait_s
+        while True:
+            async with session.post(f"{registry.rstrip('/')}{reg['challenge']['verify']}") as r:
+                verify = await r.json()
+                if r.status == 200:
+                    return verify
+                if r.status != 403 or time.time() > deadline:
+                    raise SystemExit(f"verification not completed: {json.dumps(verify)}")
+            print("  waiting for the challenge to appear …", flush=True)
+            await asyncio.sleep(20)
 
 
 def main():
@@ -189,9 +272,20 @@ def main():
     sp.set_defaults(fn=cmd_check)
 
     sp = sub.add_parser("register", help="self-test, then register with a registry (HTTP challenge auto-served)")
-    sp.add_argument("registry", help="registry origin, e.g. https://registry.opennodes.org")
+    sp.add_argument("registry", help="registry origin, e.g. https://registry.opennodes.io")
     sp.add_argument("--force", action="store_true", help="register even if the self-test fails")
+    sp.add_argument("--card-url", help="card-only listing: URL of your static open-node.json (skips the local kit)")
+    sp.add_argument("--probe-key-env", help="name of an env var holding an API key the registry may use for its checks")
+    sp.add_argument("--wait", type=int, default=1800, help="card-only: seconds to wait for the challenge (default 1800)")
     sp.set_defaults(fn=cmd_register)
+
+    sp = sub.add_parser("card", help="card-only listing: sign a static Node Card for an API you already run")
+    sp.add_argument("--api-base", help="your OpenAI-compatible base URL (default: [engine] base_url)")
+    sp.add_argument("--health", help="health URL (default: <api-base>/models)")
+    sp.add_argument("--signup", help="where customers get an API key (prepaid scheme)")
+    sp.add_argument("--engine-key-env", default="ONP_ENGINE_KEY", help="env var with a key to list your models (default ONP_ENGINE_KEY)")
+    sp.add_argument("--out", default="well-known", help="output directory (default ./well-known)")
+    sp.set_defaults(fn=cmd_card)
 
     args = p.parse_args()
     args.fn(args)

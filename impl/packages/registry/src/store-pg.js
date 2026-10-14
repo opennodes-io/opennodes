@@ -17,6 +17,9 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS challenges (
     node_id TEXT PRIMARY KEY, token TEXT NOT NULL, expires_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS probe_keys (
+    node_id TEXT PRIMARY KEY, secret TEXT, pending TEXT, updated_at TEXT NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS probes (
     id SERIAL PRIMARY KEY, node_id TEXT NOT NULL, offering_id TEXT,
     stage TEXT NOT NULL, kind TEXT NOT NULL, ok INTEGER NOT NULL,
@@ -73,6 +76,16 @@ export async function createPgStore({ connectionString, pool } = {}) {
     async latestCard(nodeId) {
       const rows = await q('SELECT raw FROM card_revisions WHERE node_id = $1 ORDER BY revision DESC LIMIT 1', [nodeId]);
       return rows[0] ? JSON.parse(rows[0].raw) : null;
+    },
+    async setPendingProbeKey(nodeId, key) {
+      await q(`INSERT INTO probe_keys (node_id, secret, pending, updated_at) VALUES ($1, NULL, $2, $3)
+        ON CONFLICT (node_id) DO UPDATE SET pending=excluded.pending, updated_at=excluded.updated_at`, [nodeId, key, now()]);
+    },
+    async promoteProbeKey(nodeId) {
+      await q('UPDATE probe_keys SET secret = pending, pending = NULL, updated_at = $1 WHERE node_id = $2 AND pending IS NOT NULL', [now(), nodeId]);
+    },
+    async getProbeKey(nodeId) {
+      return (await q('SELECT secret FROM probe_keys WHERE node_id = $1', [nodeId]))[0]?.secret ?? null;
     },
     async setChallenge(nodeId, token, ttlMs = 72 * 3600 * 1000) {
       await q(`INSERT INTO challenges (node_id, token, expires_at) VALUES ($1, $2, $3)

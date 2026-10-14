@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About &amp; privacy — OpenNodes</title>
+<meta name="description" content="Who runs OpenNodes, where it is hosted, what the registry stores, and how to reach the maintainers.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🛰️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #F7F9FA; --panel: #FFFFFF; --panel-2: #EEF2F4;
+    --ink: #1C2733; --muted: #5C6E7E; --line: #D6DEE3;
+    --accent: #0F7A80; --accent-soft: #E0EFF0; --good: #2F6B3A;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #101820; --panel: #16202A; --panel-2: #1C2833;
+      --ink: #E4EBF0; --muted: #8FA1B0; --line: #2C3B48;
+      --accent: #4FC0C6; --accent-soft: #12333A; --good: #7CC08A;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 1.05rem; line-height: 1.62;
+  }
+  .wrap { max-width: 46rem; margin: 0 auto; padding: 0 1.25rem; }
+  h1, h2, h3 { font-family: "Archivo", "Helvetica Neue", Arial, sans-serif; line-height: 1.12; text-wrap: balance; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; font-size: 0.85em; background: var(--panel-2); padding: 0.08em 0.35em; border-radius: 3px; }
+  pre { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.9rem 1.1rem; overflow-x: auto; font-size: 0.82rem; line-height: 1.5; }
+  pre code { background: none; padding: 0; font-size: 1em; }
+  .eyebrow { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 0 0 0.4rem; }
+
+  header.hero { padding: 4.5rem 0 3rem; border-bottom: 1px solid var(--line); }
+  .hero h1 { font-size: 3rem; font-weight: 700; letter-spacing: -0.02em; margin: 0.4rem 0 1rem; }
+  .hero .lede { font-size: 1.2rem; max-width: 40rem; }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 1.4rem 0 0; }
+  .chip { font-family: "IBM Plex Mono", monospace; font-size: 0.74rem; padding: 0.34rem 0.7rem; border-radius: 2px; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 1.8rem; }
+  .btn { display: inline-block; font-family: "Archivo", sans-serif; font-weight: 600; font-size: 0.95rem; text-decoration: none; padding: 0.65rem 1.2rem; border-radius: 4px; border: 1px solid var(--accent); }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.secondary { color: var(--accent); background: transparent; }
+
+  section { padding: 2.6rem 0; border-bottom: 1px solid var(--line); }
+  section h2 { font-size: 1.5rem; margin: 0 0 1rem; }
+
+  .steps { display: flex; flex-direction: column; gap: 0.45rem; margin-top: 1.2rem; }
+  .step { display: grid; grid-template-columns: 8.5rem 1fr; gap: 0.8rem; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); padding: 0.7rem 0.9rem; align-items: baseline; }
+  .step .k { font-family: "IBM Plex Mono", monospace; font-size: 0.76rem; font-weight: 600; color: var(--accent); }
+  .step .d { font-size: 0.92rem; color: var(--muted); font-family: "Archivo", sans-serif; }
+  @media (max-width: 560px) { .step { grid-template-columns: 1fr; gap: 0.15rem; } .hero h1 { font-size: 2.3rem; } }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.2rem; }
+  @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
+  .card { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: 1rem 1.1rem; }
+  .card h3 { font-size: 1rem; margin: 0 0 0.4rem; }
+  .card p { font-size: 0.92rem; color: var(--muted); margin: 0; }
+
+  ul.spec { list-style: none; padding: 0; margin: 1rem 0 0; }
+  ul.spec li { padding: 0.5rem 0; border-bottom: 1px dashed var(--line); font-size: 0.95rem; }
+  ul.spec .mono { margin-right: 0.5rem; }
+
+  footer { padding: 2.2rem 0 3rem; font-family: "Archivo", sans-serif; font-size: 0.85rem; color: var(--muted); }
+</style>
+<style>
+  nav.top { font-family: "Archivo", sans-serif; font-size: 0.9rem; padding: 1rem 0; border-bottom: 1px solid var(--line); }
+  nav.top a { margin-right: 1.2rem; text-decoration: none; }
+  section ul { padding-left: 1.2rem; } section li { margin: 0.3rem 0; }
+</style>
+</head>
+<body>
+<nav class="top"><div class="wrap"><a href="/">OpenNodes</a><a href="https://registry.opennodes.io/">Registry</a><a href="/integrations">Integrations</a><a href="/about">About &amp; privacy</a><a href="https://github.com/opennodes-io/opennodes">GitHub</a></div></nav>
+<header class="hero" style="padding:3rem 0 2rem"><div class="wrap">
+  <p class="eyebrow">About &amp; privacy</p>
+  <h1 style="font-size:2.4rem">Who runs OpenNodes, and what it keeps</h1>
+  <p class="lede">OpenNodes is an independent open-source project: an open protocol (ONP, CC-BY-4.0), a reference implementation (Apache-2.0), and a hosted registry that anyone can replace with their own. It is maintained by the <a href="https://github.com/opennodes-io">opennodes-io</a> organization on GitHub.</p>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Contact</h2>
+  <ul>
+    <li>Questions, bugs, ideas: <a href="https://github.com/opennodes-io/opennodes/issues">GitHub issues</a>.</li>
+    <li>Operators (listings, removal of an imported listing, probe keys) and privacy requests: <a href="mailto:saikou.soshite@gmail.com">saikou.soshite@gmail.com</a>.</li>
+    <li>Security reports: email the address above; please don't open a public issue.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Where it runs</h2>
+  <ul>
+    <li><b>opennodes.io</b> — static pages served by Cloudflare.</li>
+    <li><b>registry.opennodes.io</b> — the reference registry on a Hetzner Cloud server in Nuremberg, Germany (PostgreSQL, daily backups).</li>
+    <li><b>demo-node.opennodes.io</b> — the project's own small reference node (a 1B model on the same server). Other listed nodes are run by their operators, not by OpenNodes.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>What the registry stores</h2>
+  <ul>
+    <li><b>Node data</b>: Node Cards and their revisions, probe results, measured performance, and state history — all public by design.</li>
+    <li><b>Imported catalog data</b> from public sources (OpenRouter, Hugging Face, models.dev, the Ollama library), marked unverified. Operators can claim a listing or ask for it to be removed.</li>
+    <li><b>Probe keys</b> that operators choose to provide for card-only listings: stored on the server, sent only to that operator's own endpoints for checks, never shown through any page or API.</li>
+    <li><b>Operational logs</b>: the web server records IP addresses and requested URLs for operation and abuse prevention, kept short-term.</li>
+  </ul>
+  <h2 style="margin-top:1.6rem">What it does not see</h2>
+  <ul>
+    <li><b>Your prompts and answers.</b> The chat, the playground, the CLI, the gateway and the Ollama router send them straight from your device to the node you chose. The registry is out of the data path.</li>
+    <li><b>Your API keys.</b> Keys you type in the web app stay in your browser's local storage; the gateway and router keep them on your machine.</li>
+    <li><b>Accounts or tracking.</b> There are no accounts, no advertising, and no third-party analytics.</li>
+  </ul>
+  <p style="font-size:0.92rem;color:var(--muted)">One exception: the catalog's "Ask the advisor" box sends the task text you type to the registry to compute a recommendation; it is not stored. The MCP server and the router extract features locally and send only those.</p>
+</div></section>
+
+<section><div class="wrap">
+  <h2>What the badges mean</h2>
+  <p style="font-size:0.95rem">Tiers and measurements report what the registry's automated probes observed — identity, context, throughput, availability — at the time of measurement. They are evidence, not guarantees: nodes are operated by third parties under their own terms, and OpenNodes is not a party to your use of them.</p>
+</div></section>
+
+<footer><div class="wrap">OpenNodes Protocol · spec CC-BY-4.0, code Apache-2.0 · <a href="https://github.com/opennodes-io/opennodes">github.com/opennodes-io/opennodes</a></div></footer>
+</body>
+</html>

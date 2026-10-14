@@ -49,6 +49,26 @@ onp-node check
 onp-node register https://registry.example.org
 ```
 
+## Card-only listing (you already run an OpenAI-compatible API)
+
+If you operate a production API and won't put a proxy in its path, list it with a static card instead. The kit signs the card once; you host two JSON files on your domain; the registry probes your real API with a key you provide.
+
+```
+pipx install onp-node
+onp-node init --engine https://api.example.com/v1 --id com.example.ai --public-url https://ai.example.com   # ONP_ENGINE_KEY=<key> if /models needs one
+# edit onp-node.toml: pricing (per MTok), schemes = ["prepaid"], data_policy, optional [hardware]
+onp-node card --signup https://console.example.com/keys --out well-known
+# host well-known/open-node.json and well-known/jwks.json at https://ai.example.com/.well-known/
+ONP_PROBE_KEY=<a key with a small quota> onp-node register https://registry.opennodes.io \
+    --card-url https://ai.example.com/.well-known/open-node.json --probe-key-env ONP_PROBE_KEY
+# it prints a challenge: publish it as /.well-known/onp-challenge/<token> or a DNS TXT record; the command waits
+```
+
+- The node id is the reverse of the host serving the card (`ai.example.com` → `com.example.ai`); your API may live on any host.
+- The probe key is held as pending until your challenge passes, is sent only to your card's own endpoints, and never appears in any registry API. Give it a small dedicated quota.
+- `health` defaults to your `/models` endpoint. Card-only listings carry no ONP receipts and no revision enforcement — clients call your API exactly as they do today.
+- Once you're verified, imported catalog listings that point at your own API (for example from models.dev) are retired automatically, so your verified listing replaces them rather than appearing beside them. Listings that reach your models through Hugging Face's or OpenRouter's routers stay: those are their routes, not yours.
+
 ## MVP shortcuts (vs REQ-003)
 
 - Prepaid API-key management (`onp-node keys`), free-tier rate limiting, probe-allowance

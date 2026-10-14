@@ -92,6 +92,40 @@ export async function startRegistry({
   const clientOf = (req) => (trustProxy && req.headers['x-forwarded-for']?.split(',')[0].trim()) || req.socket.remoteAddress || 'unknown';
   const isAdmin = (req) => Boolean(adminToken) && req.headers.authorization === `Bearer ${adminToken}`;
 
+  /**
+   * Fetch for probing one node: carries the operator's probe key (card-only listings of
+   * keyed APIs), and only toward the card's own endpoint origins — never to anything else.
+   */
+  async function authFetch(nodeId, card) {
+    const key = await store.getProbeKey(nodeId);
+    if (!key || !card?.endpoints) return safeFetch;
+    const origins = new Set([card.endpoints.openai, card.endpoints.health].filter(Boolean).map((u) => new URL(u).origin));
+    return (url, opts = {}, timeoutMs) => safeFetch(url,
+      origins.has(new URL(url).origin) ? { ...opts, headers: { ...(opts.headers ?? {}), authorization: `Bearer ${key}` } } : opts,
+      timeoutMs);
+  }
+
+  /**
+   * A registered node that reaches community or higher retires imported catalog listings of
+   * the same operator — imports whose API host lies inside the node's own namespace. Bound to
+   * the namespace so nobody can 'claim' a third party's listings (e.g. Hugging Face's router).
+   */
+  async function supersedeImports(nodeId) {
+    const domain = domainForNodeId(nodeId).toLowerCase();
+    const claimed = [];
+    for (const imp of await store.allNodes()) {
+      if (imp.source !== 'import' || ['claimed', 'delisted'].includes(imp.state)) continue;
+      const card = await store.latestCard(imp.id);
+      let host;
+      try { host = new URL(card?.endpoints?.openai).hostname.toLowerCase(); } catch { continue; }
+      if (host === domain || host.endsWith('.' + domain)) {
+        await store.setState(imp.id, 'claimed', `claimed by ${nodeId}`);
+        claimed.push(imp.id);
+      }
+    }
+    return claimed;
+  }
+
   async function challengeSatisfied(node, challenge) {
     try { // HTTP method — only from a host that controls the id's namespace
       if (namespaceOk(node.origin, node.id)) {
@@ -137,7 +171,8 @@ export async function startRegistry({
   const app = createApp([
     ['POST', '/v0/nodes', async (req, res) => {
       if (!registerLimiter(clientOf(req))) return problem(res, 429, 'rate-limited', 'too many registration attempts from this address; try again later');
-      const { card_url } = await readJson(req);
+      const { card_url, probe_key } = await readJson(req);
+      if (probe_key != null && (typeof probe_key !== 'string' || probe_key.length > 4096)) return problem(res, 400, 'bad-probe-key', 'probe_key must be a string');
       if (!card_url) return problem(res, 400, 'missing-card-url', 'body must be {"card_url": "..."}');
       let card;
       try { card = await fetchCard(card_url); } catch (err) { return problem(res, 422, 'card-unfetchable', String(err.message)); }
@@ -159,6 +194,9 @@ export async function startRegistry({
       if (!listed) await store.setState(nodeId, 'challenged', 'registration received');
       const token = randomUUID();
       await store.setChallenge(nodeId, token);
+      // Held as pending: it only becomes active when this namespace's challenge is satisfied, so a
+      // stranger re-submitting someone else's card cannot replace (or break) their probe key.
+      if (probe_key) await store.setPendingProbeKey(nodeId, probe_key);
       sendJson(res, 202, {
         node_id: nodeId,
         state: listed ? existing.state : 'challenged',
@@ -181,19 +219,22 @@ export async function startRegistry({
       if (!challenge) return problem(res, 410, 'challenge-expired', 'register again');
       const check = await challengeSatisfied(node, challenge);
       if (!check.ok) return problem(res, 403, 'challenge-failed', 'neither HTTP nor DNS TXT challenge satisfied');
+      await store.promoteProbeKey(params.id);
       let indexed;
       try { indexed = await indexCard(params.id, node.card_url); }
       catch (err) { return problem(res, 422, 'card-invalid', String(err.message)); }
 
       await store.setState(params.id, 'indexed', `namespace verified via ${check.method}`);
-      const stageA = await runStageA(store, params.id, indexed.card, { safeFetch });
+      const stageA = await runStageA(store, params.id, indexed.card, { safeFetch: await authFetch(params.id, indexed.card) });
       await store.setState(params.id, stageA.ok ? 'community' : 'indexed',
         stageA.ok ? 'Stage A passed' : 'Stage A failures: ' + stageA.results.filter((r) => !r.ok).map((r) => r.kind).join(','));
+      const claimed = stageA.ok ? await supersedeImports(params.id) : [];
       sendJson(res, 200, {
         node_id: params.id,
         state: (await store.getNode(params.id)).state,
         signature_verified: indexed.sigOk,
         stage_a: stageA,
+        claimed_imports: claimed,
       });
     }],
 
@@ -202,7 +243,7 @@ export async function startRegistry({
       if (!node) return problem(res, 404, 'unknown-node', params.id);
       try {
         const { card } = await indexCard(params.id, node.card_url);
-        const stageA = await runStageA(store, params.id, card, { safeFetch });
+        const stageA = await runStageA(store, params.id, card, { safeFetch: await authFetch(params.id, card) });
         sendJson(res, 200, { node_id: params.id, revision: card.revision, stage_a_ok: stageA.ok });
       } catch (err) {
         problem(res, 422, 'refresh-failed', String(err.message));
@@ -226,7 +267,7 @@ export async function startRegistry({
       }
       await refreshCard(params.id);
       const card = await store.latestCard(params.id);
-      const stageB = await runStageB(store, params.id, card, { safeFetch, capacity: stageBCapacity });
+      const stageB = await runStageB(store, params.id, card, { safeFetch: await authFetch(params.id, card), capacity: stageBCapacity });
       if (stageB.stale) {
         return problem(res, 409, 'stale-card', 'the node changed its card revision during the battery; retry');
       }
@@ -234,6 +275,7 @@ export async function startRegistry({
         await store.setState(params.id, 'disputed', 'Stage B identity fingerprint mismatch');
       } else if (stageB.ok) {
         await store.setState(params.id, 'verified', 'Stage B passed');
+        await supersedeImports(params.id);
       }
       sendJson(res, 200, { node_id: params.id, state: (await store.getNode(params.id)).state, stage_b: stageB });
     }],
@@ -246,7 +288,7 @@ export async function startRegistry({
       const card = await store.latestCard(node_id);
       const offering = card?.offerings.find((o) => o.offering_id === offering_id);
       if (!offering) return problem(res, 404, 'unknown-offering', `${node_id}/${offering_id}`);
-      const refs = await captureFingerprints(safeFetch, card, offering);
+      const refs = await captureFingerprints(await authFetch(node_id, card), card, offering);
       await store.addFingerprints(offering.model.artifact, refs);
       sendJson(res, 200, { artifact: offering.model.artifact, references: refs.length });
     }],
@@ -255,7 +297,7 @@ export async function startRegistry({
     ['GET', '/v0/nodes', async (req, res) => {
       const out = [];
       for (const node of await store.allNodes()) {
-        if (['delisted'].includes(node.state)) continue;
+        if (['delisted', 'claimed'].includes(node.state)) continue;
         const card = await store.latestCard(node.id);
         const availability = (await store.getObservations(node.id, '_node')).availability ?? null;
         out.push({
@@ -428,7 +470,7 @@ export async function startRegistry({
     ...exportRoutes(store, registryKeys),
   ], { cors: true }); // public read API: third-party web clients may call it directly
 
-  const stageCHandle = stageC ? startStageC(store, { safeFetch, refreshCard, ...stageC }) : null;
+  const stageCHandle = stageC ? startStageC(store, { safeFetch, fetchFor: authFetch, refreshCard, ...stageC }) : null;
   const reimportHandle = reimport ? startReimport(store, { safeFetch, ...reimport }) : null;
   const actualPort = await listen(app, port, host);
   return {
