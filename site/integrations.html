@@ -88,7 +88,7 @@
     <a href="#claude-code">Claude Code</a><a href="#claude-desktop">Claude Desktop</a><a href="#cursor">Cursor</a><a href="#vs-code-copilot-agent-mode">VS Code</a><a href="#windsurf">Windsurf</a><a href="#ollama-cli">Ollama</a><a href="#open-webui">Open WebUI</a><a href="#continue-vs-code-jetbrains">Continue</a><a href="#zed">Zed</a><a href="#openai-sdk-python">OpenAI SDK</a><a href="#langchain-llamaindex-litellm-vercel-ai-sdk-n8n-dify">LangChain / LiteLLM</a><a href="#any-remote-mcp-host-or-agent-framework">Agents (remote MCP)</a><a href="#serve-your-own-model">Operators</a>
   </div>
 </div></header>
-<section><div class="wrap"><h2>Editors and assistants (MCP)</h2><p class="lede-s">Any MCP host gets four tools — <code>recommend</code>, <code>search_offerings</code>, <code>get_offering</code>, <code>estimate</code> — from one stdio server. The advisor extracts features from your prompt locally and sends only those to the registry; the prompt itself never leaves your machine.</p><div class="grid2">
+<section><div class="wrap"><h2>Editors and assistants (MCP)</h2><p class="lede-s">Any MCP host gets five read-only tools — <code>recommend</code>, <code>search_offerings</code>, <code>get_offering</code>, <code>get_node</code>, <code>estimate</code> — from one stdio server. The advisor extracts features from your prompt locally and sends only those to the registry; the prompt itself never leaves your machine.</p><div class="grid2">
 <div class="card" id="claude-code">
   <h3>Claude Code <span class="kind">MCP</span></h3>
   <p>One command:</p><pre><code>claude mcp add --scope user opennodes -- npx -y @opennodes/cli mcp</code></pre>

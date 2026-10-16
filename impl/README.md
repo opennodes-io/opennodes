@@ -46,7 +46,7 @@ node packages/cli/bin.js invoke --offering org.opennodes.fixture/echo-1 --prompt
 ### MCP: model search & chain pricing inside Cursor / VS Code / Claude Desktop
 
 `onp mcp` is a stdio MCP server exposing `recommend` (the advisor — features are extracted
-locally, the prompt never leaves the machine) / `search_offerings` / `get_offering` / `estimate`
+locally, the prompt never leaves the machine) / `search_offerings` / `get_offering` / `get_node` / `estimate`
 across everything the registry knows — registered nodes plus the imported OpenRouter,
 Hugging Face, models.dev, and Ollama catalogs. Editor config (`npx @opennodes/cli mcp --print-config`):
 
