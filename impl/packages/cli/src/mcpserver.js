@@ -77,6 +77,19 @@ const TOOLS = [
     annotations: { title: 'Get one offering', readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   },
   {
+    name: 'get_node',
+    title: 'Get one node',
+    description: "Who runs a node and how it has behaved: operator, country and regions, endpoints, declared hardware, trust tier and its history (verifications, suspensions, reinstatements, with reasons), recent registry probe results with an availability summary, and its offerings with context window and price. Use it to vet a provider before relying on it; take node_id from search_offerings, recommend or get_offering results. For one offering's full card, use get_offering.",
+    inputSchema: {
+      type: 'object', required: ['node_id'], additionalProperties: false,
+      properties: {
+        node_id: { type: 'string', minLength: 1, description: 'Reverse-DNS node id, e.g. "io.opennodes.demo-node" or "import.openrouter.ai".' },
+        offering_limit: { type: 'integer', minimum: 0, maximum: 200, default: 25, description: 'Maximum offerings to list; imported catalogs can hold hundreds. `offerings_total` always gives the full count.' },
+      },
+    },
+    annotations: { title: 'Get one node', readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+  },
+  {
     name: 'estimate',
     title: 'Estimate the cost of a chain',
     description: 'Pre-price an invocation chain BEFORE spending money. Each step is either a concrete offering ("node_id/offering_id") or a `select` query that picks the best match, plus expected input and output tokens. Returns per-step cost bounds in USD, the pinned card_revision that makes each estimate enforceable at invocation, and chain totals. Use it to compare routes or budget a multi-model pipeline; nothing is invoked or charged.',
@@ -101,6 +114,53 @@ const TOOLS = [
     annotations: { title: 'Estimate the cost of a chain', readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   },
 ];
+
+// Registry node detail → what an agent needs to vet a provider. Drops signatures and
+// raw cards (imported catalogs carry hundreds of offerings).
+export function summarizeNode(node, offeringLimit = 25) {
+  const card = node.card ?? {};
+  const offerings = card.offerings ?? [];
+  const liveness = (node.probes ?? []).filter((p) => p.kind === 'liveness');
+  return {
+    id: node.id,
+    name: card.node?.name ?? node.id,
+    description: card.node?.description ?? null,
+    operator: card.node?.operator?.name ?? null,
+    country: card.node?.operator?.country ?? null,
+    regions: card.node?.regions ?? [],
+    tier: node.state === 'indexed' ? 'unverified' : node.state,
+    source: node.source ?? 'registration',
+    institutional: Boolean(node.institutional),
+    origin: node.origin ?? null,
+    card_url: node.card_url ?? null,
+    card_revision: card.revision ?? null,
+    endpoints: card.endpoints ?? {},
+    hardware: card.hardware ?? null,
+    payment_schemes: (card.payment?.schemes ?? []).map((s) => s.scheme),
+    listed_at: node.created_at ?? null,
+    updated_at: node.updated_at ?? null,
+    availability: liveness.length ? {
+      checks: liveness.length,
+      ok: liveness.filter((p) => p.ok).length,
+      last_check_at: liveness[0].at,
+      last_ok_at: liveness.find((p) => p.ok)?.at ?? null,
+    } : null,
+    recent_probes: (node.probes ?? []).slice(0, 10).map((p) => ({
+      at: p.at, stage: p.stage, kind: p.kind, offering_id: p.offering_id ?? null, ok: Boolean(p.ok), detail: p.detail ?? null,
+    })),
+    history: (node.history ?? []).slice(-10).reverse().map((h) => ({ at: h.at, from: h.from_state, to: h.to_state, reason: h.reason })),
+    offerings_total: offerings.length,
+    offerings: offerings.slice(0, offeringLimit).map((o) => ({
+      offering_id: o.offering_id,
+      model: o.model?.name ?? null,
+      modality: o.modality,
+      context_window: o.serving?.context_window ?? null,
+      supports: o.serving?.supports ?? [],
+      pricing: o.pricing ? { currency: o.pricing.currency, input_per_mtok: o.pricing.input_per_mtok, output_per_mtok: o.pricing.output_per_mtok, schemes: o.pricing.schemes } : null,
+      retention: o.data_policy?.retention ?? null,
+    })),
+  };
+}
 
 export function createStdioMcp({ registry, input = process.stdin, output = process.stdout }) {
   const base = registry.replace(/\/$/, '');
@@ -131,6 +191,13 @@ export function createStdioMcp({ registry, input = process.stdin, output = proce
         if (!res.ok) throw new Error(body.detail ?? `status ${res.status}`);
         return body;
       }
+      case 'get_node': {
+        const res = await fetch(`${base}/v0/nodes/${encodeURIComponent(args.node_id)}`);
+        const body = await res.json();
+        if (res.status === 404) throw new Error(`unknown node: ${args.node_id} (node ids come from search_offerings or recommend results)`);
+        if (!res.ok) throw new Error(body.detail ?? `status ${res.status}`);
+        return summarizeNode(body, args.offering_limit ?? 25);
+      }
       case 'estimate': {
         const res = await fetch(`${base}/v0/estimate`, {
           method: 'POST', headers: { 'content-type': 'application/json' },
@@ -154,7 +221,7 @@ export function createStdioMcp({ registry, input = process.stdin, output = proce
           protocolVersion: params?.protocolVersion ?? '2025-06-18',
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'opennodes', title: 'OpenNodes', version: VERSION },
-          instructions: "OpenNodes finds and prices AI inference endpoints across registered nodes and imported catalogs (OpenRouter, Hugging Face, models.dev, local). Start with recommend when you know the task; use search_offerings to browse with filters, get_offering for one offering's full detail, and estimate to price a multi-step chain before running it. All tools are read-only: nothing is invoked or charged.",
+          instructions: "OpenNodes finds and prices AI inference endpoints across registered nodes and imported catalogs (OpenRouter, Hugging Face, models.dev, local). Start with recommend when you know the task; use search_offerings to browse with filters, get_offering for one offering's full detail, get_node to vet who runs a node and how it has behaved, and estimate to price a multi-step chain before running it. All tools are read-only: nothing is invoked or charged.",
         });
       case 'ping':
         return reply({});

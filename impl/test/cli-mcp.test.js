@@ -39,7 +39,7 @@ test('cli MCP server reports its package version and documents every tool parame
   assert.ok(init.instructions.length > 0);
 
   const tools = (await rpc('tools/list')).result.tools;
-  assert.deepEqual(tools.map((tl) => tl.name).sort(), ['estimate', 'get_offering', 'recommend', 'search_offerings']);
+  assert.deepEqual(tools.map((tl) => tl.name).sort(), ['estimate', 'get_node', 'get_offering', 'recommend', 'search_offerings']);
   const undocumented = [];
   const walk = (schema, path) => {
     for (const [key, prop] of Object.entries(schema.properties ?? {})) {
@@ -54,4 +54,31 @@ test('cli MCP server reports its package version and documents every tool parame
     walk(tl.inputSchema, `${tl.name}:`);
   }
   assert.deepEqual(undocumented, []);
+});
+
+test('get_node summary keeps vetting facts and caps imported catalogs', async () => {
+  const { summarizeNode } = await import('@opennodes/cli/src/mcpserver.js');
+  const offering = (i) => ({ offering_id: `m${i}`, modality: 'text', model: { name: `model-${i}` }, serving: { context_window: 8192, supports: ['streaming'] }, pricing: { currency: 'USD', input_per_mtok: 0, output_per_mtok: 0, schemes: ['free'] }, data_policy: { retention: 'none' } });
+  const node = {
+    id: 'io.example.node', state: 'verified', source: 'registration', origin: 'https://node.example.io', created_at: '2026-10-01T00:00:00Z',
+    card: { revision: 'r1', node: { name: 'Example', operator: { name: 'Example Ltd', country: 'PL' }, regions: ['eu'] }, offerings: [0, 1, 2].map(offering), signatures: [{ signature: 'x' }] },
+    probes: [
+      { at: '2026-10-16T10:10:00Z', stage: 'C', kind: 'liveness', ok: 0 },
+      { at: '2026-10-16T10:05:00Z', stage: 'C', kind: 'liveness', ok: 1 },
+      { at: '2026-10-16T10:00:00Z', stage: 'C', kind: 'blind', offering_id: 'm0', ok: 1 },
+    ],
+    history: [
+      { at: '2026-10-01T00:00:00Z', from_state: 'indexed', to_state: 'community', reason: 'stage A passed' },
+      { at: '2026-10-02T00:00:00Z', from_state: 'community', to_state: 'verified', reason: 'stage B passed' },
+    ],
+  };
+  const s = summarizeNode(node, 2);
+  assert.equal(s.tier, 'verified');
+  assert.equal(s.operator, 'Example Ltd');
+  assert.deepEqual(s.availability, { checks: 2, ok: 1, last_check_at: '2026-10-16T10:10:00Z', last_ok_at: '2026-10-16T10:05:00Z' });
+  assert.equal(s.history[0].to, 'verified', 'history is newest first');
+  assert.equal(s.offerings_total, 3);
+  assert.deepEqual(s.offerings.map((o) => o.offering_id), ['m0', 'm1']);
+  assert.equal(JSON.stringify(s).includes('signature'), false);
+  assert.equal(summarizeNode({ ...node, state: 'indexed', probes: [] }).tier, 'unverified');
 });
