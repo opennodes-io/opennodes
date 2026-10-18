@@ -79,6 +79,10 @@ The supply-side on-ramp: a reverse proxy that turns any OpenAI-compatible engine
 
 **Immediate**
 1. Hands-on editor validation (Cursor/VS Code via `npx @opennodes/cli mcp --print-config`) and an Open WebUI pass over the Ollama router; then the MCP directory listings and the launch announcement.
+   - **awesome-mcp-servers:** [punkpeye/awesome-mcp-servers#15477](https://github.com/punkpeye/awesome-mcp-servers/pull/15477), opened 2026-10-01 from `saikousoshite-ai/awesome-mcp-servers:add-opennodes`, adds `opennodes-io/opennodes` at the top of Developer Tools.
+     - **Glama:** the list now requires a Glama score badge (bot notices of 2026-10-01 and 10-15). OpenNodes is evaluated there and rated **A**: official vendor server, tool definitions A, 5 tools, maintenance B.
+     - **Rebased 2026-10-18** after the maintainer's merge-conflict notice. The README had gained 329 commits of entries at the same spot. The entry was re-applied unchanged on the new `main` (force-pushed, `ef80383`).
+     - **Status:** mergeable and clean, `check-submission` passing, **waiting for the maintainer to merge**. If it conflicts again, repeat the rebase: one line under `### 💻 … Developer Tools`.
 2. First external nodes: "claim your listing" for imported providers; direct outreach to EU/Polish operators; Stage B reference fingerprints for the top open-weight families.
 
 **Near term (Draft 0.2 and hardening)**
