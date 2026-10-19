@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OpenNodes — the discovery layer for AI inference</title>
-<meta name="description" content="OpenNodes (ONP) is an open standard for discovering, verifying, pricing, and invoking AI inference endpoints — from frontier labs to a university GPU cluster.">
+<title>OpenNodes — AI inference, measured, not just claimed</title>
+<meta name="description" content="OpenNodes is an open registry and protocol for AI inference endpoints: it checks which model each one really serves, its working context window, speed, hardware and price. One Ollama endpoint for local, LAN and verified cloud models; MCP tools for your editor.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🛰️</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -70,27 +70,84 @@
 <body>
 
 <header class="hero"><div class="wrap">
-  <p class="eyebrow">OpenNodes Protocol · ONP Draft 0.1</p>
-  <h1>The discovery layer for AI&nbsp;inference</h1>
-  <p class="lede">MCP standardized how AI reaches <em>tools</em>. The OpenAI API shape standardized <em>invocation</em>. x402 standardized <em>machine payments</em>. <strong>Nothing standardizes how a client finds an inference endpoint it doesn't already know</strong> — what model it serves, on what hardware, at what price, and whether it's honest. OpenNodes fills exactly that gap, and composes the rest from existing standards.</p>
+  <p class="eyebrow">OpenNodes · open protocol for AI inference</p>
+  <h1>AI inference, measured — not just&nbsp;claimed</h1>
+  <p class="lede">OpenNodes is an open registry of AI inference endpoints, from your own Ollama box to sovereign EU clouds. It checks what each one really serves: which model, how much context actually works, how fast it answers, on what hardware, at what price. <strong>Your prompts go straight to the endpoint you pick — OpenNodes is never in the data path.</strong></p>
   <div class="chips">
-    <span class="chip">open registration</span>
-    <span class="chip">adversarial verification</span>
-    <span class="chip">enforceable estimates</span>
+    <span class="chip">identity checks</span>
+    <span class="chip">measured context windows</span>
+    <span class="chip">pinned prices</span>
     <span class="chip">signed receipts</span>
-    <span class="chip">federation-ready</span>
+    <span class="chip">out of the data path</span>
+    <span class="chip">open source</span>
   </div>
   <div class="actions">
     <a class="btn primary" href="https://registry.opennodes.io/">Open the registry</a>
-    <a class="btn secondary" href="https://github.com/opennodes-io/opennodes">GitHub</a>
-    <a class="btn secondary" href="https://github.com/opennodes-io/opennodes/tree/main/spec">Read the spec</a>
+    <a class="btn secondary" href="#ollama">Use it with Ollama</a>
     <a class="btn secondary" href="/integrations">Integrations</a>
+    <a class="btn secondary" href="https://github.com/opennodes-io/opennodes">GitHub</a>
   </div>
 </div></header>
 
 <section><div class="wrap">
-  <p class="eyebrow">The loop</p>
-  <h2>Discover → verify → estimate → invoke → receipt</h2>
+  <p class="eyebrow">Start here</p>
+  <h2>Two ways to start</h2>
+
+  <h3 id="ollama" style="font-size:1.1rem">One Ollama endpoint for your laptop, your network, and verified cloud</h3>
+  <p style="font-size:0.95rem">Run one command and every Ollama app — Open WebUI, Continue, Zed, Msty, the <code>ollama</code> CLI — sees one model list: your local models, your other machines on the network (found automatically), and verified public nodes. <code>auto</code> picks a model per prompt; <code>auto-private</code> never leaves your network. No account, no API key.</p>
+  <pre><code>npx @opennodes/ollama-router                 # then OLLAMA_HOST=127.0.0.1:11435
+ollama run auto-private "summarize this confidential note"   # local / LAN models only</code></pre>
+  <figure style="margin:1rem 0 1.6rem">
+    <video src="media/opennodes-for-ollama.mp4" poster="media/opennodes-for-ollama-poster.jpg" width="960" height="540" autoplay muted loop playsinline preload="none"
+      style="width:100%;height:auto;border:1px solid var(--line);border-radius:6px;background:#1e1e1e"
+      aria-label="Terminal: ollama list shows local models, auto models and a public OpenNodes node; auto-private answers from a local model, and the router explains why"></video>
+    <figcaption style="font-size:0.8rem;color:var(--muted)">Real output: <code>auto-private</code> answered from a local model and the router says why; a public node answers the next prompt.</figcaption>
+  </figure>
+
+  <h3 style="font-size:1.1rem">The registry: what's out there, and what has been checked</h3>
+  <p style="font-size:0.95rem"><a href="https://registry.opennodes.io/">registry.opennodes.io</a> lists 10,000+ offerings from about 250 providers — imported from OpenRouter, Hugging Face Inference Providers, models.dev and the Ollama library, refreshed every six hours — next to nodes registered by their operators. Every result shows its price, its trust tier, and why it ranks where it does.</p>
+  <p style="font-size:0.95rem">A registered node earns its tier by passing the registry's own checks: it serves the model it claims, its context window holds up under a real test (or the listing is capped to what does), and it answers under load. Blind probes at random times keep it honest afterwards. <strong>Where things stand:</strong> imported listings stay <em>unverified</em> until their operator claims them, and the verified tier holds the project's reference nodes while the first operators come on board.</p>
+  <div class="actions" style="margin-top:1rem">
+    <a class="btn secondary" href="https://registry.opennodes.io/">Browse the registry</a>
+    <a class="btn secondary" href="#operators">Operators: claim your listing</a>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <p class="eyebrow">In your editor, agent or app</p>
+  <h2>Ask for the right model from where you work</h2>
+  <h3 style="font-size:1.05rem">MCP — Cursor, Claude Desktop, Claude Code, VS Code, any agent</h3>
+  <p style="font-size:0.92rem;color:var(--muted)">Five read-only tools: <code>recommend</code> (the best node and model for a task, priced and explained — the prompt is analysed on your machine and only its features are sent), <code>search_offerings</code>, <code>get_offering</code>, <code>get_node</code> (who runs it, how it has behaved) and <code>estimate</code> (price a multi-step chain before running it).</p>
+  <pre><code>npx @opennodes/cli mcp --print-config        # paste into your MCP host's config
+# no install: point a remote-MCP host at https://registry.opennodes.io/mcp</code></pre>
+  <h3 style="font-size:1.05rem">Any OpenAI-compatible app</h3>
+  <p style="font-size:0.92rem;color:var(--muted)">A local gateway with <code>onp/auto</code> models that route each request to a node you can actually call: free registered nodes, plus catalogs you hold a key for (<code>OPENROUTER_API_KEY</code>, <code>HF_TOKEN</code>, …). Prices are pinned, receipts verified.</p>
+  <pre><code>npx @opennodes/cli gateway --port 4141       # OpenAI base URL: http://127.0.0.1:4141/v1</code></pre>
+  <p style="font-size:0.92rem;color:var(--muted)">Per-app setup for Cursor, Claude, VS Code, Windsurf, Open WebUI, Continue, Zed, the OpenAI SDK, LangChain, LiteLLM and agents: <a href="/integrations">Integrations</a>.</p>
+</div></section>
+
+<section id="operators"><div class="wrap">
+  <p class="eyebrow">For operators</p>
+  <h2>List your endpoint — and prove it</h2>
+  <div class="grid2">
+    <div class="card"><h3>Already run an OpenAI-compatible API?</h3><p>Publish a signed Node Card as a static file on your API host and give the registry a low-quota key for its checks. Nothing in your stack changes, and your verified listing replaces the imported one.</p></div>
+    <div class="card"><h3>Serving with vLLM, Ollama or TGI?</h3><p>The Node Kit runs a small proxy in front of your engine: it serves the card, pins prices, signs usage receipts, and registers the node. Your engine stays untouched.</p></div>
+  </div>
+  <pre><code>pipx install onp-node
+onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.ai --public-url https://ai.example.org
+# proxy mode: run the kit in front of your engine, then register
+onp-node serve
+onp-node register https://registry.opennodes.io
+# card-only mode: sign static files for the API you already run, host them, register
+onp-node card --api-base https://api.example.org/v1 --out well-known
+onp-node register https://registry.opennodes.io --card-url https://api.example.org/.well-known/open-node.json --probe-key-env ONP_PROBE_KEY</code></pre>
+  <p style="font-size:0.92rem;color:var(--muted)">Listing is free and open to anyone who controls their domain. Step-by-step guide in the <a href="https://github.com/opennodes-io/opennodes/tree/main/node-kit">Node Kit README</a>; questions, claims or removal of an imported listing: <a href="mailto:operators@opennodes.io">operators@opennodes.io</a>.</p>
+</div></section>
+
+<section><div class="wrap">
+  <p class="eyebrow">Why a protocol</p>
+  <h2>The discovery layer for AI inference</h2>
+  <p>MCP standardized how AI reaches <em>tools</em>. The OpenAI API shape standardized <em>invocation</em>. <strong>Nothing standardizes how a client finds an inference endpoint it doesn't already know</strong> — what model it serves, on what hardware, at what price, and whether it's honest. ONP fills exactly that gap and composes the rest from existing standards.</p>
   <div class="steps">
     <div class="step"><span class="k">NODE CARD</span><span class="d">Any provider self-describes at <code>/.well-known/open-node.json</code>: models, hardware, benchmarks, per-token price — signed, revisioned.</span></div>
     <div class="step"><span class="k">REGISTRY</span><span class="d">Open registration with DNS/HTTP namespace proof; searchable across registered nodes and imported catalogs (OpenRouter, Hugging Face, models.dev).</span></div>
@@ -98,49 +155,12 @@
     <div class="step"><span class="k">ESTIMATE</span><span class="d">Pre-price a whole multi-model chain; estimates pin card revisions, so the quoted price is enforceable at invocation — never a surprise on the bill.</span></div>
     <div class="step"><span class="k">RECEIPT</span><span class="d">Every response carries a signed usage receipt: amount = usage × pinned price. The audit trail for settlement and disputes.</span></div>
   </div>
-</div></section>
-
-<section><div class="wrap">
-  <p class="eyebrow">Why it's different</p>
-  <h2>Verified, not just ranked</h2>
-  <div class="grid2">
-    <div class="card"><h3>Anyone can list. No one is trusted blindly.</h3><p>A university cluster, a sovereign EU cloud, your own Ollama box — same automated admission gate for everyone. Claiming a model you don't serve gets you marked <code>disputed</code> and delisted.</p></div>
+  <div class="grid2" style="margin-top:1.6rem">
+    <div class="card"><h3>Anyone can list. No one is trusted blindly.</h3><p>A university cluster, a sovereign EU cloud, your own Ollama box — the same automated admission gate for everyone. Claiming a model you don't serve gets the node marked <code>disputed</code> and dropped from search.</p></div>
     <div class="card"><h3>Transparent ranking, by rule.</h3><p>Every search result carries its rank explanation — component weights and values. Undisclosed ranking inputs are non-conformant. Claimed, measured, and attested values are never blended.</p></div>
     <div class="card"><h3>Out of the data path.</h3><p>Discovery is metadata; invocation goes direct from client to node. Your prompts don't transit anyone's middlebox — which is why data-residency deployments can actually use it.</p></div>
-    <div class="card"><h3>Federated by construction.</h3><p>The registry is a protocol, not a place: an OpenAPI anyone can implement, plus a signed, mirrorable export feed. Node Cards live at the node's origin — no registry owns the data.</p></div>
+    <div class="card"><h3>Federated by construction.</h3><p>The registry is a protocol, not a place: an OpenAPI anyone can implement, plus a signed, mirrorable export feed. Node Cards live at the node's origin — no registry owns the data. Run your own with <code>npx @opennodes/registry</code>.</p></div>
   </div>
-</div></section>
-
-<section><div class="wrap">
-  <p class="eyebrow">Quickstart</p>
-  <h2>Three ways in</h2>
-  <p style="font-size:0.92rem;color:var(--muted)">Per-app setup for Cursor, Claude Desktop, Claude Code, VS Code, Windsurf, Open WebUI, Continue, Zed, the OpenAI SDK, LangChain, LiteLLM and agents: see <a href="/integrations">Integrations</a>.</p>
-  <h3 style="font-size:1.05rem">The registry app — browse, rank, register</h3>
-  <p style="font-size:0.92rem;color:var(--muted)">Every registry serves an OpenRouter-style web app at its root: searchable catalog with transparent per-result rank explanations, node pages with probe and listing history, and the full registration + qualification flow (submit card → namespace challenge → Stage A → Stage B). The hosted instance is live at <a href="https://registry.opennodes.io/"><code>registry.opennodes.io</code></a> — 9,000+ offerings across registered nodes and the OpenRouter, Hugging Face, models.dev, and Ollama catalogs, re-imported every six hours. Or run your own (Node ≥ 22.5):</p>
-  <pre><code>npx @opennodes/registry                      # app + API + MCP on http://127.0.0.1:4300</code></pre>
-  <h3 style="font-size:1.05rem">OpenNodes for Ollama — local, LAN, and verified cloud behind one endpoint</h3>
-  <p style="font-size:0.92rem;color:var(--muted)">One Ollama-compatible endpoint: your local models, your other machines (plain Ollama or Node Kit nodes, found via mDNS), and verified public nodes with pinned prices and signed receipts. <code>auto-private</code> never leaves your network. Works unchanged with Open WebUI, Continue, Zed, Msty, and the <code>ollama</code> CLI.</p>
-  <pre><code>npx @opennodes/ollama-router                 # then OLLAMA_HOST=127.0.0.1:11435
-ollama run auto-private "summarize this confidential note"   # routes only to local / LAN models</code></pre>
-  <h3 style="font-size:1.05rem">Model search, the advisor &amp; chain pricing inside your editor (MCP)</h3>
-  <pre><code>npx @opennodes/cli mcp --print-config        # paste into Cursor / VS Code / Claude Desktop</code></pre>
-  <h3 style="font-size:1.05rem">Any OpenAI-compatible app, routed through discovery (gateway)</h3>
-  <pre><code>npx @opennodes/cli gateway --port 4141       # models onp/auto, onp/auto-cheap, onp/auto-private, …
-# point the app's OpenAI base URL at http://127.0.0.1:4141/v1</code></pre>
-  <h3 style="font-size:1.05rem">Serve your own model as a node (Python kit, engine untouched)</h3>
-  <pre><code>pipx install onp-node
-onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.ai --public-url https://ai.example.org
-onp-node serve && onp-node check && onp-node register https://registry.example.org</code></pre>
-  <h3 style="font-size:1.05rem">A desktop client that speaks both layers (Surge)</h3>
-  <p style="font-size:0.92rem;color:var(--muted)">Surge (pre-release: <a href="https://github.com/opennodes-io/surge/releases">Windows installer</a>, <a href="https://github.com/opennodes-io/surge">source on GitHub</a>) is a desktop "browser for MCP" and the reference OpenNodes client. The model picker is fed live from an ONP registry — trust tier, measured latency, per-MTok price — and <strong>Auto</strong> runs the advisor on your machine to pick a node per prompt. Every call goes direct to the node, pinned to its card revision, and comes back with a signed receipt that Surge verifies (<code>amount = usage × pinned price</code>) and shows under the reply. A spend policy is on from first launch (spending off until you set a budget), a dashboard keeps the ledger, and one click switches to <strong>private mode</strong>: your local Ollama and LAN machines only. Models via OpenNodes, tools via MCP, in one app.</p>
-  <figure style="margin:1rem 0 0">
-    <picture>
-      <source srcset="media/surge-browser-receipt-dark.png" media="(prefers-color-scheme: dark)">
-      <img src="media/surge-browser-receipt-light.png" width="900" height="700" loading="lazy" style="width:100%;height:auto;border:1px solid var(--line);border-radius:6px"
-        alt="Surge with opennodes.io open in its browser: a page tool read the site, and the answer came from an OpenNodes node chosen by the advisor, with its verified receipt shown under the reply">
-    </picture>
-    <figcaption style="font-size:0.8rem;color:var(--muted)">A page read with an MCP browser tool, answered by a node the advisor picked — tier, measured latency, price, and the verified receipt under the reply.</figcaption>
-  </figure>
 </div></section>
 
 <section><div class="wrap">
@@ -154,6 +174,21 @@ onp-node serve && onp-node check && onp-node register https://registry.example.o
     <li><span class="mono">ONP-5</span><a href="https://github.com/opennodes-io/opennodes/blob/main/spec/ONP-5-settlement.md">Settlement</a> — price advertisement, payment schemes, signed receipts</li>
     <li><span class="mono">ONP-6</span><a href="https://github.com/opennodes-io/opennodes/blob/main/spec/ONP-6-bridging.md">Bridging</a> — MCP, WebMCP, agent-driven composition, scenarios</li>
   </ul>
+</div></section>
+
+<section><div class="wrap">
+  <p class="eyebrow">Ecosystem</p>
+  <h2>Clients</h2>
+  <p style="font-size:0.92rem;color:var(--muted)"><strong>Surge</strong> (pre-release: <a href="https://github.com/opennodes-io/surge/releases">Windows installer</a>, <a href="https://github.com/opennodes-io/surge">source</a>) is an optional reference client: a desktop "browser for MCP" whose model picker is fed live from the registry. <strong>Auto</strong> runs the advisor on your machine, every call is pinned to the node's card revision and comes back with a receipt Surge verifies, a spend policy is on from first launch, and private mode keeps everything on your machine and network.</p>
+  <figure style="margin:1rem 0 0">
+    <picture>
+      <source srcset="media/surge-browser-receipt-dark.png" media="(prefers-color-scheme: dark)">
+      <img src="media/surge-browser-receipt-light.png" width="900" height="700" loading="lazy" style="width:100%;height:auto;border:1px solid var(--line);border-radius:6px"
+        alt="Surge with opennodes.io open in its browser: a page tool read the site, and the answer came from an OpenNodes node chosen by the advisor, with its verified receipt shown under the reply">
+    </picture>
+    <figcaption style="font-size:0.8rem;color:var(--muted)">A page read with an MCP browser tool, answered by a node the advisor picked — tier, measured latency, price, and the verified receipt under the reply.</figcaption>
+  </figure>
+  <p style="font-size:0.92rem;color:var(--muted)">Building a client? Any client can implement discovery (ONP-3) and invocation (ONP-4) — open a PR to be listed.</p>
 </div></section>
 
 <footer><div class="wrap">
