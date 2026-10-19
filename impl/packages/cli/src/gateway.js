@@ -11,24 +11,81 @@ const CACHE_TTL_MS = 30_000;
 // locally on the gateway's cached catalog: the prompt never leaves the machine.
 const AUTO_MODELS = { 'onp/auto': null, 'onp/auto-cheap': 'cheap', 'onp/auto-fast': 'fast', 'onp/auto-quality': 'quality', 'onp/auto-private': 'private' };
 
+// Standard provider key variables. A key found here is sent only to its own host,
+// and makes that host's imported listings eligible for onp/auto routing.
+export const ENV_KEYS = {
+  'openrouter.ai': ['OPENROUTER_API_KEY'],
+  'router.huggingface.co': ['HF_TOKEN', 'HUGGING_FACE_HUB_TOKEN'],
+  'api.openai.com': ['OPENAI_API_KEY'],
+  'api.mistral.ai': ['MISTRAL_API_KEY'],
+  'api.groq.com': ['GROQ_API_KEY'],
+  'api.together.xyz': ['TOGETHER_API_KEY'],
+  'api.deepinfra.com': ['DEEPINFRA_API_KEY'],
+  'api.fireworks.ai': ['FIREWORKS_API_KEY'],
+};
+// Registry text search matches node ids; these find a host's listings when the
+// host name alone would not (Hugging Face providers are imported as import.hf.*).
+const HOST_SEARCH = { 'router.huggingface.co': 'import.hf.' };
+
+/** Upstream credentials by hostname: env-detected keys, overridden by explicit --key entries. */
+export function credentialsFrom(keys = {}, env = process.env) {
+  const out = {};
+  for (const [host, names] of Object.entries(ENV_KEYS)) {
+    const name = names.find((n) => env[n]);
+    if (name) out[host] = env[name];
+  }
+  return { ...out, ...keys };
+}
+
+const hostOf = (o) => { try { return new URL(o.endpoints.openai).hostname; } catch { return null; } };
+const searchHint = (host) => HOST_SEARCH[host] ?? host.split('.').slice(-2, -1)[0];
+
+/**
+ * Can this machine call the offering right now? Registered nodes with a free tier need no
+ * account; anything else (imported catalogs, paid-only nodes) needs a key for its host.
+ */
+export function callable(offering, creds) {
+  const host = hostOf(offering);
+  if (!host) return false;
+  if (creds[host]) return true;
+  return offering.source !== 'import' && (offering.pricing?.schemes ?? []).includes('free');
+}
+
 export async function startGateway({
   registry, port = 4141, host = '127.0.0.1', token = null,
   aliases = {}, virtuals = {}, policy = {}, ledgerPath = null,
   keys = {},   // BYOK upstream credentials by hostname, e.g. {"openrouter.ai": "sk-or-...", "router.huggingface.co": "hf_..."}
+  env = process.env,   // where standard provider key variables are read from; pass {} to disable
 } = {}) {
   if (!['127.0.0.1', 'localhost', '::1'].includes(host) && !token) {
     throw new Error('refusing non-loopback bind without --token (TC-NFR-03)');
   }
   const client = new OnpClient({ registry, policy });
+  const creds = credentialsFrom(keys, env);
   const jwksCache = new Map();
   const receipts = [];
   let cache = { at: 0, byId: new Map() };
   let lastAdvice = null;
 
+  // The routing pool: what this machine can actually call. Registered nodes at community
+  // tier and above, plus the listings of every host we hold a key for.
   async function refresh() {
     if (Date.now() - cache.at < CACHE_TTL_MS && cache.byId.size) return;
-    const offerings = await client.search({});
+    const lists = await Promise.all([
+      client.search({ tier: 'community', limit: 200 }),
+      ...Object.keys(creds).map((h) => client.search({ q: searchHint(h), limit: 200 })
+        .then((os) => os.filter((o) => hostOf(o) === h)).catch(() => [])),
+    ]);
+    const offerings = lists.flat().filter((o) => callable(o, creds));
     cache = { at: Date.now(), byId: new Map(offerings.map((o) => [`${o.node_id}/${o.offering_id}`, o])) };
+  }
+
+  /** An explicitly named offering outside the routing pool: look it up directly. */
+  async function lookup(id) {
+    const [nodeId, offeringId] = id.split('/');
+    if (!nodeId || !offeringId) return null;
+    const res = await fetch(`${client.registry}/v0/offerings/${encodeURIComponent(nodeId)}/${encodeURIComponent(offeringId)}`);
+    return res.ok ? res.json() : null;
   }
 
   /** Resolve a requested model id to an ordered candidate list of offerings. */
@@ -52,10 +109,11 @@ export async function startGateway({
     }
     if (virtuals[modelId]) {
       const results = await client.search(Object.fromEntries(new URLSearchParams(virtuals[modelId])));
-      return results.map((o) => (cache.byId.get(`${o.node_id}/${o.offering_id}`) ?? o));
+      return results.filter((o) => callable(o, creds)).map((o) => (cache.byId.get(`${o.node_id}/${o.offering_id}`) ?? o));
     }
+    // A named offering is honoured even outside the pool: the caller chose it.
     const target = aliases[modelId] ?? modelId;
-    const offering = cache.byId.get(target);
+    const offering = cache.byId.get(target) ?? await lookup(target);
     return offering ? [offering] : [];
   }
 
@@ -94,7 +152,7 @@ export async function startGateway({
     const t0 = performance.now();
     // BYOK: attach the operator's key for this upstream host (imported catalogs
     // like OpenRouter/HF need their own credentials; ONP nodes may need none).
-    const upstreamKey = keys[new URL(offering.endpoints.openai).hostname];
+    const upstreamKey = creds[new URL(offering.endpoints.openai).hostname];
     const upstream = await fetch(`${offering.endpoints.openai}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -162,6 +220,11 @@ export async function startGateway({
       if (!authed(req, res)) return;
       const body = await readJson(req, 10_000_000);
       const candidates = await resolve(body.model, body);
+      if (!candidates.length && (body.model in AUTO_MODELS || virtuals[body.model])) {
+        return problem(res, 404, 'no-callable-offerings',
+          `nothing in the registry matches ${body.model} that this gateway can call: free registered nodes need no key; ` +
+          'for imported catalogs pass --key <host>=<key> or set a provider variable such as OPENROUTER_API_KEY or HF_TOKEN');
+      }
       if (!candidates.length) return problem(res, 404, 'model-not-found', String(body.model));
 
       const errors = [];
@@ -203,6 +266,7 @@ export async function startGateway({
   return {
     port: actualPort,
     origin: `http://${host}:${actualPort}`,
+    keyHosts: Object.keys(creds),
     receipts,
     close: () => closeApp(app),
   };

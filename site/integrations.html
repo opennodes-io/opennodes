@@ -160,7 +160,7 @@ const r = await client.chat.completions.create({ model: "onp/auto-cheap", messag
 <div class="card" id="spend-and-receipts">
   <h3>Spend and receipts <span class="kind">OpenAI API</span></h3>
   <p>Read the ledger at any time:</p><pre><code>curl http://127.0.0.1:4141/gateway/receipts   # total cost, per-call receipts
-curl http://127.0.0.1:4141/gateway/advice     # why onp/auto picked what it picked</code></pre><p>Imported catalog providers (OpenRouter, Hugging Face) need your own key for that host: <code>--key openrouter.ai=sk-or-…</code>.</p>
+curl http://127.0.0.1:4141/gateway/advice     # why onp/auto picked what it picked</code></pre><p><code>onp/auto</code> only routes to what you can call: free registered nodes, plus imported catalogs you hold a key for. Keys come from <code>--key openrouter.ai=sk-or-…</code> or from variables you already have set (<code>OPENROUTER_API_KEY</code>, <code>HF_TOKEN</code>, <code>OPENAI_API_KEY</code>, …), and each is sent only to its own host.</p>
 </div></div></div></section><section><div class="wrap"><h2>In the browser, on the desktop, and for operators</h2><div class="grid2">
 <div class="card" id="the-registry-web-app">
   <h3>The registry web app <span class="kind">Browser</span></h3>

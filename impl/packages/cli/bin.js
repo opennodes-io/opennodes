@@ -97,8 +97,12 @@ try {
         virtuals,
         keys,
         ledgerPath: flag('ledger', null),
+        env: args.includes('--no-env-keys') ? {} : process.env,
       });
       console.log(`onp gateway (OpenAI-compatible) at ${gw.origin}/v1`);
+      console.log(gw.keyHosts.length
+        ? `keys for: ${gw.keyHosts.join(', ')} (each sent only to its own host)`
+        : 'no provider keys: onp/auto uses free registered nodes only (add --key host=KEY or set OPENROUTER_API_KEY / HF_TOKEN)');
       console.log(`point Cursor / VS Code / Open WebUI base URL here`);
       if (Object.keys(aliases).length) console.log('aliases:', aliases);
       if (Object.keys(virtuals).length) console.log('virtual models:', virtuals);
@@ -116,7 +120,7 @@ usage:
   onp estimate --offering <node_id>/<offering_id> [--in 1000] [--out 500]
   onp invoke --offering <node_id>/<offering_id> [--prompt "..."]
   onp card <node-origin-url>
-  onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--ledger receipts.jsonl]
+  onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--no-env-keys] [--ledger receipts.jsonl]
   onp mcp [--print-config]    # stdio MCP server for Cursor / VS Code / Claude Desktop
   onp health
 env: ONP_REGISTRY (default https://registry.opennodes.io; a local registry runs at http://127.0.0.1:4300)`);

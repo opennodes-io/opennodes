@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startFixtureNode } from '@opennodes/fixture-node';
 import { startRegistry } from '@opennodes/registry';
-import { startGateway } from '@opennodes/cli/src/gateway.js';
+import { startGateway, callable, credentialsFrom } from '@opennodes/cli/src/gateway.js';
 
 async function setupNetwork(t) {
   const node = await startFixtureNode();
@@ -115,4 +115,32 @@ test('unknown model gets OpenAI-style 404', async (t) => {
     body: JSON.stringify({ model: 'nope/nothing', messages: [{ role: 'user', content: 'x' }] }),
   });
   assert.equal(res.status, 404);
+});
+
+test('auto-routing pool: only offerings this machine can call', () => {
+  const offering = (source, host, schemes) => ({ source, endpoints: { openai: `https://${host}/v1` }, pricing: { schemes } });
+  const none = credentialsFrom({}, {});
+  assert.equal(callable(offering('registration', 'node.example.io', ['free']), none), true, 'free registered node');
+  assert.equal(callable(offering('registration', 'node.example.io', ['prepaid']), none), false, 'paid-only node needs an account');
+  assert.equal(callable(offering('import', 'openrouter.ai', ['free']), none), false, 'imported catalog needs its own key');
+
+  const creds = credentialsFrom({ 'api.example.ai': 'k2' }, { OPENROUTER_API_KEY: 'k1', UNRELATED: 'x' });
+  assert.deepEqual(Object.keys(creds).sort(), ['api.example.ai', 'openrouter.ai']);
+  assert.equal(callable(offering('import', 'openrouter.ai', ['prepaid']), creds), true, 'env key unlocks its host');
+  assert.equal(callable(offering('import', 'router.huggingface.co', ['prepaid']), creds), false, 'but no other host');
+  assert.equal(credentialsFrom({ 'openrouter.ai': 'explicit' }, { OPENROUTER_API_KEY: 'env' })['openrouter.ai'], 'explicit', '--key wins over env');
+});
+
+test('onp/auto with nothing callable explains how to add keys', async (t) => {
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  const gw = await startGateway({ port: 0, registry: registry.origin, env: {} });
+  t.after(async () => { await gw.close(); await registry.close(); });
+
+  const res = await fetch(`${gw.origin}/v1/chat/completions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'onp/auto', messages: [{ role: 'user', content: 'hello' }] }),
+  });
+  assert.equal(res.status, 404);
+  const body = await res.json();
+  assert.match(JSON.stringify(body), /OPENROUTER_API_KEY/);
 });
