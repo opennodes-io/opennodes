@@ -1,0 +1,24 @@
+# Reference node
+
+A small, always-on OpenNodes node on its own server: Ollama serving one model, the Python Node Kit in front of it, Caddy for TLS. The project runs these so the verified tier always has key-less nodes to try; anyone can use the same files to run their own.
+
+## Deploy
+
+1. A fresh Ubuntu 24.04 server (4 vCPU / 8 GB is enough for a 4B model on CPU) and a DNS `A` record for your node host pointing at it, not proxied.
+2. Copy this directory to the server (e.g. `/opt/onp-node`), then:
+   ```bash
+   cp .env.example .env    # set NODE_ID, NODE_HOST, MODEL, names, country
+   ./setup.sh
+   ```
+   The node id must match the host by reversing it: `io.opennodes.helsinki` is served from `helsinki.opennodes.io`.
+3. Register it with a registry. The kit serves the challenge itself, so run this on the server:
+   ```bash
+   docker compose exec node onp-node register https://registry.opennodes.io
+   ```
+   Stage A runs at registration (community tier). The registry admin then runs Stage B: identity fingerprint capture and the admission battery (verified tier).
+
+## Operate
+
+- Logs: `docker compose logs -f node`
+- Change the model: set `MODEL` in `.env`, remove `node/data/onp-node.toml` so the card is regenerated, `docker compose up -d --build`, then register again.
+- The signing key and card revision live in `node/data/`; keep that directory across rebuilds.

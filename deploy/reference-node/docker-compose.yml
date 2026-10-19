@@ -1,0 +1,55 @@
+# A standalone OpenNodes reference node on its own server: Ollama + the Node Kit + Caddy (TLS).
+# Settings come from .env (see .env.example); run ./setup.sh once, then `docker compose up -d`.
+services:
+  ollama:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_KEEP_ALIVE: 24h
+      OLLAMA_NUM_PARALLEL: "2"
+      OLLAMA_CONTEXT_LENGTH: "8192"
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+  # One-shot: make sure the served model is present before the node describes it.
+  model:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c", "until ollama list >/dev/null 2>&1; do sleep 2; done; ollama pull \"$$MODEL\""]
+    env_file: .env
+    depends_on:
+      - ollama
+    restart: "no"
+
+  node:
+    build: ./node
+    env_file: .env
+    environment:
+      ENGINE_URL: http://ollama:11434/v1
+      PUBLIC_URL: https://${NODE_HOST}
+    volumes:
+      - ./node/data:/data
+    depends_on:
+      model:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    env_file: .env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - node
+    restart: unless-stopped
+
+volumes:
+  ollama:
+  caddy_data:
+  caddy_config:

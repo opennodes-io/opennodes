@@ -1,0 +1,4 @@
+{$NODE_HOST} {
+	encode zstd gzip
+	reverse_proxy node:8800
+}
