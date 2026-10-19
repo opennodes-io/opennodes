@@ -19,6 +19,7 @@ import { searchOfferings, searchOfferingsPaged, collectOfferings, RANK_COMPONENT
 import { mcpRoutes } from './mcp.js';
 import { hostControlsNamespace, isPrivateHost, makeRateLimiter } from './namespace.js';
 import { exportRoutes } from './export.js';
+import { collapseFlaps } from './feed.js';
 import {
   importModelsDev, importHuggingFace, importOpenRouter,
   importOllamaLibrary, parseOllamaLibrary,
@@ -321,13 +322,16 @@ export async function startRegistry({
 
     // Freshness feed: recent listing events (registrations, tier changes, suspensions),
     // newest first, each linked to its provenance reason.
+    // Liveness flaps (suspended/reinstated runs) collapse into one availability event;
+    // ?raw=1 returns every transition.
     ['GET', '/v0/feed', async (req, res, { query }) => {
       const limit = Math.min(Number(query.get('limit') ?? 50), 200);
-      const events = (await store.recentTransitions(limit)).map((t) => ({
+      const raw = query.get('raw') === '1';
+      const events = (await store.recentTransitions(raw ? limit : Math.min(limit * 10, 2000))).map((t) => ({
         at: t.at, node_id: t.node_id, from: t.from_state, to: t.to_state,
         reason: t.reason, source: t.source ?? 'registration',
       }));
-      sendJson(res, 200, { events });
+      sendJson(res, 200, { events: raw ? events : collapseFlaps(events).slice(0, limit) });
     }],
 
     ['GET', '/v0/nodes/:id', async (req, res, { params }) => {
@@ -397,6 +401,27 @@ export async function startRegistry({
       if (!features) return problem(res, 400, 'missing-task', 'body must carry "task" (text) or "features" (from extractFeatures)');
       const all = await collectOfferings(store);
       sendJson(res, 200, recommend(all, features, body.policy ?? {}));
+    }],
+
+    // Delist (admin): operator opt-out of an imported listing, or retiring a node. Search,
+    // the directory and Stage C skip delisted nodes, and re-imports never revive them.
+    // Body {reason}. A registered node returns by registering again; relist re-opens imports.
+    ['POST', '/v0/admin/nodes/:id/delist', async (req, res, { params }) => {
+      if (!adminOk(req, res)) return;
+      const node = await store.getNode(params.id);
+      if (!node) return problem(res, 404, 'unknown-node', params.id);
+      const { reason } = await readJson(req);
+      if (node.state !== 'delisted') await store.setState(node.id, 'delisted', `delisted: ${reason || 'by registry admin'}`);
+      sendJson(res, 200, { id: node.id, state: 'delisted' });
+    }],
+    ['POST', '/v0/admin/nodes/:id/relist', async (req, res, { params }) => {
+      if (!adminOk(req, res)) return;
+      const node = await store.getNode(params.id);
+      if (!node) return problem(res, 404, 'unknown-node', params.id);
+      if (node.state !== 'delisted') return problem(res, 409, 'not-delisted', `${node.id} is ${node.state}`);
+      if (node.source !== 'import') return problem(res, 409, 'register-again', 'a registered node returns by registering again (POST /v0/nodes)');
+      await store.setState(node.id, 'indexed', 'relisted by registry admin');
+      sendJson(res, 200, { id: node.id, state: 'indexed' });
     }],
 
     // Seed importer (admin): body {catalog} in models.dev shape, or {url} to fetch it.

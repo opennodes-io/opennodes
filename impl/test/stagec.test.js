@@ -190,3 +190,61 @@ test('Stage C: suspensions for other reasons are never lifted by liveness', asyn
   const detail = await (await fetch(`${registry.origin}/v0/nodes/org.opennodes.fixture`)).json();
   assert.equal(detail.state, 'suspended');
 });
+
+test('feed collapses liveness flaps into one availability event per run', async () => {
+  const { collapseFlaps } = await import('../packages/registry/src/feed.js');
+  const ev = (at, node_id, from, to, reason) => ({ at, node_id, from, to, reason, source: 'registration' });
+  const events = [   // newest first
+    ev('2026-10-15T18:00:00Z', 'io.lab', 'verified', 'suspended', 'liveness: 3 consecutive failures'),
+    ev('2026-10-15T09:00:00Z', 'io.lab', 'suspended', 'verified', 'reinstated: 3 consecutive liveness successes'),
+    ev('2026-10-14T12:00:00Z', 'io.other', 'community', 'verified', 'Stage B passed'),
+    ev('2026-10-14T06:00:00Z', 'io.lab', 'verified', 'suspended', 'liveness: 3 consecutive failures'),
+    ev('2026-10-13T06:00:00Z', 'io.lab', 'community', 'verified', 'Stage B passed'),
+    ev('2026-10-12T06:00:00Z', 'io.solo', 'verified', 'suspended', 'liveness: 3 consecutive failures'),
+  ];
+  const out = collapseFlaps(events);
+  assert.equal(out.length, 4);
+  assert.equal(out[0].kind, 'availability');
+  assert.equal(out[0].collapsed, 3, 'flaps of one node collapse even when other nodes interleave');
+  assert.equal(out[0].to, 'suspended');
+  assert.equal(out[0].from, 'verified');
+  assert.equal(out[0].since, '2026-10-14T06:00:00Z');
+  assert.match(out[0].reason, /2 outages since 2026-10-14, suspended now/);
+  assert.equal(out[1].node_id, 'io.other');
+  assert.equal(out[2].reason, 'Stage B passed', 'a non-liveness event ends the run');
+  assert.equal(out[3].collapsed, undefined, 'a single liveness event stays as is');
+});
+
+test('admin delist hides a node, survives re-import, and relist / re-registration bring it back', async (t) => {
+  const node = await startFixtureNode();
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  t.after(async () => { await node.close(); await registry.close(); });
+  const post = (path, body) => fetch(`${registry.origin}${path}`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}),
+  });
+  const catalog = { acmecloud: { id: 'acmecloud', name: 'Acme Cloud', api: 'https://api.acmecloud.example/v1',
+    models: { 'acme-small': { id: 'acme-small', name: 'Acme Small', cost: { input: 0.05, output: 0.2 } } } } };
+  await post('/v0/import/models-dev', { catalog });
+  await registerAndVerify(registry, node);
+  const ids = async () => (await (await fetch(`${registry.origin}/v0/offerings`)).json()).offerings.map((o) => o.node_id).sort();
+  const directory = async () => (await (await fetch(`${registry.origin}/v0/nodes`)).json()).nodes.map((n) => n.id).sort();
+  assert.deepEqual(await ids(), ['import.modelsdev.acmecloud', 'org.opennodes.fixture']);
+
+  // operator opt-out of an import: gone from search and the directory, and a re-import keeps it gone
+  assert.equal((await post('/v0/admin/nodes/import.modelsdev.acmecloud/delist', { reason: 'operator opt-out' })).status, 200);
+  await post('/v0/import/models-dev', { catalog });
+  assert.deepEqual(await ids(), ['org.opennodes.fixture']);
+  assert.deepEqual(await directory(), ['org.opennodes.fixture']);
+  const { events } = await (await fetch(`${registry.origin}/v0/feed?limit=5`)).json();
+  assert.equal(events[0].reason, 'delisted: operator opt-out');
+
+  // relist re-opens an import; a registered node is told to register again instead
+  assert.equal((await post('/v0/admin/nodes/import.modelsdev.acmecloud/relist')).status, 200);
+  assert.deepEqual(await ids(), ['import.modelsdev.acmecloud', 'org.opennodes.fixture']);
+  await post('/v0/admin/nodes/org.opennodes.fixture/delist', { reason: 'retired' });
+  assert.deepEqual(await ids(), ['import.modelsdev.acmecloud']);
+  assert.equal((await post('/v0/admin/nodes/org.opennodes.fixture/relist')).status, 409);
+  const back = await registerAndVerify(registry, node);
+  assert.equal(back.state, 'community');
+  assert.equal((await post('/v0/admin/nodes/nope.none/delist')).status, 404);
+});

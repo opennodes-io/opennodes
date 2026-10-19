@@ -317,7 +317,7 @@
 <!-- ================= NEW (feed) ================= -->
 <div id="view-feed" hidden>
   <h1>New</h1>
-  <p class="sub">Dated listing events, newest first — registrations, tier changes, suspensions — each with its provenance. Also available as <a id="feed-json" href="/v0/feed">JSON</a> for agents.</p>
+  <p class="sub">Dated listing events, newest first — registrations, tier changes, suspensions — each with its provenance. A node that keeps dropping offline and coming back shows as one availability line. Also available as <a id="feed-json" href="/v0/feed">JSON</a> for agents (<a href="/v0/feed?raw=1">every transition</a>).</p>
   <div class="panel pad" id="feed-list"></div>
 </div>
 
@@ -1729,7 +1729,7 @@ async function loadFeed() {
     $('#feed-list').innerHTML = events.length ? events.map((e) => `<div class="feeditem">
       <span class="prov">${esc((e.at || '').replace('T', ' ').slice(0, 16))}</span>
       <span><a href="#/node/${encodeURIComponent(e.node_id)}" class="mono" style="font-size:0.78rem">${esc(e.node_id)}</a>
-        → ${tierChip(e.to)} ${e.reason ? '<span style="color:var(--muted)">— ' + esc(e.reason) + '</span>' : ''}</span>
+        → ${tierChip(e.to)} ${e.reason ? '<span style="color:var(--muted)">— ' + esc(e.reason) + (e.collapsed ? ' (' + e.collapsed + ' events)' : '') + '</span>' : ''}</span>
     </div>`).join('') : '<p class="sub">No events yet.</p>';
   } catch (e) { $('#feed-list').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
 }
