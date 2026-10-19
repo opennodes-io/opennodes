@@ -1,78 +1,33 @@
 // DS-MCP-01: the registry as an MCP server (streamable HTTP, stateless).
 // Minimal JSON-RPC handler covering initialize / tools/list / tools/call so any
-// MCP host gets ONP discovery (search_offerings, get_offering, estimate) for free.
-import { readJson, sendJson, problem, estimateBounds, round6, extractFeatures, recommend } from '@opennodes/core';
-import { searchOfferings, collectOfferings } from './search.js';
+// MCP host gets ONP discovery (recommend, search_offerings, get_offering, get_node, estimate) for free.
+import { readFileSync } from 'node:fs';
+import { readJson, sendJson, problem, estimateBounds, round6, extractFeatures, recommend, MCP_TOOLS, MCP_INSTRUCTIONS, summarizeNode } from '@opennodes/core';
+import { searchOfferingsPaged, searchOfferings, collectOfferings } from './search.js';
 
 const PROTOCOL_VERSION = '2025-06-18';
+const { version: VERSION } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
-const TOOLS = [
-  {
-    name: 'search_offerings',
-    description: 'Search AI inference offerings in the OpenNodes registry. Filters: modality (text|image|audio|video|embedding|multimodal|agent), family, min_context, supports (comma list: tool_calls,json_mode,vision,streaming), max_input_price (USD per MTok), scheme (free|prepaid|x402), tier (community|verified|attested), lang ("en:strong"), q (free text), sort (rank|price). Returns offerings with pricing, trust tier, and rank explanation.',
+// Same tools as the stdio server in @opennodes/cli (definitions live in core). Two differences
+// on a remote endpoint: a `task` passed to recommend is sent here, so the schema says so and
+// offers `features` (from a local extractFeatures) as the private alternative.
+const TOOLS = MCP_TOOLS.map((tool) => {
+  if (tool.name !== 'recommend') return tool;
+  const { task, ...rest } = tool.inputSchema.properties;
+  return {
+    ...tool,
+    description: "Recommend the best AI node + model for a task, with an enforceable cost estimate and human-readable reasons. Use this first when you know the task but not the model. Pass `task` (sent to this registry, which extracts features and discards the text) or `features` already extracted on your side with extractFeatures from @opennodes/core, which keeps the prompt private. Returns ranked candidates with score components, a cost estimate pinned to the node's card revision, an optional cheaper two-step scenario, and MCP tool categories the task likely needs. To browse instead, use search_offerings; to price a specific chain, use estimate.",
     inputSchema: {
-      type: 'object',
+      ...tool.inputSchema,
+      required: [],
       properties: {
-        modality: { type: 'string' }, family: { type: 'string' },
-        min_context: { type: 'number' }, supports: { type: 'string' },
-        max_input_price: { type: 'number' }, scheme: { type: 'string' },
-        tier: { type: 'string' }, lang: { type: 'string' },
-        q: { type: 'string' }, sort: { type: 'string' }, limit: { type: 'number' },
+        task: { ...task, description: 'The task description or the prompt itself. Sent to the registry for feature extraction; use `features` to keep it private. Give this or `features`.' },
+        features: { type: 'object', description: 'Features from extractFeatures(prompt) in @opennodes/core: task class, size, language and needs, no prompt text. Give this or `task`.' },
+        ...rest,
       },
     },
-  },
-  {
-    name: 'get_offering',
-    description: 'Get full detail for one offering by node_id and offering_id, including endpoints, pricing, serving capabilities, and observed probe results.',
-    inputSchema: {
-      type: 'object',
-      required: ['node_id', 'offering_id'],
-      properties: { node_id: { type: 'string' }, offering_id: { type: 'string' } },
-    },
-  },
-  {
-    name: 'estimate',
-    description: 'Estimate cost bounds for a planned invocation chain BEFORE spending money. Each step names a concrete offering ("node_id/offering_id") or a select query (same filters as search_offerings), plus est_input_tokens and est_output_tokens. Returns per-step cost, pinned card_revision (making the estimate enforceable at invocation), and totals.',
-    inputSchema: {
-      type: 'object',
-      required: ['steps'],
-      properties: {
-        steps: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              offering: { type: 'string' },
-              select: { type: 'object' },
-              est_input_tokens: { type: 'number' },
-              est_output_tokens: { type: 'number' },
-            },
-          },
-        },
-      },
-    },
-  },
-  {
-    name: 'recommend',
-    description: 'Recommend the best AI node + model for a task. Give the task (a description or the prompt itself) and an optional policy; returns the top offerings with score components, human-readable reasons, an enforceable cost estimate with pinned card_revision, an optional two-step scenario (cheap triage/draft → strong expert/refine) when it would save money, and MCP tool categories the task likely needs. Prefer passing `features` (from a local extractFeatures) instead of `task` when the prompt is private.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        task: { type: 'string', description: 'task description or prompt' },
-        features: { type: 'object', description: 'pre-extracted features (privacy-preserving alternative to task)' },
-        est_output_tokens: { type: 'number' },
-        policy: {
-          type: 'object',
-          properties: {
-            min_tier: { type: 'string' }, max_input_per_mtok: { type: 'number' }, max_total_usd: { type: 'number' },
-            region: { type: 'string' }, prefer_local: { type: 'boolean' },
-            preset: { type: 'string', description: 'cheap | fast | quality | private' }, limit: { type: 'number' },
-          },
-        },
-      },
-    },
-  },
-];
+  };
+});
 
 async function runTool(store, name, args = {}) {
   switch (name) {
@@ -85,13 +40,23 @@ async function runTool(store, name, args = {}) {
     case 'search_offerings': {
       const query = new URLSearchParams();
       for (const [k, v] of Object.entries(args)) if (v !== undefined && v !== null) query.set(k, String(v));
-      return { offerings: await searchOfferings(store, query) };
+      return searchOfferingsPaged(store, query);
     }
     case 'get_offering': {
       const found = (await collectOfferings(store)).find(
         (o) => o.node_id === args.node_id && o.offering_id === args.offering_id);
       if (!found) throw new Error(`unknown offering: ${args.node_id}/${args.offering_id}`);
       return found;
+    }
+    case 'get_node': {
+      const node = await store.getNode(args.node_id);
+      if (!node) throw new Error(`unknown node: ${args.node_id} (node ids come from search_offerings or recommend results)`);
+      return summarizeNode({
+        ...node,
+        card: await store.latestCard(node.id),
+        probes: (await store.probesFor(node.id)).slice(0, 20),
+        history: await store.transitionsFor(node.id),
+      }, args.offering_limit ?? 25);
     }
     case 'estimate': {
       const all = await collectOfferings(store);
@@ -137,8 +102,8 @@ async function handleRpc(store, msg) {
       return reply({
         protocolVersion: params?.protocolVersion ?? PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: 'opennodes-registry', version: '0.1.0' },
-        instructions: 'OpenNodes registry: search AI inference offerings, inspect them, and pre-price invocation chains. Typical flow: search_offerings -> estimate -> invoke via the offering endpoints (invocation itself is not exposed here).',
+        serverInfo: { name: 'opennodes-registry', title: 'OpenNodes registry', version: VERSION },
+        instructions: MCP_INSTRUCTIONS,
       });
     case 'ping':
       return reply({});

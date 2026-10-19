@@ -9,12 +9,12 @@
     "source": "github",
     "subfolder": "impl/packages/cli"
   },
-  "version": "0.1.5",
+  "version": "0.1.6",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@opennodes/cli",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "transport": {
         "type": "stdio"
       },
@@ -33,6 +33,12 @@
           "isSecret": false
         }
       ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://registry.opennodes.io/mcp"
     }
   ]
 }

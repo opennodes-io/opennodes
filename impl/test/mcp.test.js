@@ -46,7 +46,7 @@ test('MCP handshake, tools/list, and discovery tool calls', async (t) => {
 
   // tools/list exposes the discovery tools plus the advisor
   const tools = (await rpc(registry.origin, 'tools/list')).body.result.tools.map((tl) => tl.name);
-  assert.deepEqual(tools.sort(), ['estimate', 'get_offering', 'recommend', 'search_offerings']);
+  assert.deepEqual(tools.sort(), ['estimate', 'get_node', 'get_offering', 'recommend', 'search_offerings']);
 
   // search_offerings
   const search = await rpc(registry.origin, 'tools/call', {
@@ -58,6 +58,16 @@ test('MCP handshake, tools/list, and discovery tool calls', async (t) => {
   assert.equal(found.length, 1);
   assert.equal(found[0].node_id, 'org.opennodes.fixture');
   assert.ok(found[0].rank_explanation);
+  assert.equal(search.body.result.structuredContent.total, 1);
+
+  // get_node: the vetting summary, same shape as the CLI's
+  const nodeInfo = await rpc(registry.origin, 'tools/call', { name: 'get_node', arguments: { node_id: 'org.opennodes.fixture' } });
+  const summary = nodeInfo.body.result.structuredContent;
+  assert.equal(summary.tier, 'community');
+  assert.equal(summary.offerings_total, 1);
+  assert.ok(summary.history.length >= 3);
+  const missing = await rpc(registry.origin, 'tools/call', { name: 'get_node', arguments: { node_id: 'nope.none' } });
+  assert.equal(missing.body.result.isError, true);
 
   // get_offering
   const detail = await rpc(registry.origin, 'tools/call', {
