@@ -399,7 +399,8 @@ export async function startRegistry({
         ? extractFeatures(String(body.task), { attachments: body.attachments ?? [], est_output_tokens: body.est_output_tokens ?? null, messages: body.messages ?? [] })
         : null);
       if (!features) return problem(res, 400, 'missing-task', 'body must carry "task" (text) or "features" (from extractFeatures)');
-      const all = await collectOfferings(store);
+      // only what a client could actually call: listing-only imports are never recommended
+      const all = (await collectOfferings(store)).filter((o) => o.invocable);
       sendJson(res, 200, recommend(all, features, body.policy ?? {}));
     }],
 

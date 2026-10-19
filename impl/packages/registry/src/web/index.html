@@ -589,11 +589,17 @@ function ctxBit(o) {
   const basis = (o.source === 'import' && !o.serving.context_capped_from) ? ' <span class="micro m-claimed">CLAIMED</span>' : '';
   return `<span>ctx <b class="num">${fmtInt(o.serving.context_window)}</b>${cap}${basis}</span>`;
 }
+/** Listing-only imports carry no endpoints.openai: they are shown but never called. */
+const invocable = (o) => o.invocable !== false && Boolean(o.endpoints?.openai);
+/** endpoints.docs only when it is a plain web link (cards are third-party data). */
+const docsUrl = (endpoints) => /^https?:\/\//i.test(endpoints?.docs ?? '') ? endpoints.docs : null;
 function provLine(o) {
   const obs = o.observed || {};
   const bits = [`revision ${esc((o.card_revision || '').slice(0, 10))}`];
   if (obs.probes > 0) bits.push(`probes ${Math.round((obs.probe_success ?? 0) * obs.probes)}/${obs.probes} pass`);
   if (o.source === 'import') bits.push('catalog import — operator can claim this listing to get verified');
+  if (!invocable(o)) bits.push('listing only — no known API endpoint, so it cannot be called from here'
+    + (docsUrl(o.endpoints) ? ` (<a href="${esc(docsUrl(o.endpoints))}" target="_blank" rel="noopener">provider docs ↗</a>)` : ''));
   return bits.join(' · ');
 }
 
@@ -833,11 +839,11 @@ async function loadModel(artifact) {
     const navBits = [['#sec-offerings', 'OFFERINGS'], ['#sec-play', 'PLAYGROUND']];
 
     // playground targets: this page's offerings + a custom endpoint (e.g. local Ollama)
-    pgOfferings = list;
-    $('#pg-target').innerHTML = list.map((o, i) =>
+    pgOfferings = list.filter(invocable);
+    $('#pg-target').innerHTML = pgOfferings.map((o, i) =>
       `<option value="${i}">${esc(o.node_id)} — ${priceStr(o.pricing)} [${esc(o.tier)}]</option>`).join('')
       + '<option value="custom">custom endpoint (your local Ollama / any OpenAI-compatible server)</option>';
-    $('#pg-customrow').hidden = true;
+    $('#pg-customrow').hidden = pgOfferings.length > 0;   // listing-only offerings leave just the custom endpoint
     $('#pg-out').textContent = '';
     $('#pg-meta').textContent = '';
     $('#md-offerings').innerHTML = `<table class="grid num"><thead><tr>
@@ -997,7 +1003,7 @@ async function loadChatTargets() {
       const key = (o) => o.node_id + '/' + o.offering_id;
       const ready = reg.offerings.filter((o) => o.source !== 'import');
       const seen = new Set(ready.map(key));
-      const rest = all.offerings.filter((o) => !seen.has(key(o)));
+      const rest = all.offerings.filter((o) => !seen.has(key(o)) && invocable(o));
       const local = rest.filter((o) => o.local);            // Ollama library: runs on the visitor's own machine
       const imports = rest.filter((o) => !o.local);
       chat.offerings = [...ready, ...local, ...imports];
@@ -1030,6 +1036,7 @@ async function applyAdvisorHandoff() {
     const [nodeId, offeringId] = key.split('/');
     let o = chat.offerings.find((x) => x.node_id === nodeId && x.offering_id === offeringId);
     if (!o) { try { o = await api(`/v0/offerings/${encodeURIComponent(nodeId)}/${encodeURIComponent(offeringId)}`); } catch { continue; } }
+    if (!invocable(o)) continue;
     if (!chat.roster.some((t) => t.offering && t.offering.node_id === nodeId && t.offering.offering_id === offeringId)) chat.roster.push({ offering: o });
   }
   if (chat.roster.length > 1) { $('#ch-mode').value = 'compare'; $('#ch-modenote').textContent = MODE_NOTES.compare; }
@@ -1422,8 +1429,9 @@ async function scApply(sc, verb = 'loaded') {
       o = chat.offerings.find((x) => x.node_id === nodeId && x.offering_id === offId);
       if (!o) { try { o = await api(`/v0/offerings/${encodeURIComponent(nodeId)}/${encodeURIComponent(offId)}`); } catch { o = null; } }
     } else if (entry.select) {            // ONP-6 late binding: resolve the requirement against this registry now
-      try { o = (await api('/v0/offerings?limit=1&' + new URLSearchParams(entry.select))).offerings[0] ?? null; } catch { o = null; }
+      try { o = (await api('/v0/offerings?limit=1&invocable=true&' + new URLSearchParams(entry.select))).offerings[0] ?? null; } catch { o = null; }
     }
+    if (o && !invocable(o)) o = null;   // a pinned listing-only import cannot be called
     if (o) chat.roster.push({ offering: o }); else missing.push(entry.pin ?? JSON.stringify(entry.select));
   }
   const MODES = ['single', 'compare', 'jury', 'pipeline', 'iterative'];
@@ -1765,7 +1773,8 @@ async function loadNode(id) {
         ${n.source === 'import' ? stat('<span class="chip imp">IMPORTED</span>', 'SOURCE — unclaimed by operator') : ''}
       </div>
       <div class="panel pad" style="max-width:56rem; margin-top:0.6rem"><table class="grid">
-        <tr><td style="color:var(--muted); width:8rem" class="mono">endpoint</td><td class="mono" style="font-size:0.74rem">${esc(card.endpoints?.openai ?? '—')}</td></tr>
+        <tr><td style="color:var(--muted); width:8rem" class="mono">endpoint</td><td class="mono" style="font-size:0.74rem">${card.endpoints?.openai ? esc(card.endpoints.openai) : '— <span style="font-family:inherit; color:var(--muted)">listing only: no known API endpoint, not callable from OpenNodes</span>'}</td></tr>
+        ${docsUrl(card.endpoints) ? `<tr><td style="color:var(--muted)" class="mono">docs</td><td class="mono" style="font-size:0.74rem"><a href="${esc(docsUrl(card.endpoints))}" target="_blank" rel="noopener">${esc(docsUrl(card.endpoints))}</a></td></tr>` : ''}
         ${card.hardware ? `<tr><td style="color:var(--muted)" class="mono">hardware</td><td style="font-size:0.78rem">${hwStr({ hardware: card.hardware })}</td></tr>` : ''}
         <tr><td style="color:var(--muted)" class="mono">revision</td><td class="mono" style="font-size:0.74rem">${esc(card.revision ?? '—')}</td></tr>
       </table></div>

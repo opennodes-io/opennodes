@@ -80,7 +80,7 @@ async function runTool(store, name, args = {}) {
       const features = args.features ?? (args.task != null
         ? extractFeatures(String(args.task), { est_output_tokens: args.est_output_tokens ?? null }) : null);
       if (!features) throw new Error('recommend needs "task" or "features"');
-      return recommend(await collectOfferings(store), features, args.policy ?? {});
+      return recommend((await collectOfferings(store)).filter((o) => o.invocable), features, args.policy ?? {});
     }
     case 'search_offerings': {
       const query = new URLSearchParams();

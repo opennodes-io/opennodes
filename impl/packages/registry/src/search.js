@@ -52,6 +52,8 @@ export async function collectOfferings(store) {
           availability,
         },
         endpoints: card.endpoints,
+        // false for listing-only imports (no known API endpoint): shown, never called
+        invocable: Boolean(card.endpoints?.openai),
       });
     }
   }
@@ -63,6 +65,8 @@ export async function searchOfferingsPaged(store, query) {
   let items = await collectOfferings(store);
 
   const q = (k) => query.get(k);
+  if (q('invocable') === 'true') items = items.filter((o) => o.invocable);
+  if (q('invocable') === 'false') items = items.filter((o) => !o.invocable);
   if (q('modality')) items = items.filter((o) => o.modality === q('modality'));
   if (q('family')) items = items.filter((o) => o.model.family === q('family') || o.model.artifact === q('family'));
   if (q('min_context')) items = items.filter((o) => (o.serving?.context_window ?? 0) >= Number(q('min_context')));

@@ -128,6 +128,89 @@ test('OpenRouter importer: per-token prices to per-MTok, hf artifact join, modal
   assert.equal(big.length, 1);
 });
 
+// Shapes mirror live models.dev/api.json (sampled 2026-10-19): groq/mistral/openai carry
+// only `doc` (their AI SDK packages know the URL); fireworks-ai's `api` has a trailing slash.
+const MODELS_DEV_FIXTURE = {
+  groq: {
+    id: 'groq', name: 'Groq', doc: 'https://console.groq.com/docs/models', npm: '@ai-sdk/groq',
+    models: { 'llama-3.3-70b-versatile': { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', cost: { input: 0.59, output: 0.79 } } },
+  },
+  'fireworks-ai': {
+    id: 'fireworks-ai', name: 'Fireworks AI', api: 'https://api.fireworks.ai/inference/v1/', doc: 'https://fireworks.ai/docs/',
+    models: { 'accounts/fireworks/models/glm-5': { id: 'accounts/fireworks/models/glm-5', name: 'GLM-5', cost: { input: 1, output: 3 } } },
+  },
+  cohere: {
+    id: 'cohere', name: 'Cohere', doc: 'https://docs.cohere.com/docs/models', npm: '@ai-sdk/cohere',
+    models: { 'command-a': { id: 'command-a-03-2025', name: 'Command A', cost: { input: 2.5, output: 10 } } },
+  },
+  bare: { id: 'bare', name: 'Bare Inc', models: { m1: { id: 'm1', name: 'Bare One', cost: { input: 1, output: 1 } } } },
+  databricks: {   // per-account URL template: no single public base
+    id: 'databricks', name: 'Databricks', api: 'https://${DATABRICKS_HOST}/ai-gateway/mlflow/v1',
+    doc: 'https://docs.databricks.com/aws/en/machine-learning/foundation-models/',
+    models: { 'dbrx': { id: 'databricks-dbrx', name: 'DBRX', cost: { input: 0.75, output: 2.25 } } },
+  },
+};
+
+test('models.dev importer: never uses doc as an API base; known bases fill gaps; others list as not invocable', async (t) => {
+  const { MODELS_DEV_API_BASES } = await import('@opennodes/registry/src/importers.js');
+  const { callable } = await import('@opennodes/cli/src/gateway.js');
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  t.after(() => registry.close());
+
+  const result = await (await fetch(`${registry.origin}/v0/import/models-dev`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ catalog: MODELS_DEV_FIXTURE }),
+  })).json();
+  assert.deepEqual(result, { providers: 5, offerings: 5, skipped: [] });   // nothing dropped: listing-only still imports
+
+  const all = (await (await fetch(`${registry.origin}/v0/offerings?q=import.modelsdev`)).json()).offerings;
+  const by = Object.fromEntries(all.map((o) => [o.node_id.split('.').pop(), o]));
+
+  // groq: no `api` -> the known base, never console.groq.com/docs
+  assert.equal(by.groq.endpoints.openai, 'https://api.groq.com/openai/v1');
+  assert.equal(by.groq.endpoints.health, 'https://api.groq.com/openai/v1/health');
+  assert.equal(by.groq.endpoints.docs, 'https://console.groq.com/docs/models');
+  assert.equal(by.groq.invocable, true);
+
+  // fireworks: models.dev `api` wins, trailing slash normalized (no //chat/completions)
+  assert.equal(by['fireworks-ai'].endpoints.openai, 'https://api.fireworks.ai/inference/v1');
+
+  // cohere: neither api nor a known base -> listed, docs kept, no invocation endpoints
+  assert.equal(by.cohere.invocable, false);
+  assert.equal(by.cohere.endpoints.openai, undefined);
+  assert.equal(by.cohere.endpoints.health, undefined);
+  assert.equal(by.cohere.endpoints.docs, 'https://docs.cohere.com/docs/models');
+  assert.equal(by.cohere.pricing.input_per_mtok, 2.5);
+  const node = await (await fetch(`${registry.origin}/v0/nodes/import.modelsdev.cohere`)).json();
+  assert.equal(node.origin, 'https://docs.cohere.com');
+
+  // bare: no api, no doc -> still listed, endpoints empty
+  assert.equal(by.bare.invocable, false);
+  assert.deepEqual(by.bare.endpoints, {});
+
+  // no imported offering ever points at a documentation page
+  for (const o of all) if (o.endpoints.openai) assert.doesNotMatch(o.endpoints.openai, /docs|console\./);
+
+  // invocable filter, and recommend never proposes what cannot be called
+  const listingOnly = (await (await fetch(`${registry.origin}/v0/offerings?q=import.modelsdev&invocable=false`)).json()).offerings;
+  assert.deepEqual(listingOnly.map((o) => o.node_id).sort(), ['import.modelsdev.bare', 'import.modelsdev.cohere', 'import.modelsdev.databricks']);
+  const rec = await (await fetch(`${registry.origin}/v0/recommend`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ task: 'Summarize this paragraph.', policy: { limit: 10 } }),
+  })).json();
+  assert.ok(rec.recommendations.length > 0);
+  assert.ok(rec.recommendations.every((r) => r.endpoint), 'listing-only offerings are not recommended');
+
+  // the gateway never routes to a listing-only offering, whatever keys it holds
+  assert.equal(callable(by.cohere, { 'docs.cohere.com': 'k' }), false);
+  assert.equal(callable(by.groq, { 'api.groq.com': 'k' }), true);
+
+  // every mapped base is an https API URL, never a docs page
+  for (const [id, base] of Object.entries(MODELS_DEV_API_BASES)) {
+    assert.match(base, /^https:\/\/api\.[a-z.]+\/[a-z0-9/]*v1(\/openai)?$/, id);
+  }
+});
+
 test('Ollama library importer: parses tiles, maps to local offerings on a localhost node', async (t) => {
   const { parseOllamaLibrary } = await import('@opennodes/registry/src/importers.js');
   // fixture mirrors the live ollama.com/library tile structure sampled 2026-08-27

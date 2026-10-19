@@ -83,6 +83,7 @@ Registration alone never grants a trust tier. Tiers above `unverified` are gated
 &scheme=x402                 // payment scheme
 &tier=verified               // minimum trust tier
 &basis=attested              // only attested performance/benchmarks
+&invocable=true              // only offerings with an invocation endpoint (drops listing-only imports)
 &sort=rank|price|ttft|tps|elo
 &q=free-text
 &limit=50&cursor=…

@@ -5,6 +5,12 @@ import { validateCard } from '@opennodes/core';
 
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^[^a-z0-9]+/, '').slice(0, 100);
 const vendorSlug = (s) => slug(s).replace(/[._]/g, '-');
+/** The value as a string if it is a concrete http(s) URL, else undefined. Templated
+ *  per-account URLs (models.dev writes `https://${DATABRICKS_HOST}/...`) have no single base. */
+const httpsUrl = (v) => {
+  if (typeof v !== 'string' || v.includes('${')) return undefined;
+  try { return ['https:', 'http:'].includes(new URL(v).protocol) ? v : undefined; } catch { return undefined; }
+};
 
 /** Map input/output modality arrays (the shape both HF and OpenRouter use) to the ONP enum. */
 export function mapModalities(inputs = ['text'], outputs = ['text']) {
@@ -41,8 +47,25 @@ async function saveImportedCard(store, nodeId, origin, sourceRef, card) {
 }
 
 /**
+ * OpenAI-compatible API bases for major providers whose models.dev entry has no `api`
+ * (models.dev omits it when a dedicated AI SDK package knows the URL). Each checked
+ * against the provider's docs and live (401 on unauthenticated /models), 2026-10-19.
+ */
+export const MODELS_DEV_API_BASES = {
+  groq: 'https://api.groq.com/openai/v1',
+  togetherai: 'https://api.together.xyz/v1',   // docs now show api.together.ai; both serve, and the gateway keys TOGETHER_API_KEY to .xyz
+  deepinfra: 'https://api.deepinfra.com/v1/openai',
+  'fireworks-ai': 'https://api.fireworks.ai/inference/v1',
+  mistral: 'https://api.mistral.ai/v1',
+  openai: 'https://api.openai.com/v1',
+};
+
+/**
  * Import a models.dev-shaped catalog: { providerId: { id, name, api?, doc?, models: { key: model } } }.
  * Each provider becomes a synthetic node `import.modelsdev.{provider}`; each model an offering.
+ * The API base is the provider's `api`, else MODELS_DEV_API_BASES; `doc` is never used as one.
+ * A provider with neither is still listed, but without endpoints.openai/health (not invocable),
+ * keeping `doc` as the informational endpoints.docs link.
  * Returns { providers, offerings, skipped }.
  */
 export async function importModelsDev(store, catalog) {
@@ -79,7 +102,8 @@ export async function importModelsDev(store, catalog) {
     if (!offeringList.length) { skipped.push(providerId); continue; }
 
     const nodeId = `import.modelsdev.${slug(providerId).replace(/[._]/g, '-')}`;
-    const base = provider?.api ?? provider?.doc ?? 'https://models.dev';
+    const base = httpsUrl(provider?.api ?? MODELS_DEV_API_BASES[providerId])?.replace(/\/+$/, '') ?? null;
+    const docs = httpsUrl(provider?.doc);
     const card = {
       onp: '0.1',
       revision: new Date().toISOString(),
@@ -89,14 +113,20 @@ export async function importModelsDev(store, catalog) {
         description: `Imported from models.dev; metadata only, unclaimed by the operator.`,
         operator: { name: provider?.name ?? providerId },
       },
-      endpoints: { openai: base, health: `${base.replace(/\/$/, '')}/health` },
+      endpoints: {
+        ...(base ? { openai: base, health: `${base}/health` } : {}),
+        ...(docs ? { docs } : {}),
+      },
       offerings: offeringList,
       payment: { schemes: [{ scheme: 'prepaid' }] },
     };
-    const errors = validateCard(card);
+    // A listing-only card deliberately lacks the schema's required invocation endpoints.
+    const errors = validateCard(card)
+      .filter((e) => base || !/^\/endpoints must have required property '(openai|health)'$/.test(e));
     if (errors.length) { skipped.push(`${providerId}: ${errors[0]}`); continue; }
 
-    await store.upsertNode(nodeId, new URL(base).origin, `import:modelsdev:${providerId}`, 'indexed', 'import');
+    const origin = new URL(base ?? docs ?? 'https://models.dev').origin;
+    await store.upsertNode(nodeId, origin, `import:modelsdev:${providerId}`, 'indexed', 'import');
     await store.saveRevision(nodeId, card.revision, card, false);
     providers++;
     offerings += offeringList.length;
