@@ -169,3 +169,22 @@ test('a node whose card revision moved (restart / reprice) is re-indexed, not di
   assert.equal(after.card_revision, newRevision, 'registry re-indexed the newer card');
   assert.equal(after.pricing.output_per_mtok, 0.55);
 });
+
+test('a passing re-admission lifts an earlier context cap', async (t) => {
+  const node = await startFixtureNode();
+  const registry = await startRegistry({ allowPrivateTargets: true, stageBCapacity: FAST_CAPACITY });
+  t.after(async () => { await node.close(); await registry.close(); });
+  await registerAndVerify(registry, node);
+  await captureRefs(registry, 'org.opennodes.fixture', 'echo-1');
+
+  // As left behind by an earlier run that verified only 4096 of the claimed 8192.
+  await registry.store.setObservation('org.opennodes.fixture', 'echo-1', 'context_cap', 4096);
+  const window = async () => (await (await fetch(`${registry.origin}/v0/offerings`)).json()).offerings[0].serving;
+  assert.equal((await window()).context_window, 4096);
+
+  const result = await admit(registry, 'org.opennodes.fixture');
+  assert.equal(result.stage_b.verdicts[0].context.ok, true);
+  const serving = await window();
+  assert.equal(serving.context_window, 8192);
+  assert.equal(serving.context_capped_from, undefined);
+});

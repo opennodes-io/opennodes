@@ -182,10 +182,9 @@ export async function runStageB(store, nodeId, card, { safeFetch, capacity = {} 
     await store.recordProbe(nodeId, offering.offering_id, 'B', 'context', verdict.context.ok,
       `claimed ${verdict.context.claimed}, verified ${verdict.context.verified_cap}`,
       verdict.context);
-    if (!verdict.context.ok) {
-      // 0 = nothing verified: search projects the window as unverified rather than trusting the claim.
-      await store.setObservation(nodeId, offering.offering_id, 'context_cap', verdict.context.verified_cap);
-    }
+    // Every run replaces the last result: a pass stores the full claimed window, which lifts an
+    // earlier cap; 0 = nothing verified, shown as unverified rather than trusting the claim.
+    await store.setObservation(nodeId, offering.offering_id, 'context_cap', verdict.context.verified_cap);
 
     verdict.capacity = await probeCapacity(safeFetch, card, offering, capacity);
     await store.recordProbe(nodeId, offering.offering_id, 'B', 'capacity', verdict.capacity.ok, null, verdict.capacity);
