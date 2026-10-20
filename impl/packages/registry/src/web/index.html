@@ -153,7 +153,7 @@
     border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
   .btn.sec { background: transparent; color: var(--accent); }
   .btn:disabled { opacity: 0.5; cursor: default; }
-  input.wide { width: 100%; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 0.55rem 0.7rem; }
+  input.wide, textarea.wide { width: 100%; box-sizing: border-box; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 0.55rem 0.7rem; }
   label.f { display: block; font-size: 0.78rem; color: var(--muted); margin: 0.9rem 0 0.25rem; }
   .ok { color: var(--good); } .fail { color: var(--bad); } .warncol { color: var(--warn); }
   .err { color: var(--bad); font-size: 0.82rem; margin-top: 0.5rem; }
@@ -232,7 +232,7 @@
   </div>
   <details class="panel pad" id="advisor" style="margin:0.2rem 0 0.8rem">
     <summary style="cursor:pointer; font-weight:600; font-size:0.9rem">Ask the advisor — describe a task, get the best node + model, priced and explained</summary>
-    <textarea id="adv-task" rows="2" class="wide" style="margin-top:0.6rem; font-size:0.86rem" placeholder="e.g. Translate this 20-page contract into Polish and extract the payment terms as JSON"></textarea>
+    <textarea id="adv-task" rows="4" class="wide" style="margin-top:0.6rem; font-size:0.86rem; resize:vertical" placeholder="e.g. Translate this 20-page contract into Polish and extract the payment terms as JSON"></textarea>
     <div class="toolbar" style="margin-top:0.4rem">
       <select id="adv-preset"><option value="">balanced</option><option value="cheap">cheapest</option><option value="fast">fastest</option><option value="quality">best quality</option><option value="private">privacy-first</option></select>
       <span class="switchrow" id="adv-verified"><span class="switch"></span><b style="font-size:0.78rem">Verified only</b></span>
