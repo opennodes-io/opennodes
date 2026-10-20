@@ -1,13 +1,39 @@
-﻿# OpenNodes Protocol (ONP) — Draft 0.1
+﻿# OpenNodes
 
-**An open standard for discovering, invoking, and paying AI inference endpoints ("AI Nodes") across vendors — from frontier labs to a university GPU cluster — with bridges to MCP and WebMCP.**
+[![npm @opennodes/cli](https://img.shields.io/npm/v/@opennodes/cli?label=%40opennodes%2Fcli)](https://www.npmjs.com/package/@opennodes/cli)
+[![PyPI onp-node](https://img.shields.io/pypi/v/onp-node?label=onp-node)](https://pypi.org/project/onp-node/)
+[![opennodes-io/opennodes MCP server](https://glama.ai/mcp/servers/opennodes-io/opennodes/badges/score.svg)](https://glama.ai/mcp/servers/opennodes-io/opennodes)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-Status: **Draft 0.1 (working proposal, 2026-08-20)** — not affiliated with any standards body yet.
-Home: **opennodes.io**
+**AI inference, measured — not just claimed.** OpenNodes is an open protocol (ONP) and registry for AI inference endpoints, from your own Ollama box to sovereign EU clouds. The registry checks what each endpoint really serves — which model, how much context actually works, how fast it answers, on what hardware, at what price — and your prompts go straight to the endpoint you pick: OpenNodes is never in the data path.
 
-## The one-sentence pitch
+- **Browse:** [registry.opennodes.io](https://registry.opennodes.io) — 10,000+ offerings from about 250 providers, with trust tiers and measured results
+- **Learn:** [opennodes.io](https://opennodes.io) · [Integrations](https://opennodes.io/integrations) (Cursor, Claude, VS Code, Open WebUI, OpenAI SDKs, agents)
+- **Status:** ONP Draft 0.1, a working proposal not affiliated with any standards body yet; reference stack live, with project-run reference nodes in Germany and Finland. Operators: [list your endpoint](node-kit/README.md) or write to operators@opennodes.io.
 
-MCP standardized how AI applications reach *tools*; the OpenAI API shape standardized how they *invoke models*; x402 standardized how machines *pay each other* — but **nothing standardizes how a client finds an inference endpoint it doesn't already know about**: what model it serves, how big it is, what hardware backs it, how well it benchmarks, what it costs per token, and whether it's up. ONP fills exactly that gap and composes the rest from existing standards.
+## Quick start
+
+```bash
+npx @opennodes/ollama-router            # OpenNodes for Ollama: one Ollama endpoint over local + LAN + verified public models
+npx @opennodes/cli mcp --print-config   # MCP tools for Cursor / VS Code / Claude Desktop (or use https://registry.opennodes.io/mcp)
+npx @opennodes/cli gateway --port 4141  # OpenAI-compatible gateway with onp/auto routing; base URL http://127.0.0.1:4141/v1
+npx @opennodes/registry                 # run your own registry: web app + API + MCP on http://127.0.0.1:4300
+pipx install onp-node                   # Node Kit: list a vLLM / Ollama / TGI deployment, or an API you already run
+```
+
+npm: [@opennodes/core](https://www.npmjs.com/package/@opennodes/core) · [@opennodes/cli](https://www.npmjs.com/package/@opennodes/cli) · [@opennodes/registry](https://www.npmjs.com/package/@opennodes/registry) · [@opennodes/ollama-router](https://www.npmjs.com/package/@opennodes/ollama-router) — PyPI: [onp-node](https://pypi.org/project/onp-node/)
+
+![OpenNodes for Ollama: one endpoint for local, LAN and verified public models](docs/media/opennodes-for-ollama.gif)
+
+**OpenNodes for Ollama** ([impl/packages/ollama-router](impl/packages/ollama-router/README.md)): point Open WebUI, Continue, Zed, or the `ollama` CLI at `OLLAMA_HOST=127.0.0.1:11435` and one model list spans your local Ollama, other machines on your LAN (plain Ollama servers or Node Kit nodes, auto-discovered via mDNS), and verified public nodes from the registry — with `auto`, `auto-cheap`, `auto-fast`, `auto-quality`, and `auto-private` (never leaves the LAN) routed by the advisor, pinned prices, budget caps, and signed receipts for public calls.
+
+**MCP server** — five read-only tools: `recommend` (best node and model for a task; the prompt is analysed locally and only its features are sent), `search_offerings`, `get_offering`, `get_node`, `estimate`. Listed on the [MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.opennodes-io/opennodes) (as `io.github.opennodes-io/opennodes`, stdio and remote), [Glama](https://glama.ai/mcp/servers/opennodes-io/opennodes) and mcprush:
+
+[![OpenNodes MCP server](https://mcprush.com/badge/opennodes-mcp/card.svg)](https://mcprush.com/to/opennodes-mcp?ref=badge)
+
+## Why a protocol
+
+MCP standardized how AI applications reach *tools*; the OpenAI API shape standardized how they *invoke models* — but **nothing standardizes how a client finds an inference endpoint it doesn't already know about**: what model it serves, how big it is, what hardware backs it, how well it benchmarks, what it costs per token, and whether it's up. ONP fills exactly that gap and composes the rest from existing standards: a signed Node Card at `/.well-known/open-node.json`, a registry API with automated verification, OpenAI-compatible invocation with pinned prices, and signed usage receipts.
 
 ## Documents
 
@@ -31,22 +57,6 @@ MCP standardized how AI applications reach *tools*; the OpenAI API shape standar
 - [REQ-001 — Discovery Service (registry)](requirements/REQ-001-discovery-service.md) — MVP registry: registration, admission battery, search, estimation, MCP surface; acceptance criteria.
 - [REQ-002 — Test client](requirements/REQ-002-test-client.md) — CLI + OpenAI-compatible gateway + MCP modes; compatibility matrix (Cursor, VS Code, Open WebUI…).
 - [REQ-003 — Node Kit](requirements/REQ-003-node-kit.md) — reverse-proxy wrapper turning vLLM/Ollama/TGI into a conforming node: card generation, receipts, registration, self-test.
-
-### Install (published packages)
-
-```bash
-npx @opennodes/cli mcp --print-config   # discovery + advisor tools for Cursor / VS Code / Claude Desktop
-npx @opennodes/cli gateway --port 4141  # OpenAI-compatible gateway with onp/auto routing; base URL http://127.0.0.1:4141/v1
-npx @opennodes/registry                 # run a registry: web app + API + MCP on http://127.0.0.1:4300
-npx @opennodes/ollama-router            # OpenNodes for Ollama: one Ollama endpoint over local + LAN + verified public models
-pipx install onp-node                   # Node Kit: turn a vLLM / Ollama / TGI deployment into a conforming node
-```
-
-npm: [@opennodes/core](https://www.npmjs.com/package/@opennodes/core) · [@opennodes/cli](https://www.npmjs.com/package/@opennodes/cli) · [@opennodes/registry](https://www.npmjs.com/package/@opennodes/registry) · [@opennodes/ollama-router](https://www.npmjs.com/package/@opennodes/ollama-router) — PyPI: [onp-node](https://pypi.org/project/onp-node/)
-
-![OpenNodes for Ollama: one endpoint for local, LAN and verified public models](docs/media/opennodes-for-ollama.gif)
-
-**OpenNodes for Ollama** ([impl/packages/ollama-router](impl/packages/ollama-router/README.md)): point Open WebUI, Continue, Zed, or the `ollama` CLI at `OLLAMA_HOST=127.0.0.1:11435` and one model list spans your local Ollama, other machines on your LAN (plain Ollama servers or Node Kit nodes, auto-discovered via mDNS), and verified public nodes from the registry — with `auto`, `auto-cheap`, `auto-fast`, `auto-quality`, and `auto-private` (never leaves the LAN) routed by the advisor, pinned prices, budget caps, and signed receipts for public calls.
 
 ### Implementation
 - [schemas/open-node.schema.json](schemas/open-node.schema.json) — normative JSON Schema for the Node Card (Phase 0 deliverable).
