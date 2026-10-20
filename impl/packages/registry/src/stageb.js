@@ -62,41 +62,63 @@ async function probeIdentity(safeFetch, card, offering, refs) {
   return { ok: matches === refs.length, matches, total: refs.length, ...(stale ? { stale: true } : {}) };
 }
 
-/** A needle counts as retrieved if the reply carries the full token or just its digits (small models drop the prefix). */
-export function needleFound(text, needle) {
+/** The needle counts as retrieved if its number appears in the reply as a whole number. */
+export function needleFound(text, digits) {
   if (typeof text !== 'string') return false;
-  if (text.includes(needle)) return true;
-  const digits = needle.split(':')[1];
-  return new RegExp(`(^|[^0-9])${digits}([^0-9]|$)`).test(text);
+  const number = String(digits).split(':').pop();
+  return new RegExp(`(^|[^0-9])${number}([^0-9]|$)`).test(text);
 }
 
-/** DS-ADM-03: needle retrieval at 25/50/90% of the claimed window; returns the verified cap. */
+const FILLER = 'lorem ipsum context filler segment. ';
+const fill = (chars) => FILLER.repeat(Math.ceil(Math.max(0, chars) / FILLER.length)).slice(0, Math.max(0, chars));
+const QUESTION = '\n\nWhat is the magic number mentioned in the text above? Reply with the number only.';
+
+/** Characters per token for this model's tokenizer, measured from a short prompt's reported usage. */
+async function calibrate(safeFetch, card, offering) {
+  const chars = 4000;
+  try {
+    const { status, usage } = await chatOnce(safeFetch, card, offering, `${fill(chars)}\n\nReply with OK.`, 4);
+    const reported = usage?.prompt_tokens;
+    if (status === 200 && reported > 0) return { charsPerToken: chars / reported, measured: true };
+  } catch { /* fall through to the default */ }
+  return { charsPerToken: 4, measured: false };
+}
+
+/**
+ * DS-ADM-03: retrieval at 25/50/90% of the claimed window; returns the verified cap.
+ * - Prompts are sized in the model's own tokens (calibrated from reported usage), not a chars/4 guess.
+ * - The fact sits near the start: engines that silently drop the front of an over-long prompt lose it,
+ *   and a reported prompt_tokens well short of the target is failed as a cut prompt.
+ * - The question is plain ("the magic number"): small models refuse or mangle odd tokens like NEEDLE.
+ * - The cap is the largest size with every smaller size passing, so one lucky answer can't vouch for a window.
+ */
 async function probeContext(safeFetch, card, offering) {
   const claimed = offering.serving?.context_window ?? 4096;
+  const { charsPerToken, measured } = await calibrate(safeFetch, card, offering);
   const results = [];
-  let cap = 0;
+  let cap = 0, unbroken = true;
   for (const fraction of [0.25, 0.5, 0.9]) {
     const tokens = Math.floor(claimed * fraction);
-    const needle = `NEEDLE:${Math.floor(tokens * 7919)}`; // deterministic per size
-    const fillerUnit = 'lorem ipsum context filler segment. ';
-    const beforeNeedle = Math.floor(tokens * 0.9) * 4; // needle at ~90% depth of this size
-    const afterNeedle = Math.max(0, tokens * 4 - beforeNeedle - needle.length - 60);
-    const prompt = fillerUnit.repeat(Math.ceil(beforeNeedle / fillerUnit.length)).slice(0, beforeNeedle)
-      + ` ${needle} `
-      + fillerUnit.repeat(Math.ceil(afterNeedle / fillerUnit.length)).slice(0, afterNeedle)
-      + ' Return the NEEDLE token from this text.';
-    let found = false, why = null;
+    const digits = String(Math.floor(tokens * 7919)); // deterministic per size
+    const fact = ` The magic number is ${digits}. `;
+    const body = Math.floor(tokens * charsPerToken) - fact.length - QUESTION.length - 40; // 40: chat template slack
+    const before = Math.floor(body * 0.1);
+    const prompt = fill(before) + fact + fill(body - before) + QUESTION;
+    let found = false, why = null, promptTokens = null;
     try {
       // Prefill on modest hardware is slow: allow ~30 ms per claimed token on top of the base timeout.
-      const { status, text } = await chatOnce(safeFetch, card, offering, prompt, 64, 60_000 + tokens * 30);
-      found = status === 200 && needleFound(text, needle);
-      if (!found) why = status !== 200 ? `status ${status}` : 'needle not in reply';
-    } catch (err) { found = false; why = /abort|timeout/i.test(String(err?.message)) ? 'timeout' : String(err?.message ?? err).slice(0, 80); }
-    results.push({ fraction, tokens, found, ...(why ? { why } : {}) });
-    if (found) cap = Math.max(cap, tokens);
+      const { status, text, usage } = await chatOnce(safeFetch, card, offering, prompt, 64, 60_000 + tokens * 30);
+      promptTokens = usage?.prompt_tokens ?? null;
+      if (status !== 200) why = `status ${status}`;
+      else if (measured && promptTokens != null && promptTokens < tokens * 0.85) why = `prompt cut to ${promptTokens} tokens`;
+      else if (!needleFound(text, digits)) why = 'number not in reply';
+      else found = true;
+    } catch (err) { why = /abort|timeout/i.test(String(err?.message)) ? 'timeout' : String(err?.message ?? err).slice(0, 80); }
+    results.push({ fraction, tokens, found, ...(promptTokens != null ? { prompt_tokens: promptTokens } : {}), ...(why ? { why } : {}) });
+    if (found && unbroken) cap = tokens; else unbroken = false;
   }
   const allPassed = results.every((r) => r.found);
-  return { ok: allPassed, claimed, verified_cap: allPassed ? claimed : cap, results };
+  return { ok: allPassed, claimed, verified_cap: allPassed ? claimed : cap, chars_per_token: Math.round(charsPerToken * 100) / 100, results };
 }
 
 /** DS-ADM-04: stepped-concurrency ramp; measures TTFT p50/p95 and rough TPS. */

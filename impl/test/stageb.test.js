@@ -81,7 +81,9 @@ test('impersonating node (same artifact claim, different model) is marked disput
 });
 
 test('overclaimed context window is capped to the verified size in search', async (t) => {
-  // Claims 32768 tokens, actually retrieves from 8192.
+  // Claims 32768 tokens, actually reads 8192 and silently drops the front of longer prompts
+  // (as Ollama does). The 50% probe (16384 tokens) used to pass anyway because its needle sat
+  // near the end; now the fact is near the start and the short prompt_tokens give the cut away.
   const node = await startFixtureNode({ realContextTokens: 8192, claimContextTokens: 32768 });
   const registry = await startRegistry({ allowPrivateTargets: true, stageBCapacity: FAST_CAPACITY });
   t.after(async () => { await node.close(); await registry.close(); });
@@ -91,7 +93,9 @@ test('overclaimed context window is capped to the verified size in search', asyn
   const context = result.stage_b.verdicts[0].context;
   assert.equal(context.ok, false);
   assert.equal(context.claimed, 32768);
-  assert.ok(context.verified_cap >= 8192 * 0.25 && context.verified_cap < 32768);
+  assert.equal(context.verified_cap, 8192, 'only the 25% probe fits the real window');
+  assert.deepEqual(context.results.map((r) => r.found), [true, false, false]);
+  assert.match(context.results[1].why, /prompt cut to \d+ tokens/);
 
   const offerings = (await (await fetch(`${registry.origin}/v0/offerings`)).json()).offerings;
   assert.equal(offerings[0].serving.context_window, context.verified_cap);
@@ -138,12 +142,13 @@ test('SSRF guard blocks private targets when enabled', async (t) => {
   assert.match(body.detail, /ssrf-blocked/);
 });
 
-test('needle counts when the model answers with the digits only', async () => {
+test('the magic number counts only as a whole number in the reply', async () => {
   const { needleFound } = await import('@opennodes/registry/src/stageb.js');
-  assert.equal(needleFound('The NEEDLE token is NEEDLE:16211456.', 'NEEDLE:16211456'), true);
-  assert.equal(needleFound('16211456', 'NEEDLE:16211456'), true);
-  assert.equal(needleFound('The token is 1621145', 'NEEDLE:16211456'), false);
-  assert.equal(needleFound(null, 'NEEDLE:1'), false);
+  assert.equal(needleFound('The magic number is 16211456.', '16211456'), true);
+  assert.equal(needleFound('16211456', '16211456'), true);
+  assert.equal(needleFound('The number is 1621145', '16211456'), false);
+  assert.equal(needleFound('162114567', '16211456'), false);
+  assert.equal(needleFound(null, '1'), false);
 });
 
 test('a node whose card revision moved (restart / reprice) is re-indexed, not disputed', async (t) => {

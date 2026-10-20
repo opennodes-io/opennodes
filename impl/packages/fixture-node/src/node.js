@@ -107,15 +107,16 @@ export async function startFixtureNode({
       state.requests++;
       state.lastAuth = req.headers.authorization ?? null;
       const prompt = (body.messages ?? []).map((m) => typeof m.content === 'string' ? m.content : '').join('\n');
-      // The model only "sees" its real context window; text beyond it is invisible.
-      const visible = prompt.slice(0, realContextTokens * 4);
+      // Like real engines (Ollama's num_ctx), an over-long prompt loses its *front*: the model only
+      // sees the last realContextTokens, and usage reports the tokens it actually read.
+      const visible = prompt.slice(-realContextTokens * 4);
       const prefix = impersonate ? 'mimic:' : 'echo:';
-      const needle = visible.match(/NEEDLE:\d+/);
-      const reply = needle
-        ? `${prefix} the needle token is ${needle[0]}`
+      const magic = visible.match(/magic number is (\d+)/);
+      const reply = magic
+        ? `${prefix} the magic number is ${magic[1]}`
         : `${prefix} ${visible.slice(0, 500)}`;
       const usage = {
-        prompt_tokens: approxTokens(prompt),
+        prompt_tokens: approxTokens(visible),
         completion_tokens: approxTokens(reply),
       };
       usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
