@@ -4,7 +4,7 @@ A small, always-on OpenNodes node on its own server: Ollama serving one model, t
 
 ## Deploy
 
-1. A fresh Ubuntu 24.04 server (4 vCPU / 8 GB is enough for a 4B model on CPU) and a DNS `A` record for your node host pointing at it, not proxied.
+1. A fresh Ubuntu 24.04 server (2 vCPU / 4 GB runs a 1B model; 4 vCPU / 8 GB a 4B one, on CPU) and a DNS `A` record for your node host pointing at it, not proxied.
 2. Copy this directory to the server (e.g. `/opt/onp-node`), then:
    ```bash
    cp .env.example .env    # set NODE_ID, NODE_HOST, MODEL, names, country
