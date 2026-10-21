@@ -1743,6 +1743,36 @@ async function loadFeed() {
 }
 
 /* ---------- node detail ---------- */
+/**
+ * Imported listings invite their operator to claim them (ONP-3 §4: a registered node whose
+ * namespace covers the import's API host supersedes it). Providers reached through the HF router
+ * can't claim via huggingface.co, so they are invited to list their own API instead.
+ */
+const CLAIM_GUIDE = 'https://github.com/opennodes-io/opennodes/tree/main/node-kit#card-only-listing-you-already-run-an-openai-compatible-api';
+function claimBanner(n, card) {
+  if (n.source !== 'import' || ['delisted', 'claimed'].includes(n.state)) return '';
+  const name = card.node?.operator?.name || card.node?.name || n.id;
+  let host = null;
+  try { host = new URL(card.endpoints?.openai).hostname; } catch { /* listing without an API */ }
+  const viaHf = host === 'router.huggingface.co';
+  const suggestedId = host && !viaHf ? host.split('.').reverse().join('.') : null;
+  const body = viaHf
+    ? `This listing reaches <b>${esc(name)}</b> through the Hugging Face router, so it is shown as an unprobed catalog import. List your own API directly to have it measured and verified by this registry.`
+    : host
+      ? `Claim it: publish a signed Node Card at <span class="mono">https://${esc(host)}/.well-known/open-node.json</span> with node id <span class="mono">${esc(suggestedId)}</span> (your parent domain works too) and register. Your verified listing replaces this import, the registry measures what you really serve, and nothing in your stack changes.`
+      : 'This listing has no known API endpoint. Publish a Node Card for your OpenAI-compatible API to be listed, measured and verified.';
+  const mail = `mailto:operators@opennodes.io?subject=${encodeURIComponent('Claim ' + n.id)}`;
+  return `<div class="panel pad" style="max-width:56rem; margin:0.4rem 0 0.8rem; border-left:3px solid var(--accent)">
+    <p style="margin:0 0 0.35rem; font-weight:600">Do you run ${esc(name)}?</p>
+    <p style="margin:0 0 0.6rem; font-size:0.86rem; color:var(--muted); overflow-wrap:anywhere">${body} Free, about 15 minutes with the Node Kit.</p>
+    <span style="display:inline-flex; gap:0.6rem; flex-wrap:wrap; font-size:0.84rem">
+      <a href="${CLAIM_GUIDE}" target="_blank" rel="noopener">How to claim →</a>
+      <a href="#/register">Register a node</a>
+      <a href="${mail}">operators@opennodes.io</a>
+    </span>
+  </div>`;
+}
+
 async function loadNode(id) {
   $('#node-title').textContent = id;
   try {
@@ -1764,6 +1794,7 @@ async function loadNode(id) {
       <td>${(o.serving?.supports || []).filter((s) => s !== 'streaming').map((s) => `<span class="chip">${esc(s)}</span>`).join(' ') || '—'}</td>
     </tr>`).join('');
     $('#node-detail').innerHTML = `
+      ${claimBanner(n, card)}
       ${card.node?.description ? `<p class="desc">${esc(card.node.description)}</p>` : ''}
       <div class="statstrip">
         ${stat(tierChip(tier), 'TRUST TIER')}
