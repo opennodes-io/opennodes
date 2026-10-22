@@ -43,6 +43,7 @@ MCP standardized how AI applications reach *tools*; the OpenAI API shape standar
 ### Research (why this standard, and why now)
 - [01 — Protocol & standards landscape](docs/01-protocol-landscape.md) — MCP + Registry, WebMCP, A2A, AGNTCY, ANP, NANDA, OpenAI-compatible APIs, DIDs/VCs, x402, UCAN, model cards, MLPerf; full gap analysis.
 - [02 — Market landscape & demand evidence](docs/02-market-landscape.md) — OpenRouter, HF Inference Providers, gateways, DePIN/decentralized compute, OS-level AI runtimes, payment rails; viability assessment.
+- [05 — OpenNodes and European digital sovereignty](docs/05-eu-sovereignty-brief.md) — one-page brief: no middlebox, EU/EEA jurisdiction filter, signed self-descriptions and receipts, mapped to GDPR, the AI Act and the Data Act ([web version](https://opennodes.io/eu)).
 - [04 — Universal AI client landscape](docs/04-universal-client-landscape.md) — AI browsers, branded assistants, neutral/BYOK clients, multi-homing data, distribution economics; assessment of the "primary access point" client idea.
 
 ### Specification suite
