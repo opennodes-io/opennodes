@@ -219,7 +219,7 @@
   <div class="toolbar">
     <input type="text" id="f-q" placeholder="Search models, families, nodes…">
     <span class="switchrow" id="f-verified" title="identity-fingerprinted · context-verified · continuously probed"><span class="switch"></span><b style="font-size:0.78rem">Verified only</b></span>
-    <span class="switchrow" id="f-eea" title="operators that declare a country in the EU, Iceland, Liechtenstein or Norway; imported listings declare none"><span class="switch"></span><b style="font-size:0.78rem">EU/EEA</b></span>
+    <span class="switchrow" id="f-eea" title="operators in the EU, Iceland, Liechtenstein or Norway — declared by registered nodes, inferred for imported listings of known European providers"><span class="switch"></span><b style="font-size:0.78rem">EU/EEA</b></span>
     <select id="f-modality">
       <option value="">any modality</option>
       <option>text</option><option>multimodal</option><option>image</option>
@@ -1805,7 +1805,7 @@ async function loadNode(id) {
       <div class="statstrip">
         ${stat(tierChip(tier), 'TRUST TIER')}
         ${stat(String(offers.length), 'OFFERINGS')}
-        ${card.node?.operator?.name ? stat(esc(card.node.operator.name) + (card.node.operator.country ? ' (' + esc(card.node.operator.country) + ')' : ''), 'OPERATOR') : ''}
+        ${card.node?.operator?.name ? stat(esc(card.node.operator.name) + (card.node.operator.country ? ' (' + esc(card.node.operator.country) + (n.source === 'import' ? ' · inferred' : '') + ')' : ''), 'OPERATOR') : ''}
         ${(card.node?.regions || []).length ? stat(esc(card.node.regions.join(', ')), 'REGIONS') : ''}
         ${n.source === 'import' ? stat('<span class="chip imp">IMPORTED</span>', 'SOURCE — unclaimed by operator') : ''}
       </div>

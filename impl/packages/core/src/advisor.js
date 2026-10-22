@@ -225,8 +225,8 @@ export function jurisdictionCountries(spec) {
 }
 
 /**
- * Does the offering's operator declare a country inside the jurisdiction? Undeclared counts as
- * outside — imported listings carry no country until their operator claims them.
+ * Is the offering's operator in the jurisdiction? Registered nodes declare their country; imports of
+ * known providers carry an inferred one (`jurisdiction.basis`). No country counts as outside.
  */
 export function inJurisdiction(offering, spec) {
   const allowed = jurisdictionCountries(spec);
@@ -339,7 +339,10 @@ function explain(c, features, w) {
     r.push(decl ? `${features.language} declared ${decl.grade}` : `${features.language} support undeclared`);
   }
   if (o.hardware?.accelerators?.length) r.push(`on ${o.hardware.accelerators.map((a) => `${a.count}× ${a.type}`).join(' + ')} (${o.hardware.basis ?? 'claimed'})`);
-  if (o.jurisdiction?.country) r.push(`operator in ${o.jurisdiction.country}${EEA_COUNTRIES.includes(String(o.jurisdiction.country).toUpperCase()) ? ' (EEA)' : ''}`);
+  if (o.jurisdiction?.country) {
+    const tags = [EEA_COUNTRIES.includes(String(o.jurisdiction.country).toUpperCase()) ? 'EEA' : null, o.jurisdiction.basis === 'inferred' ? 'inferred' : null].filter(Boolean);
+    r.push(`operator in ${o.jurisdiction.country}${tags.length ? ` (${tags.join(', ')})` : ''}`);
+  }
   if (o.source === 'import') r.push('imported catalog listing — unprobed');
   return r;
 }

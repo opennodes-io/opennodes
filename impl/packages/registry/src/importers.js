@@ -61,6 +61,17 @@ export const MODELS_DEV_API_BASES = {
 };
 
 /**
+ * Country of providers whose own API we import directly and whose company and inference hosting
+ * are known to be in that country — conservative on purpose (routers, gateways and providers with
+ * mixed or unclear hosting are left out). Imports carry it as an *inferred* jurisdiction; only the
+ * operator's own signed card can declare one.
+ */
+export const KNOWN_PROVIDER_COUNTRY = Object.freeze({
+  'cloudferro-sherlock': 'PL', berget: 'SE', evroc: 'SE', 'regolo-ai': 'IT', scaleway: 'FR', ovhcloud: 'FR',
+  mistral: 'FR', stackit: 'DE', hetzner: 'DE', infomaniak: 'CH',
+});
+
+/**
  * Import a models.dev-shaped catalog: { providerId: { id, name, api?, doc?, models: { key: model } } }.
  * Each provider becomes a synthetic node `import.modelsdev.{provider}`; each model an offering.
  * The API base is the provider's `api`, else MODELS_DEV_API_BASES; `doc` is never used as one.
@@ -111,7 +122,7 @@ export async function importModelsDev(store, catalog) {
         id: nodeId,
         name: provider?.name ?? providerId,
         description: `Imported from models.dev; metadata only, unclaimed by the operator.`,
-        operator: { name: provider?.name ?? providerId },
+        operator: { name: provider?.name ?? providerId, ...(KNOWN_PROVIDER_COUNTRY[providerId] ? { country: KNOWN_PROVIDER_COUNTRY[providerId] } : {}) },
       },
       endpoints: {
         ...(base ? { openai: base, health: `${base}/health` } : {}),

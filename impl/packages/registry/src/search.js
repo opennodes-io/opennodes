@@ -40,8 +40,14 @@ export async function collectOfferings(store) {
         binding: offering.binding,
         pricing: offering.pricing,
         data_policy: offering.data_policy ?? null,
-        // Where the operator says it is (ONP-2 node.operator.country, node.regions); imports carry none.
-        jurisdiction: { country: card.node?.operator?.country ?? null, regions: card.node?.regions ?? [] },
+        // Where the operator is (ONP-2 node.operator.country, node.regions).
+        // Registered nodes declare it in their signed card; imports get it from the importer's list of
+        // known providers, labeled inferred.
+        jurisdiction: {
+          country: card.node?.operator?.country ?? null,
+          regions: card.node?.regions ?? [],
+          basis: card.node?.operator?.country ? (node.source === 'import' ? 'inferred' : 'declared') : null,
+        },
         // Allocated hardware for THIS offering (offering-level override wins over the
         // node-level description) — same artifact on different vendors runs on different
         // silicon, and clients deserve to see which. Always basis-labeled, never measured.

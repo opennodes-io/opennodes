@@ -152,5 +152,20 @@ test('jurisdiction: EEA filter in the advisor and in registry search; local alwa
   assert.deepEqual(await search('jurisdiction=eea'), ['org.opennodes.fixture']);
   assert.deepEqual(await search('jurisdiction=US,GB'), []);
   const one = (await (await fetch(`${registry.origin}/v0/offerings`)).json()).offerings[0];
-  assert.deepEqual(one.jurisdiction, { country: 'DE', regions: one.jurisdiction.regions });
+  assert.deepEqual(one.jurisdiction, { country: 'DE', regions: one.jurisdiction.regions, basis: 'declared' });
+
+  // imports: a known European provider gets an inferred country; an unknown one gets none
+  await fetch(`${registry.origin}/v0/import/models-dev`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ catalog: {
+      berget: { id: 'berget', name: 'Berget AI', api: 'https://api.berget.ai/v1', models: { m: { id: 'm', name: 'M', cost: { input: 0.1, output: 0.2 } } } },
+      acmecloud: { id: 'acmecloud', name: 'Acme', api: 'https://api.acme.example/v1', models: { n: { id: 'n', name: 'N', cost: { input: 0.1, output: 0.2 } } } },
+    } }),
+  });
+  assert.deepEqual((await search('jurisdiction=eea')).sort(), ['import.modelsdev.berget', 'org.opennodes.fixture']);
+  const berget = (await (await fetch(`${registry.origin}/v0/offerings?q=berget`)).json()).offerings[0];
+  assert.equal(berget.jurisdiction.country, 'SE');
+  assert.equal(berget.jurisdiction.basis, 'inferred');
+  const r2 = recommend([berget], extractFeatures('summarize this note'), { jurisdiction: 'eea' });
+  assert.ok(r2.recommendations[0].reasons.some((x) => x.includes('operator in SE (EEA, inferred)')));
 });

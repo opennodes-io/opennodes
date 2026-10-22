@@ -15,7 +15,7 @@ const FILTERS = {
   tier: { ...TIER, description: 'Minimum trust tier. unverified < community (passed automated checks) < verified (identity and context verified) < attested.' },
   lang: { type: 'string', description: 'Language with minimum grade, "<iso-code>[:basic|strong|native]", e.g. "pl:strong" or "de".' },
   q: { type: 'string', description: 'Free-text match against the model metadata, offering id, and node id, e.g. "bielik" or "coder".' },
-  jurisdiction: { type: 'string', description: 'Only operators that declare a country inside it: "eea" (EU + Iceland, Liechtenstein, Norway) or comma-separated ISO country codes, e.g. "DE,FI". Imported listings declare no country and are excluded.' },
+  jurisdiction: { type: 'string', description: 'Only operators that declare a country inside it: "eea" (EU + Iceland, Liechtenstein, Norway) or comma-separated ISO country codes, e.g. "DE,FI". Registered nodes declare their country; imported listings of known providers carry an inferred one (jurisdiction.basis = "inferred"); listings without a country are excluded.' },
 };
 
 export const MCP_TOOLS = [
