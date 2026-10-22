@@ -235,6 +235,29 @@ export function inJurisdiction(offering, spec) {
   return Boolean(country) && allowed.has(String(country).toUpperCase());
 }
 
+const AUTO_PRESETS = Object.freeze({ cheap: 'cheap', fast: 'fast', quality: 'quality', private: 'private' });
+
+/** Auto-routing model names listed by the gateway and the Ollama router (any auto-<country> also works). */
+export const AUTO_MODEL_NAMES = Object.freeze(['auto', 'auto-cheap', 'auto-fast', 'auto-quality', 'auto-private', 'auto-eu', 'auto-ca']);
+
+/**
+ * Parse an auto-routing model name: `auto`, `auto-cheap|fast|quality|private`, or `auto-<where>`
+ * with <where> = `eu` / `eea` or a two-letter country code (`auto-ca`, `auto-de`).
+ * `prefix` is the namespace ('onp/' in the gateway, '' in the Ollama router).
+ * Returns { preset, jurisdiction } or null when the name isn't an auto model.
+ */
+export function parseAutoModel(name, prefix = '') {
+  if (typeof name !== 'string' || !name.startsWith(`${prefix}auto`)) return null;
+  const rest = name.slice(prefix.length + 4);
+  if (rest === '') return { preset: null, jurisdiction: null };
+  if (!rest.startsWith('-')) return null;
+  const tag = rest.slice(1).toLowerCase();
+  if (tag in AUTO_PRESETS) return { preset: AUTO_PRESETS[tag], jurisdiction: null };
+  if (tag === 'eu' || tag === 'eea') return { preset: null, jurisdiction: 'eea' };
+  if (/^[a-z]{2}$/.test(tag)) return { preset: null, jurisdiction: tag.toUpperCase() };
+  return null;
+}
+
 /**
  * Rank offerings for extracted features under a policy.
  * policy: { min_tier, max_input_per_mtok, max_total_usd, region, jurisdiction, prefer_local, preset, limit }

@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import {
   createApp, listen, closeApp, sendJson, problem, readJson,
-  verifyJws, keyFromJwk, costForUsage, estimateBounds, round6, extractFeatures, recommend,
+  verifyJws, keyFromJwk, costForUsage, estimateBounds, round6, extractFeatures, recommend, parseAutoModel, AUTO_MODEL_NAMES,
 } from '@opennodes/core';
 import { OnpClient } from '@opennodes/cli';
 import {
@@ -18,9 +18,8 @@ import {
 } from './translate.js';
 import { probePeer, browseMdns } from './discovery.js';
 
-const AUTO = { auto: null, 'auto-cheap': 'cheap', 'auto-fast': 'fast', 'auto-quality': 'quality', 'auto-private': 'private', 'auto-eu': null };
-// auto-eu: your own machines plus public operators that declare an EU/EEA country.
-const AUTO_JURISDICTION = { 'auto-eu': 'eea' };
+// auto, auto-cheap|fast|quality|private, and auto-<where> (eu, or a country code such as ca): your own
+// machines plus public operators in that jurisdiction. Parsed by @opennodes/core.
 const LOCAL_TTL = 30_000, PUBLIC_TTL = 60_000;
 const VERSION = '0.1.0';
 // Ollama clients slice digest[:12] for display: synthesized entries need a real-looking one.
@@ -144,14 +143,15 @@ export async function startOllamaRouter({
 
   /** Resolve a requested model name to an ordered list of catalog entries. */
   async function resolve(name, { messages = [], prompt = null, maxTokens = null } = {}) {
-    if (name in AUTO) {
-      const preset = AUTO[name];
+    const auto = parseAutoModel(name);
+    if (auto) {
+      const { preset } = auto;
       const text = prompt ?? lastUserText(messages);
       const features = extractFeatures(text, { messages: prompt ? [] : messages.slice(0, -1), est_output_tokens: maxTokens });
       const pool = preset === 'private' ? await localEntries() : await catalog();
       const result = recommend(pool.map((e) => e.offering), features, {
         preset, limit: 5, prefer_local: true, max_total_usd: pol.max_request_usd, region: pol.region,
-        jurisdiction: AUTO_JURISDICTION[name] ?? pol.jurisdiction,
+        jurisdiction: auto.jurisdiction ?? pol.jurisdiction,
       });
       const byKey = new Map(pool.map((e) => [`${e.offering.node_id}/${e.offering.offering_id}`, e]));
       const chosen = result.recommendations.map((r) => byKey.get(r.offering)).filter(Boolean);
@@ -297,11 +297,18 @@ export async function startOllamaRouter({
         hardware: o.hardware ?? null, measured: { ttft_ms: o.observed?.ttft_ms?.p50 ?? null, tps: o.observed?.tps ?? null }, context: o.serving?.context_window ?? null },
     };
   }
-  const autoTags = () => Object.keys(AUTO).map((name) => ({
+  const autoNote = (name) => {
+    const a = parseAutoModel(name);
+    if (a?.preset === 'private') return 'routes only to local and LAN models';
+    if (a?.jurisdiction) return `routes to local, LAN and ${a.jurisdiction === 'eea' ? 'EU/EEA' : a.jurisdiction} operators only`;
+    return 'routes by the OpenNodes advisor';
+  };
+  const autoTag = (name) => ({
     name, model: name, modified_at: STARTED_AT, size: 0, digest: digestOf(name),
     details: { parent_model: '', format: 'onp', family: 'advisor', families: ['advisor'], parameter_size: '', quantization_level: '' },
-    onp: { tier: 'advisor', note: name === 'auto-private' ? 'routes only to local and LAN models' : name === 'auto-eu' ? 'routes to local, LAN and EU/EEA operators only' : 'routes by the OpenNodes advisor' },
-  }));
+    onp: { tier: 'advisor', note: autoNote(name) },
+  });
+  const autoTags = () => AUTO_MODEL_NAMES.map(autoTag);
 
   async function proxyLocal(req, res, path) {
     const body = req.method === 'GET' ? undefined : await readJson(req, 50_000_000);
@@ -324,8 +331,8 @@ export async function startOllamaRouter({
       const body = await readJson(req);
       const name = body.model ?? body.name;
       const [entry] = await resolve(name);
-      if (!entry) return name in AUTO
-        ? sendJson(res, 200, { modelfile: '', parameters: '', template: '', details: autoTags().find((t) => t.name === name).details, capabilities: ['completion', 'tools'], model_info: {} })
+      if (!entry) return parseAutoModel(name)
+        ? sendJson(res, 200, { modelfile: '', parameters: '', template: '', details: autoTag(name).details, capabilities: ['completion', 'tools'], model_info: {} })
         : oerr(res, 404, `model '${name}' not found`);
       if (entry.kind === 'ollama') {
         const r = await fetch(`${entry.origin}/api/show`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: entry.upstreamModel, verbose: body.verbose ?? false }) });
@@ -361,7 +368,7 @@ export async function startOllamaRouter({
     ['DELETE', '/api/delete', (req, res) => proxyLocal(req, res, '/api/delete')],
 
     // OpenAI-compatible surface.
-    ['GET', '/v1/models', async (req, res) => sendJson(res, 200, { object: 'list', data: [...Object.keys(AUTO), ...(await catalog()).map((e) => e.name)].map((id) => ({ id, object: 'model', owned_by: 'opennodes-ollama-router' })) })],
+    ['GET', '/v1/models', async (req, res) => sendJson(res, 200, { object: 'list', data: [...AUTO_MODEL_NAMES, ...(await catalog()).map((e) => e.name)].map((id) => ({ id, object: 'model', owned_by: 'opennodes-ollama-router' })) })],
     ['POST', '/v1/chat/completions', async (req, res) => {
       const body = await readJson(req, 50_000_000);
       const candidates = await resolve(body.model, { messages: body.messages, maxTokens: body.max_tokens });

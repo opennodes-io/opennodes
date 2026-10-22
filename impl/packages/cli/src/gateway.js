@@ -3,15 +3,15 @@
 // does discovery, policy, revision pinning, price_changed recovery, fallback, and receipts.
 import { appendFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
-import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend } from '@opennodes/core';
+import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend, parseAutoModel, AUTO_MODEL_NAMES } from '@opennodes/core';
 import { OnpClient } from './client.js';
 
 const CACHE_TTL_MS = 30_000;
 // Advisor-routed virtual models (the ONP answer to openrouter/auto). Routing runs
 // locally on the gateway's cached catalog: the prompt never leaves the machine.
-const AUTO_MODELS = { 'onp/auto': null, 'onp/auto-cheap': 'cheap', 'onp/auto-fast': 'fast', 'onp/auto-quality': 'quality', 'onp/auto-private': 'private', 'onp/auto-eu': null };
-// onp/auto-eu: only operators that declare an EU/EEA country (ONP-2 node.operator.country).
-const AUTO_JURISDICTION = { 'onp/auto-eu': 'eea' };
+// onp/auto, onp/auto-cheap|fast|quality|private, and onp/auto-<where> (eu, or a country code such as
+// ca): only operators in that jurisdiction (ONP-2 node.operator.country).
+const AUTO_IDS = AUTO_MODEL_NAMES.map((n) => `onp/${n}`);
 
 // Standard provider key variables. A key found here is sent only to its own host,
 // and makes that host's imported listings eligible for onp/auto routing.
@@ -93,18 +93,19 @@ export async function startGateway({
   /** Resolve a requested model id to an ordered candidate list of offerings. */
   async function resolve(modelId, body = null) {
     await refresh();
-    if (modelId in AUTO_MODELS) {
+    const auto = parseAutoModel(modelId, 'onp/');
+    if (auto) {
       const messages = body?.messages ?? [];
       const last = [...messages].reverse().find((m) => m.role === 'user');
       const text = typeof last?.content === 'string' ? last.content
         : (last?.content ?? []).map((p) => p.text ?? '').join(' ');
       const features = extractFeatures(text, { messages: messages.slice(0, -1), est_output_tokens: body?.max_tokens ?? null });
-      const preset = AUTO_MODELS[modelId];
+      const { preset } = auto;
       const result = recommend([...cache.byId.values()], features, {
         preset, limit: 5,
         min_tier: preset === 'private' ? 'community' : policy.min_tier,
         max_input_per_mtok: policy.max_input_per_mtok,
-        jurisdiction: AUTO_JURISDICTION[modelId] ?? policy.jurisdiction,
+        jurisdiction: auto.jurisdiction ?? policy.jurisdiction,
         prefer_local: preset === 'private',
       });
       lastAdvice = { model: modelId, features, recommendations: result.recommendations.map((r) => ({ offering: r.offering, score: r.score, reasons: r.reasons })) };
@@ -212,7 +213,7 @@ export async function startGateway({
     ['GET', '/v1/models', async (req, res) => {
       if (!authed(req, res)) return;
       await refresh();
-      const ids = [...Object.keys(AUTO_MODELS), ...cache.byId.keys(), ...Object.keys(aliases), ...Object.keys(virtuals)];
+      const ids = [...AUTO_IDS, ...cache.byId.keys(), ...Object.keys(aliases), ...Object.keys(virtuals)];
       sendJson(res, 200, {
         object: 'list',
         data: ids.map((id) => ({ id, object: 'model', owned_by: 'opennodes-gateway' })),
@@ -223,7 +224,7 @@ export async function startGateway({
       if (!authed(req, res)) return;
       const body = await readJson(req, 10_000_000);
       const candidates = await resolve(body.model, body);
-      if (!candidates.length && (body.model in AUTO_MODELS || virtuals[body.model])) {
+      if (!candidates.length && (parseAutoModel(body.model, 'onp/') || virtuals[body.model])) {
         return problem(res, 404, 'no-callable-offerings',
           `nothing in the registry matches ${body.model} that this gateway can call: free registered nodes need no key; ` +
           'for imported catalogs pass --key <host>=<key> or set a provider variable such as OPENROUTER_API_KEY or HF_TOKEN');

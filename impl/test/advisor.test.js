@@ -2,7 +2,7 @@
 // the registry endpoint, the stdio-MCP privacy path, and gateway onp/auto routing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractFeatures, recommend, detectLanguage, inJurisdiction, jurisdictionCountries } from '@opennodes/core';
+import { extractFeatures, recommend, detectLanguage, inJurisdiction, jurisdictionCountries, parseAutoModel } from '@opennodes/core';
 import { startFixtureNode } from '@opennodes/fixture-node';
 import { startRegistry } from '@opennodes/registry';
 import { startGateway } from '@opennodes/cli/src/gateway.js';
@@ -168,4 +168,29 @@ test('jurisdiction: EEA filter in the advisor and in registry search; local alwa
   assert.equal(berget.jurisdiction.basis, 'inferred');
   const r2 = recommend([berget], extractFeatures('summarize this note'), { jurisdiction: 'eea' });
   assert.ok(r2.recommendations[0].reasons.some((x) => x.includes('operator in SE (EEA, inferred)')));
+});
+
+test('auto model names: presets, EU/EEA and any country code', async (t) => {
+  assert.deepEqual(parseAutoModel('auto'), { preset: null, jurisdiction: null });
+  assert.deepEqual(parseAutoModel('auto-cheap'), { preset: 'cheap', jurisdiction: null });
+  assert.deepEqual(parseAutoModel('auto-private'), { preset: 'private', jurisdiction: null });
+  assert.deepEqual(parseAutoModel('auto-eu'), { preset: null, jurisdiction: 'eea' });
+  assert.deepEqual(parseAutoModel('auto-CA'), { preset: null, jurisdiction: 'CA' });
+  assert.deepEqual(parseAutoModel('onp/auto-ca', 'onp/'), { preset: null, jurisdiction: 'CA' });
+  assert.equal(parseAutoModel('auto-canada'), null);
+  assert.equal(parseAutoModel('autopilot'), null);
+  assert.equal(parseAutoModel('llama3.2:1b'), null);
+
+  // the gateway lists auto-eu and auto-ca, and a country with no operators explains itself
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  const gw = await startGateway({ port: 0, registry: registry.origin, env: {} });
+  t.after(async () => { await gw.close(); await registry.close(); });
+  const ids = (await (await fetch(`${gw.origin}/v1/models`)).json()).data.map((m) => m.id);
+  assert.ok(ids.includes('onp/auto-eu') && ids.includes('onp/auto-ca'));
+  const res = await fetch(`${gw.origin}/v1/chat/completions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'onp/auto-jp', messages: [{ role: 'user', content: 'hi' }] }),
+  });
+  assert.equal(res.status, 404);
+  assert.match((await res.json()).type ?? '', /no-callable-offerings/);
 });

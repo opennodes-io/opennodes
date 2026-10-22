@@ -16,7 +16,7 @@ if (has('help') || args[0] === '-h') {
 
 Then point any Ollama app at it:   OLLAMA_HOST=127.0.0.1:11435
 Models:  <your local models>  lan/<peer>/<model>  onp/<node>/<offering>
-         auto  auto-cheap  auto-fast  auto-quality  auto-private (never leaves the LAN)  auto-eu (LAN + EU/EEA operators)
+         auto  auto-cheap  auto-fast  auto-quality  auto-private (never leaves the LAN)  auto-eu  auto-ca  auto-<country> (LAN + operators in that jurisdiction)
 Env:     ONP_REGISTRY (public tier; default https://registry.opennodes.io; --registry none for LAN-only), OLLAMA_UPSTREAM (local Ollama)
 Publish this machine as a node:    pipx install onp-node && onp-node init --engine ${flag('ollama', process.env.OLLAMA_UPSTREAM ?? 'http://127.0.0.1:11434')}/v1 ...`);
   process.exit(0);
