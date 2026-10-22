@@ -15,6 +15,7 @@ const FILTERS = {
   tier: { ...TIER, description: 'Minimum trust tier. unverified < community (passed automated checks) < verified (identity and context verified) < attested.' },
   lang: { type: 'string', description: 'Language with minimum grade, "<iso-code>[:basic|strong|native]", e.g. "pl:strong" or "de".' },
   q: { type: 'string', description: 'Free-text match against the model metadata, offering id, and node id, e.g. "bielik" or "coder".' },
+  jurisdiction: { type: 'string', description: 'Only operators that declare a country inside it: "eea" (EU + Iceland, Liechtenstein, Norway) or comma-separated ISO country codes, e.g. "DE,FI". Imported listings declare no country and are excluded.' },
 };
 
 export const MCP_TOOLS = [
@@ -36,6 +37,7 @@ export const MCP_TOOLS = [
             max_input_per_mtok: { type: 'number', minimum: 0, description: 'Maximum input price in USD per million tokens.' },
             max_total_usd: { type: 'number', minimum: 0, description: 'Maximum estimated total cost of the call in USD.' },
             region: { type: 'string', description: 'Required data region, e.g. "eu". Offerings pinned to other regions are excluded.' },
+            jurisdiction: { type: 'string', description: 'Only operators in this jurisdiction: "eea" or ISO country codes ("DE,FI"). Local and LAN models always qualify.' },
             prefer_local: { type: 'boolean', description: 'Give a bonus to nodes on this machine or LAN.' },
             limit: { type: 'integer', minimum: 1, maximum: 20, default: 3, description: 'Number of candidates to return.' },
           },

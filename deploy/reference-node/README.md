@@ -17,6 +17,16 @@ A small, always-on OpenNodes node on its own server: Ollama serving one model, t
    ```
    Stage A runs at registration (community tier). The registry admin then runs Stage B: identity fingerprint capture and the admission battery (verified tier).
 
+## Several models
+
+`MODEL` takes a space-separated list; the kit offers every model Ollama lists, and Ollama keeps one in memory at a time. A model whose Ollama name contains a slash (e.g. `SpeakLeash/bielik-1.5b-v3.0-instruct:Q8_0`) would be read as a Hugging Face id, so add it by hand under a plain local name instead of through `MODEL` (which would pull the slashed name again on every start), then restart the node and re-register (Stage B for the new offering needs a reference capture first):
+```bash
+docker compose exec ollama ollama pull SpeakLeash/bielik-1.5b-v3.0-instruct:Q8_0
+docker compose exec ollama ollama cp SpeakLeash/bielik-1.5b-v3.0-instruct:Q8_0 bielik-1.5b-v3.0-instruct
+docker compose exec ollama ollama rm SpeakLeash/bielik-1.5b-v3.0-instruct:Q8_0
+docker compose restart node
+```
+
 ## Operate
 
 - Logs: `docker compose logs -f node`

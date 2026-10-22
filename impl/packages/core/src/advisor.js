@@ -211,9 +211,34 @@ function languageFit(o, lang) {
   return (o.serving?.languages ?? []).length ? 0.2 : 0.5;   // undeclared: unknown, not disqualified
 }
 
+/** EU member states plus Iceland, Liechtenstein and Norway (ISO 3166-1 alpha-2). */
+export const EEA_COUNTRIES = Object.freeze([
+  'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU',
+  'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE', 'IS', 'LI', 'NO',
+]);
+
+/** Expand a jurisdiction filter: 'eea' (alias 'eu') or a comma list of country codes. */
+export function jurisdictionCountries(spec) {
+  if (!spec) return null;
+  const parts = String(spec).split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
+  return new Set(parts.flatMap((p) => (p === 'EEA' || p === 'EU' ? EEA_COUNTRIES : [p])));
+}
+
+/**
+ * Does the offering's operator declare a country inside the jurisdiction? Undeclared counts as
+ * outside — imported listings carry no country until their operator claims them.
+ */
+export function inJurisdiction(offering, spec) {
+  const allowed = jurisdictionCountries(spec);
+  if (!allowed) return true;
+  const country = offering.jurisdiction?.country;
+  return Boolean(country) && allowed.has(String(country).toUpperCase());
+}
+
 /**
  * Rank offerings for extracted features under a policy.
- * policy: { min_tier, max_input_per_mtok, max_total_usd, region, prefer_local, preset, limit }
+ * policy: { min_tier, max_input_per_mtok, max_total_usd, region, jurisdiction, prefer_local, preset, limit }
+ * jurisdiction: 'eea' or country codes; the user's own machines (local / LAN) always qualify.
  */
 export function recommend(offerings, features, policy = {}) {
   const minTier = TIER_ORDER.indexOf(policy.min_tier ?? 'unverified');
@@ -241,6 +266,7 @@ export function recommend(offerings, features, policy = {}) {
       const pins = o.data_policy?.region_pinning ?? [];
       if (pins.length && !pins.includes(policy.region)) return reject('region');
     }
+    if (policy.jurisdiction && !o.local && !inJurisdiction(o, policy.jurisdiction)) return reject('jurisdiction');
     return true;
   });
 
@@ -313,6 +339,7 @@ function explain(c, features, w) {
     r.push(decl ? `${features.language} declared ${decl.grade}` : `${features.language} support undeclared`);
   }
   if (o.hardware?.accelerators?.length) r.push(`on ${o.hardware.accelerators.map((a) => `${a.count}× ${a.type}`).join(' + ')} (${o.hardware.basis ?? 'claimed'})`);
+  if (o.jurisdiction?.country) r.push(`operator in ${o.jurisdiction.country}${EEA_COUNTRIES.includes(String(o.jurisdiction.country).toUpperCase()) ? ' (EEA)' : ''}`);
   if (o.source === 'import') r.push('imported catalog listing — unprobed');
   return r;
 }
@@ -323,6 +350,7 @@ function equivalentQuery(features, policy, required, needCtx) {
   if (features.language !== 'en') q.lang = `${features.language}:strong`;
   if (policy.min_tier) q.tier = policy.min_tier;
   if (policy.max_input_per_mtok != null) q.max_input_price = policy.max_input_per_mtok;
+  if (policy.jurisdiction) q.jurisdiction = policy.jurisdiction;
   return q;
 }
 

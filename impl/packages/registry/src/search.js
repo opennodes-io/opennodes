@@ -1,4 +1,5 @@
 // Offering search + transparent ranking (ONP-3 §5–6).
+import { inJurisdiction } from '@opennodes/core';
 
 export const RANK_COMPONENTS = { price: 0.35, tier: 0.35, probe_success: 0.30 };
 const TIER_SCORE = { unverified: 0, community: 0.4, verified: 0.8, attested: 1.0 };
@@ -39,6 +40,8 @@ export async function collectOfferings(store) {
         binding: offering.binding,
         pricing: offering.pricing,
         data_policy: offering.data_policy ?? null,
+        // Where the operator says it is (ONP-2 node.operator.country, node.regions); imports carry none.
+        jurisdiction: { country: card.node?.operator?.country ?? null, regions: card.node?.regions ?? [] },
         // Allocated hardware for THIS offering (offering-level override wins over the
         // node-level description) — same artifact on different vendors runs on different
         // silicon, and clients deserve to see which. Always basis-labeled, never measured.
@@ -76,6 +79,7 @@ export async function searchOfferingsPaged(store, query) {
   }
   if (q('max_input_price')) items = items.filter((o) => (o.pricing.input_per_mtok ?? Infinity) <= Number(q('max_input_price')));
   if (q('scheme')) items = items.filter((o) => o.pricing.schemes.includes(q('scheme')));
+  if (q('jurisdiction')) items = items.filter((o) => inJurisdiction(o, q('jurisdiction')));
   if (q('tier')) {
     const order = ['unverified', 'community', 'verified', 'attested'];
     const min = order.indexOf(q('tier'));

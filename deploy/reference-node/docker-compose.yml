@@ -7,16 +7,22 @@ services:
       OLLAMA_KEEP_ALIVE: 24h
       OLLAMA_NUM_PARALLEL: "2"
       OLLAMA_CONTEXT_LENGTH: "8192"
+      # Several small models on a 4 GB host: keep one in memory at a time (a switch costs a
+      # few seconds of loading), and cap the container so a spike can't freeze the machine.
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    mem_limit: 3g
+    memswap_limit: 3g
     volumes:
       - ollama:/root/.ollama
     restart: unless-stopped
 
-  # One-shot: make sure the served model is present before the node describes it.
+  # One-shot: make sure the served models (space-separated MODEL) are present before the node
+  # describes them. The kit offers every model Ollama lists.
   model:
     image: ollama/ollama:latest
     environment:
       OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["/bin/sh", "-c", "until ollama list >/dev/null 2>&1; do sleep 2; done; ollama pull \"$$MODEL\""]
+    entrypoint: ["/bin/sh", "-c", "until ollama list >/dev/null 2>&1; do sleep 2; done; for m in $$MODEL; do ollama pull \"$$m\" || exit 1; done"]
     env_file: .env
     depends_on:
       - ollama

@@ -16,7 +16,7 @@ Then set `OLLAMA_HOST=127.0.0.1:11435` in your app.
 | **public** | the OpenNodes registry — verified providers, disclosed hardware, measured latency, pinned prices | `onp/org.example.lab/qwen3-235b` | signed receipt per call, budget cap |
 
 Plus the advisor models, routed per request from the prompt's features (which never leave this machine):
-`auto` · `auto-cheap` · `auto-fast` · `auto-quality` · **`auto-private`** (only local and LAN — nothing leaves your network).
+`auto` · `auto-cheap` · `auto-fast` · `auto-quality` · **`auto-private`** (only local and LAN — nothing leaves your network) · **`auto-eu`** (local, LAN, and public operators that declare an EU/EEA country).
 
 What it does: Ollama native API (`/api/tags`, `/api/chat`, `/api/generate`, `/api/show`, `/api/ps`, embeddings and model management passed to local) with streaming translation for public nodes; OpenAI `/v1` alongside; a bare model name that isn't local falls through to a LAN copy; public calls are pinned to a card revision, receipted, verified (`amount = usage × pinned price`), and capped by `--max-request-usd`. Introspection: `/router/catalog`, `/router/advice`, `/router/receipts`.
 

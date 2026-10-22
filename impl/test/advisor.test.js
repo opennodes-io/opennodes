@@ -2,7 +2,7 @@
 // the registry endpoint, the stdio-MCP privacy path, and gateway onp/auto routing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractFeatures, recommend, detectLanguage } from '@opennodes/core';
+import { extractFeatures, recommend, detectLanguage, inJurisdiction, jurisdictionCountries } from '@opennodes/core';
 import { startFixtureNode } from '@opennodes/fixture-node';
 import { startRegistry } from '@opennodes/registry';
 import { startGateway } from '@opennodes/cli/src/gateway.js';
@@ -115,4 +115,42 @@ test('registry /v0/recommend, MCP recommend, and gateway onp/auto route to the f
   const advice = await (await fetch(`${gw.origin}/gateway/advice`)).json();
   assert.equal(advice.recommendations[0].offering, 'org.opennodes.fixture/echo-1');
   assert.ok(!JSON.stringify(advice.features).includes('ping'));
+});
+
+test('jurisdiction: EEA filter in the advisor and in registry search; local always qualifies', async (t) => {
+  assert.equal(jurisdictionCountries('eea').has('FI'), true);
+  assert.equal(jurisdictionCountries('eu').has('NO'), true, 'eu is an alias for the EEA');
+  assert.equal(jurisdictionCountries('eea').has('GB'), false);
+  assert.deepEqual([...jurisdictionCountries('de, fi')], ['DE', 'FI']);
+  assert.equal(inJurisdiction({ jurisdiction: { country: 'pl' } }, 'eea'), true);
+  assert.equal(inJurisdiction({ jurisdiction: { country: null } }, 'eea'), false, 'undeclared counts as outside');
+  assert.equal(inJurisdiction({}, null), true, 'no filter, no restriction');
+
+  const base = { modality: 'text', tier: 'verified', serving: { context_window: 8192 }, pricing: { input_per_mtok: 0, output_per_mtok: 0, currency: 'USD' }, observed: {} };
+  const offerings = [
+    { ...base, node_id: 'io.example.fi', offering_id: 'a', jurisdiction: { country: 'FI' } },
+    { ...base, node_id: 'com.example.us', offering_id: 'b', jurisdiction: { country: 'US' } },
+    { ...base, node_id: 'import.catalog', offering_id: 'c', jurisdiction: { country: null } },
+    { ...base, node_id: 'local', offering_id: 'd', local: { run: 'ollama run d' } },
+  ];
+  const r = recommend(offerings, extractFeatures('summarize this note'), { jurisdiction: 'eea', limit: 10 });
+  assert.deepEqual(r.recommendations.map((x) => x.node_id).sort(), ['io.example.fi', 'local']);
+  assert.equal(r.rejected.jurisdiction, 2);
+  assert.ok(r.recommendations.find((x) => x.node_id === 'io.example.fi').reasons.some((s) => s.includes('operator in FI (EEA)')));
+
+  // registry search: the fixture's operator declares DE
+  const node = await startFixtureNode();
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  t.after(async () => { await node.close(); await registry.close(); });
+  const reg = await (await fetch(`${registry.origin}/v0/nodes`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ card_url: `${node.origin}/.well-known/open-node.json` }),
+  })).json();
+  node.setChallenge(reg.challenge.token);
+  await fetch(`${registry.origin}${reg.challenge.verify}`, { method: 'POST' });
+  const search = async (qs) => (await (await fetch(`${registry.origin}/v0/offerings?${qs}`)).json()).offerings.map((o) => o.node_id);
+  assert.deepEqual(await search('jurisdiction=eea'), ['org.opennodes.fixture']);
+  assert.deepEqual(await search('jurisdiction=US,GB'), []);
+  const one = (await (await fetch(`${registry.origin}/v0/offerings`)).json()).offerings[0];
+  assert.deepEqual(one.jurisdiction, { country: 'DE', regions: one.jurisdiction.regions });
 });

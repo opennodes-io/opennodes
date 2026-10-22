@@ -9,7 +9,9 @@ import { OnpClient } from './client.js';
 const CACHE_TTL_MS = 30_000;
 // Advisor-routed virtual models (the ONP answer to openrouter/auto). Routing runs
 // locally on the gateway's cached catalog: the prompt never leaves the machine.
-const AUTO_MODELS = { 'onp/auto': null, 'onp/auto-cheap': 'cheap', 'onp/auto-fast': 'fast', 'onp/auto-quality': 'quality', 'onp/auto-private': 'private' };
+const AUTO_MODELS = { 'onp/auto': null, 'onp/auto-cheap': 'cheap', 'onp/auto-fast': 'fast', 'onp/auto-quality': 'quality', 'onp/auto-private': 'private', 'onp/auto-eu': null };
+// onp/auto-eu: only operators that declare an EU/EEA country (ONP-2 node.operator.country).
+const AUTO_JURISDICTION = { 'onp/auto-eu': 'eea' };
 
 // Standard provider key variables. A key found here is sent only to its own host,
 // and makes that host's imported listings eligible for onp/auto routing.
@@ -102,6 +104,7 @@ export async function startGateway({
         preset, limit: 5,
         min_tier: preset === 'private' ? 'community' : policy.min_tier,
         max_input_per_mtok: policy.max_input_per_mtok,
+        jurisdiction: AUTO_JURISDICTION[modelId] ?? policy.jurisdiction,
         prefer_local: preset === 'private',
       });
       lastAdvice = { model: modelId, features, recommendations: result.recommendations.map((r) => ({ offering: r.offering, score: r.score, reasons: r.reasons })) };

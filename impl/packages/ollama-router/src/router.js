@@ -3,7 +3,7 @@
 //   lan    : other machines (plain Ollama servers or ONP nodes), static peers + mDNS
 //   public : OpenNodes registry offerings (verified providers, pinned prices, signed receipts)
 // Routes: Ollama native API (/api/*) with streaming translation, OpenAI /v1, and advisor
-// models auto | auto-cheap | auto-fast | auto-quality | auto-private (never leaves the LAN).
+// models auto | auto-cheap | auto-fast | auto-quality | auto-private (never leaves the LAN) | auto-eu.
 import { appendFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
@@ -18,7 +18,9 @@ import {
 } from './translate.js';
 import { probePeer, browseMdns } from './discovery.js';
 
-const AUTO = { auto: null, 'auto-cheap': 'cheap', 'auto-fast': 'fast', 'auto-quality': 'quality', 'auto-private': 'private' };
+const AUTO = { auto: null, 'auto-cheap': 'cheap', 'auto-fast': 'fast', 'auto-quality': 'quality', 'auto-private': 'private', 'auto-eu': null };
+// auto-eu: your own machines plus public operators that declare an EU/EEA country.
+const AUTO_JURISDICTION = { 'auto-eu': 'eea' };
 const LOCAL_TTL = 30_000, PUBLIC_TTL = 60_000;
 const VERSION = '0.1.0';
 // Ollama clients slice digest[:12] for display: synthesized entries need a real-looking one.
@@ -149,6 +151,7 @@ export async function startOllamaRouter({
       const pool = preset === 'private' ? await localEntries() : await catalog();
       const result = recommend(pool.map((e) => e.offering), features, {
         preset, limit: 5, prefer_local: true, max_total_usd: pol.max_request_usd, region: pol.region,
+        jurisdiction: AUTO_JURISDICTION[name] ?? pol.jurisdiction,
       });
       const byKey = new Map(pool.map((e) => [`${e.offering.node_id}/${e.offering.offering_id}`, e]));
       const chosen = result.recommendations.map((r) => byKey.get(r.offering)).filter(Boolean);
@@ -297,7 +300,7 @@ export async function startOllamaRouter({
   const autoTags = () => Object.keys(AUTO).map((name) => ({
     name, model: name, modified_at: STARTED_AT, size: 0, digest: digestOf(name),
     details: { parent_model: '', format: 'onp', family: 'advisor', families: ['advisor'], parameter_size: '', quantization_level: '' },
-    onp: { tier: 'advisor', note: name === 'auto-private' ? 'routes only to local and LAN models' : 'routes by the OpenNodes advisor' },
+    onp: { tier: 'advisor', note: name === 'auto-private' ? 'routes only to local and LAN models' : name === 'auto-eu' ? 'routes to local, LAN and EU/EEA operators only' : 'routes by the OpenNodes advisor' },
   }));
 
   async function proxyLocal(req, res, path) {

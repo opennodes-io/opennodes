@@ -219,6 +219,7 @@
   <div class="toolbar">
     <input type="text" id="f-q" placeholder="Search models, families, nodes…">
     <span class="switchrow" id="f-verified" title="identity-fingerprinted · context-verified · continuously probed"><span class="switch"></span><b style="font-size:0.78rem">Verified only</b></span>
+    <span class="switchrow" id="f-eea" title="operators that declare a country in the EU, Iceland, Liechtenstein or Norway; imported listings declare none"><span class="switch"></span><b style="font-size:0.78rem">EU/EEA</b></span>
     <select id="f-modality">
       <option value="">any modality</option>
       <option>text</option><option>multimodal</option><option>image</option>
@@ -236,6 +237,7 @@
     <div class="toolbar" style="margin-top:0.4rem">
       <select id="adv-preset"><option value="">balanced</option><option value="cheap">cheapest</option><option value="fast">fastest</option><option value="quality">best quality</option><option value="private">privacy-first</option></select>
       <span class="switchrow" id="adv-verified"><span class="switch"></span><b style="font-size:0.78rem">Verified only</b></span>
+      <span class="switchrow" id="adv-eea" title="only operators that declare an EU/EEA country"><span class="switch"></span><b style="font-size:0.78rem">EU/EEA</b></span>
       <button class="btn" id="adv-go">Recommend</button>
       <span class="prov">Deterministic: same catalog + task + policy → same answer, with the score components shown. The <code>onp mcp</code> / gateway advisors extract features locally and never send your prompt; this box sends the text to this registry.</span>
     </div>
@@ -556,6 +558,7 @@ document.querySelectorAll('.toggle').forEach((b) => b.addEventListener('click', 
   b.classList.toggle('on'); b.classList.contains('on') ? sup.add(b.dataset.sup) : sup.delete(b.dataset.sup); search();
 }));
 $('#f-verified').addEventListener('click', () => { $('#f-verified').classList.toggle('on'); search(); });
+$('#f-eea').addEventListener('click', () => { $('#f-eea').classList.toggle('on'); search(); });
 let debounce;
 for (const id of ['f-q', 'f-price']) $('#' + id).addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(search, 250); });
 for (const id of ['f-modality', 'f-sort']) $('#' + id).addEventListener('change', search);
@@ -608,6 +611,7 @@ async function search() {
   if ($('#f-q').value) p.set('q', $('#f-q').value);
   if ($('#f-modality').value) p.set('modality', $('#f-modality').value);
   if ($('#f-verified').classList.contains('on')) p.set('tier', 'verified');
+  if ($('#f-eea').classList.contains('on')) p.set('jurisdiction', 'eea');
   if ($('#f-price').value) p.set('max_input_price', $('#f-price').value);
   if (sup.size) p.set('supports', [...sup].join(','));
   p.set('sort', $('#f-sort').value);
@@ -630,6 +634,7 @@ async function search() {
 
 /* ---------- advisor (ONP-3 §5b) ---------- */
 $('#adv-verified').addEventListener('click', () => $('#adv-verified').classList.toggle('on'));
+$('#adv-eea').addEventListener('click', () => $('#adv-eea').classList.toggle('on'));
 $('#adv-go').addEventListener('click', runAdvisor);
 $('#adv-task').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) runAdvisor(); });
 async function runAdvisor() {
@@ -638,6 +643,7 @@ async function runAdvisor() {
   const policy = { limit: 3 };
   if ($('#adv-preset').value) policy.preset = $('#adv-preset').value;
   if ($('#adv-verified').classList.contains('on')) policy.min_tier = 'verified';
+  if ($('#adv-eea').classList.contains('on')) policy.jurisdiction = 'eea';
   $('#adv-out').innerHTML = '<p class="sub">ranking…</p>';
   try {
     const r = await api('/v0/recommend', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ task, policy }) });
