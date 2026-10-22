@@ -1,6 +1,6 @@
 # An OpenNodes reference node: the Python Node Kit in front of an Ollama engine.
 FROM python:3.12-slim
-RUN apt-get update -qq && apt-get install -y -qq curl >/dev/null && pip install --no-cache-dir "onp-node==0.1.5" && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -qq && apt-get install -y -qq curl >/dev/null && pip install --no-cache-dir "onp-node==0.1.6" && rm -rf /var/lib/apt/lists/*
 WORKDIR /data
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

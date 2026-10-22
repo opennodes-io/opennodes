@@ -20,6 +20,9 @@ country = "DE"
 base_url = "{engine_base}"
 # Optional: offer only a subset of the engine's models, e.g.:
 # models = ["gemma4:latest"]
+# Optional: seconds to wait for the engine per request (default 300; CPU-only engines need
+# minutes to read long prompts)
+# timeout_s = 300
 
 [serving]
 context_window = 8192

@@ -21,8 +21,11 @@ def _approx_tokens(text: str) -> int:
 
 
 class NodeKitServer:
-    def __init__(self, card: dict, private_key, engine_base: str, challenge_file=None):
+    def __init__(self, card: dict, private_key, engine_base: str, challenge_file=None, engine_timeout_s: float = 300):
         self.key = private_key
+        # CPU-only engines need minutes to read a long prompt; too short a limit turns a
+        # registry context probe into a 504 instead of a measurement.
+        self.engine_timeout_s = float(engine_timeout_s)
         self.card = sign_card(card, private_key)
         self.engine_base = engine_base.rstrip("/")
         self.challenge_file = challenge_file
@@ -191,7 +194,7 @@ class NodeKitServer:
         return app
 
     async def _open_session(self, _app):
-        self.session = ClientSession(timeout=ClientTimeout(total=120))
+        self.session = ClientSession(timeout=ClientTimeout(total=self.engine_timeout_s))
 
     async def _close_session(self, _app):
         if self.session:

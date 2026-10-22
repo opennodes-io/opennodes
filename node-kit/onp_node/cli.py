@@ -76,7 +76,8 @@ def make_server() -> tuple[NodeKitServer, dict]:
             raise SystemExit(f"config lists models the engine does not serve: {missing}")
         models = [m for m in models if m in include]
     card = stable_revision(build_card(cfg, models), REVISION_STATE)
-    return NodeKitServer(card, key, cfg["engine"]["base_url"], challenge_file=CHALLENGE), cfg
+    return NodeKitServer(card, key, cfg["engine"]["base_url"], challenge_file=CHALLENGE,
+                         engine_timeout_s=cfg["engine"].get("timeout_s", 300)), cfg
 
 
 def _advertise_mdns(node_id: str, public_url: str, port: int):
