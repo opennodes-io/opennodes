@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 
 export function problem(res, status, type, detail) {
   res.writeHead(status, { 'content-type': 'application/problem+json' });
-  res.end(JSON.stringify({ type: `https://opennodes.org/problems/${type}`, title: type, status, detail }));
+  res.end(JSON.stringify({ type: `https://opennodes.io/problems/${type}`, title: type, status, detail }));
 }
 
 export function sendJson(res, status, body, headers = {}) {

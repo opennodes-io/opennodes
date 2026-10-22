@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Problem types — OpenNodes</title>
+<meta name="description" content="The RFC 9457 problem types that OpenNodes registries, nodes and gateways return, by name and HTTP status.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🛰️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #F7F9FA; --panel: #FFFFFF; --panel-2: #EEF2F4;
+    --ink: #1C2733; --muted: #5C6E7E; --line: #D6DEE3;
+    --accent: #0F7A80; --accent-soft: #E0EFF0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #101820; --panel: #16202A; --panel-2: #1C2833;
+      --ink: #E4EBF0; --muted: #8FA1B0; --line: #2C3B48;
+      --accent: #4FC0C6; --accent-soft: #12333A;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 1.05rem; line-height: 1.62;
+  }
+  .wrap { max-width: 46rem; margin: 0 auto; padding: 0 1.25rem; }
+  h1, h2 { font-family: "Archivo", "Helvetica Neue", Arial, sans-serif; line-height: 1.12; text-wrap: balance; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  code { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; font-size: 0.85em; background: var(--panel-2); padding: 0.08em 0.35em; border-radius: 3px; }
+  pre { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.9rem 1.1rem; overflow-x: auto; font-size: 0.82rem; line-height: 1.5; }
+  pre code { background: none; padding: 0; font-size: 1em; }
+  .eyebrow { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 0 0 0.4rem; }
+  nav.top { font-family: "Archivo", sans-serif; font-size: 0.9rem; padding: 1rem 0; border-bottom: 1px solid var(--line); }
+  nav.top a { margin-right: 1.2rem; text-decoration: none; }
+  header.hero { padding: 3rem 0 2rem; border-bottom: 1px solid var(--line); }
+  .hero h1 { font-size: 2.4rem; font-weight: 700; letter-spacing: -0.02em; margin: 0.4rem 0 1rem; }
+  section { padding: 2.2rem 0; border-bottom: 1px solid var(--line); }
+  section h2 { font-size: 1.3rem; margin: 0 0 0.8rem; }
+  .probs { display: flex; flex-direction: column; gap: 0.4rem; }
+  .prob { display: grid; grid-template-columns: 13rem 3rem 1fr; gap: 0.8rem; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); padding: 0.6rem 0.9rem; align-items: baseline; scroll-margin-top: 1rem; }
+  .prob:target, .prob.hit { border-color: var(--accent); background: var(--accent-soft); }
+  .prob .k { font-family: "IBM Plex Mono", monospace; font-size: 0.8rem; font-weight: 600; color: var(--accent); overflow-wrap: anywhere; }
+  .prob .s { font-family: "IBM Plex Mono", monospace; font-size: 0.8rem; color: var(--muted); }
+  .prob .d { font-size: 0.92rem; color: var(--muted); font-family: "Archivo", sans-serif; }
+  @media (max-width: 560px) { .prob { grid-template-columns: 1fr auto; gap: 0.15rem 0.8rem; } .prob .d { grid-column: 1 / -1; } .hero h1 { font-size: 2rem; } }
+  footer { padding: 2.2rem 0 3rem; font-family: "Archivo", sans-serif; font-size: 0.85rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<nav class="top"><div class="wrap"><a href="/">OpenNodes</a><a href="https://registry.opennodes.io/">Registry</a><a href="/integrations">Integrations</a><a href="/about">About &amp; privacy</a><a href="https://github.com/opennodes-io/opennodes">GitHub</a></div></nav>
+<header class="hero"><div class="wrap">
+  <p class="eyebrow">Problem types</p>
+  <h1>Errors, by name</h1>
+  <p>OpenNodes registries, nodes and gateways report errors as RFC 9457 problem details (<code>application/problem+json</code>). The <code>type</code> is <code>https://opennodes.io/problems/{name}</code>, the <code>title</code> is the bare name, and <code>detail</code> says what went wrong in this case. Match on <code>title</code>.</p>
+<pre><code>HTTP/1.1 409 Conflict
+Content-Type: application/problem+json
+
+{"type": "https://opennodes.io/problems/price_changed", "title": "price_changed",
+ "status": 409, "detail": "pinned 7, current 8"}</code></pre>
+</div></header>
+
+<section id="invocation"><div class="wrap">
+  <h2>Nodes (ONP-4 invocation)</h2>
+  <div class="probs">
+    <div class="prob" id="price_changed"><span class="k">price_changed</span><span class="s">409</span><span class="d">The <code>ONP-Card-Revision</code> you priced against was superseded by one with different pricing. Re-fetch the card, re-check your spend policy, retry.</span></div>
+    <div class="prob" id="offering-mismatch"><span class="k">offering-mismatch</span><span class="s">409</span><span class="d">The <code>ONP-Offering</code> header no longer names the model behind this endpoint.</span></div>
+    <div class="prob" id="model-not-found"><span class="k">model-not-found</span><span class="s">404</span><span class="d">No offering (or, at a gateway, no registry match) for the requested <code>model</code>.</span></div>
+    <div class="prob" id="engine-error"><span class="k">engine-error</span><span class="s">502</span><span class="d">The node's inference engine returned an error.</span></div>
+    <div class="prob" id="bad-json"><span class="k">bad-json</span><span class="s">400</span><span class="d">The request body is not JSON.</span></div>
+    <div class="prob" id="unknown-receipt"><span class="k">unknown-receipt</span><span class="s">404</span><span class="d">No receipt with that id on this node.</span></div>
+    <div class="prob" id="unknown-challenge"><span class="k">unknown-challenge</span><span class="s">404</span><span class="d">No pending registration challenge with that token.</span></div>
+  </div>
+</div></section>
+
+<section id="registry"><div class="wrap">
+  <h2>Registry (ONP-3)</h2>
+  <div class="probs">
+    <div class="prob" id="namespace-mismatch"><span class="k">namespace-mismatch</span><span class="s">403</span><span class="d">The card's reverse-DNS node id maps to a domain that the host serving the card does not control.</span></div>
+    <div class="prob" id="rate-limited"><span class="k">rate-limited</span><span class="s">429</span><span class="d">Too many registration or verification attempts from this address.</span></div>
+    <div class="prob" id="unknown-node"><span class="k">unknown-node</span><span class="s">404</span><span class="d">No node with that id in this registry.</span></div>
+    <div class="prob" id="unknown-offering"><span class="k">unknown-offering</span><span class="s">404</span><span class="d">No offering with that <code>node_id/offering_id</code>.</span></div>
+    <div class="prob" id="missing-card-url"><span class="k">missing-card-url</span><span class="s">400</span><span class="d">Registration body must be <code>{"card_url": "…"}</code>.</span></div>
+    <div class="prob" id="bad-probe-key"><span class="k">bad-probe-key</span><span class="s">400</span><span class="d"><code>probe_key</code> must be a string.</span></div>
+    <div class="prob" id="card-unfetchable"><span class="k">card-unfetchable</span><span class="s">422</span><span class="d">The registry could not fetch the node card.</span></div>
+    <div class="prob" id="card-invalid"><span class="k">card-invalid</span><span class="s">422</span><span class="d">The node card does not validate against the ONP-2 schema.</span></div>
+    <div class="prob" id="challenge-expired"><span class="k">challenge-expired</span><span class="s">410</span><span class="d">The registration challenge expired; register again.</span></div>
+    <div class="prob" id="challenge-failed"><span class="k">challenge-failed</span><span class="s">403</span><span class="d">Neither the HTTP nor the DNS TXT challenge was satisfied.</span></div>
+    <div class="prob" id="refresh-failed"><span class="k">refresh-failed</span><span class="s">422</span><span class="d">Re-fetching the node's card failed.</span></div>
+    <div class="prob" id="wrong-state"><span class="k">wrong-state</span><span class="s">409</span><span class="d">The node is not in the tier this step requires (Stage B needs community).</span></div>
+    <div class="prob" id="admission-cooldown"><span class="k">admission-cooldown</span><span class="s">429</span><span class="d">Stage B ran recently for this node; <code>detail</code> says when the next run is allowed.</span></div>
+    <div class="prob" id="stale-card"><span class="k">stale-card</span><span class="s">409</span><span class="d">The node changed its card revision during the qualification battery; retry.</span></div>
+    <div class="prob" id="not-delisted"><span class="k">not-delisted</span><span class="s">409</span><span class="d">Only a delisted node can be restored.</span></div>
+    <div class="prob" id="register-again"><span class="k">register-again</span><span class="s">409</span><span class="d">A registered node returns by registering again (<code>POST /v0/nodes</code>).</span></div>
+    <div class="prob" id="missing-steps"><span class="k">missing-steps</span><span class="s">400</span><span class="d">Estimate body must be <code>{"steps": […]}</code>.</span></div>
+    <div class="prob" id="bad-step"><span class="k">bad-step</span><span class="s">400</span><span class="d">Each estimate step needs <code>offering</code> or <code>select</code>.</span></div>
+    <div class="prob" id="no-offering-matches"><span class="k">no-offering-matches</span><span class="s">404</span><span class="d">No offering matches the step's <code>select</code>.</span></div>
+    <div class="prob" id="missing-task"><span class="k">missing-task</span><span class="s">400</span><span class="d">Recommend body must carry <code>task</code> (text) or <code>features</code>.</span></div>
+    <div class="prob" id="missing-catalog"><span class="k">missing-catalog</span><span class="s">400</span><span class="d">Import body must carry <code>{catalog}</code> or <code>{url}</code>.</span></div>
+    <div class="prob" id="method-not-allowed"><span class="k">method-not-allowed</span><span class="s">405</span><span class="d">The MCP endpoint is stateless: POST JSON-RPC messages to it.</span></div>
+  </div>
+</div></section>
+
+<section id="gateway"><div class="wrap">
+  <h2>Gateways and routers</h2>
+  <div class="probs">
+    <div class="prob" id="no-callable-offerings"><span class="k">no-callable-offerings</span><span class="s">404</span><span class="d">Something matches the auto-routing model, but nothing this gateway can call: free registered nodes need no key, imported catalogs need a provider key.</span></div>
+    <div class="prob" id="all-candidates-failed"><span class="k">all-candidates-failed</span><span class="s">502</span><span class="d">Every candidate offering failed; <code>detail</code> lists each error.</span></div>
+    <div class="prob" id="not-implemented"><span class="k">not-implemented</span><span class="s">501</span><span class="d">The gateway does not serve this profile yet.</span></div>
+  </div>
+</div></section>
+
+<section id="common"><div class="wrap">
+  <h2>Common</h2>
+  <div class="probs">
+    <div class="prob" id="unauthorized"><span class="k">unauthorized</span><span class="s">401</span><span class="d">Missing or wrong bearer token.</span></div>
+    <div class="prob" id="forbidden"><span class="k">forbidden</span><span class="s">403</span><span class="d">The route is loopback-only without an admin token.</span></div>
+    <div class="prob" id="not-found"><span class="k">not-found</span><span class="s">404</span><span class="d">No route for this method and path.</span></div>
+    <div class="prob" id="internal-error"><span class="k">internal-error</span><span class="s">500</span><span class="d">Unexpected server error.</span></div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">OpenNodes Protocol · spec CC-BY-4.0, code Apache-2.0 · <a href="https://github.com/opennodes-io/opennodes">github.com/opennodes-io/opennodes</a></div></footer>
+<script>
+  // /problems/{name} is redirected here as /problems/#{name}; highlight it.
+  const name = decodeURIComponent(location.hash.slice(1) || location.pathname.replace(/^\/problems\/?/, '').replace(/\/$/, ''));
+  const el = name && document.getElementById(name);
+  if (el) { el.classList.add('hit'); el.scrollIntoView(); }
+</script>
+</body>
+</html>

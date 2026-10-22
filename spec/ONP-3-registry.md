@@ -27,7 +27,7 @@ A registry is any service implementing this API. The architecture copies what wo
 | `GET /v0/attestations?subject=…` | VCs known for a node/offering |
 | `GET /v0/health` | Registry self-description: ONP versions, ranking components (§6), federation peers (§8), fee policy |
 
-Errors follow RFC 9457 (`application/problem+json`).
+Errors follow RFC 9457 (`application/problem+json`). The `type` member is `https://opennodes.io/problems/{name}` and `title` is the bare `{name}` (e.g. `unknown-node`, `namespace-mismatch`, `rate-limited`); clients SHOULD match on `title`. The names in use are listed at `https://opennodes.io/problems/`.
 
 ## 3. Registration lifecycle
 

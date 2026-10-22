@@ -39,6 +39,8 @@ Every text-modality ONP Node MUST implement this profile for at least one offeri
 | `ONP-Card-Revision` | request | Card revision the client priced against; node MUST 409 (`price_changed`) if superseded by a revision with different pricing for the offering |
 | `ONP-Receipt` | response | URL or inline JWS of the usage receipt (ONP-5 §5) |
 
+Both 409s are RFC 9457 problems (ONP-3 §2): `type` `https://opennodes.io/problems/offering-mismatch` or `https://opennodes.io/problems/price_changed`, `title` the bare name.
+
 These three headers are the whole "protocol": they pin *what* you think you're calling and *at what price*, which plain OpenAI-compatibility cannot express.
 
 ## 3. `onp.openai.responses/v1`

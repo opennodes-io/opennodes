@@ -34,7 +34,7 @@ Card block:
   "schemes": [
     {"scheme": "x402", "networks": ["base", "solana"], "asset": "USDC"},
     {"scheme": "prepaid", "signup": "https://example-lab.ai/keys",
-     "settlement_registry": "https://registry.opennodes.org"},
+     "settlement_registry": "https://registry.opennodes.io"},
     {"scheme": "free"}
   ],
   "probe_allowance": {"requests_per_day": 200}

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://opennodes.org/schemas/0.1/open-node.schema.json",
+  "$id": "https://opennodes.io/schemas/0.1/open-node.schema.json",
   "title": "OpenNodes Node Card",
   "type": "object",
   "required": ["onp", "revision", "node", "endpoints", "offerings", "payment"],

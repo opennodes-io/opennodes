@@ -36,7 +36,7 @@ class NodeKitServer:
     # -- helpers -------------------------------------------------------------
     def _problem(self, status, type_, detail):
         return web.json_response(
-            {"type": f"https://opennodes.org/problems/{type_}", "title": type_,
+            {"type": f"https://opennodes.io/problems/{type_}", "title": type_,
              "status": status, "detail": detail},
             status=status, content_type="application/problem+json")
 
