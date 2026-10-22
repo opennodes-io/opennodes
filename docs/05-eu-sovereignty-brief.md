@@ -30,11 +30,11 @@ Europe is building inference capacity in many places at once — EuroHPC AI Fact
 - **AI Factories and Antennas:** a common discovery and verification layer for the inference services they expose, so users can find, compare and call them through one open interface; reference fingerprints for open-weight models could be computed on EuroHPC systems.
 - **Sovereign and regional clouds:** a free, neutral channel to be found and verified — with measured performance and disclosed hardware — without a broker taking a cut or sitting in the traffic.
 - **Data spaces (Gaia-X / Simpl):** ONP self-descriptions plus verification are close in spirit to Gaia-X self-descriptions; a mapping is future work.
-- **European models:** the registry lists European models wherever providers serve them — Mistral (370+ offerings) and Poland's Bielik today — and the EU filter keeps traffic with EEA operators.
+- **European models:** the registry lists European models wherever providers serve them — Mistral (370+ offerings) and Poland's Bielik today — and the EU filter keeps traffic with EEA operators. The project's own Finnish reference node serves **Bielik 1.5B v3** (SpeakLeash, Apache-2.0), fully verified: identity matched, the whole 8,192-token context window passed the retrieval test, about 35 tokens/s under load on two CPU cores.
 
 ## Status today
 
-- Hosted registry at registry.opennodes.io (Hetzner, Nuremberg, Germany): ~10,000 offerings from ~250 providers imported from public catalogs (shown as unverified until claimed), plus verified reference nodes in Germany and Finland. The static website is served by Cloudflare.
+- Hosted registry at registry.opennodes.io (Hetzner, Nuremberg, Germany): ~10,000 offerings from ~250 providers imported from public catalogs (shown as unverified until claimed), plus verified reference nodes in Germany (Llama 3.2 1B) and Finland (Bielik 1.5B v3, a Polish open model). The static website is served by Cloudflare.
 - Published packages: MCP server and OpenAI-compatible gateway (`@opennodes/cli`), Ollama router, self-hostable registry, Python Node Kit for operators. Listed in the official MCP Registry.
 - Independent open-source project; a European legal entity is planned for commercial agreements and programme participation.
 
