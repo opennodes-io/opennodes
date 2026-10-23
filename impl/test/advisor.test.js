@@ -2,7 +2,8 @@
 // the registry endpoint, the stdio-MCP privacy path, and gateway onp/auto routing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractFeatures, recommend, detectLanguage, inJurisdiction, jurisdictionCountries, parseAutoModel } from '@opennodes/core';
+import { extractFeatures, recommend, detectLanguage, inJurisdiction, jurisdictionCountries, parseAutoModel, responseBudgetMs, fetchWithin } from '@opennodes/core';
+import http from 'node:http';
 import { startFixtureNode } from '@opennodes/fixture-node';
 import { startRegistry } from '@opennodes/registry';
 import { startGateway } from '@opennodes/cli/src/gateway.js';
@@ -193,4 +194,25 @@ test('auto model names: presets, EU/EEA and any country code', async (t) => {
   });
   assert.equal(res.status, 404);
   assert.match((await res.json()).type ?? '', /no-callable-offerings/);
+});
+
+test('failover budget: adaptive to measured latency and request size, bounded', () => {
+  const fast = { observed: { ttft_ms: { p50: 300, p95: 800 }, tps: 50 } };
+  assert.equal(responseBudgetMs(fast, { stream: true }), 15_000, 'quick node: the floor applies');
+  const slow = { observed: { ttft_ms: { p95: 20_000 }, tps: 5 } };
+  assert.equal(responseBudgetMs(slow, { stream: true }), 60_000, '3 x p95 time to first token');
+  assert.equal(responseBudgetMs(slow, { stream: false, maxTokens: 100 }), 90_000, 'non-streamed adds expected generation time');
+  assert.ok(responseBudgetMs(slow, { stream: true, promptTokens: 2000 }) > 60_000, 'long prompts get more time');
+  assert.equal(responseBudgetMs(slow, { stream: false, maxTokens: 4000 }), 180_000, 'capped at 3 minutes');
+  assert.equal(responseBudgetMs({}, { stream: true }), 30_000, 'unmeasured: 10 s assumed time to first token');
+  assert.equal(responseBudgetMs({ serving: { expected_ttft_ms: { p95: 7000 } } }, { stream: true }), 21_000, 'declared latency when not measured');
+});
+
+test('fetchWithin gives up on a node that never answers', async (t) => {
+  const server = http.createServer(() => { /* hang */ });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  t.after(() => { server.closeAllConnections?.(); server.close(); });
+  const t0 = performance.now();
+  await assert.rejects(fetchWithin(`http://127.0.0.1:${server.address().port}/`, {}, 300), /no response within/);
+  assert.ok(performance.now() - t0 < 3000);
 });

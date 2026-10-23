@@ -120,3 +120,15 @@ test('router: local + LAN + public catalog; native chat via ONP translated and r
   assert.equal(refused.status, 502);
   assert.match((await refused.json()).error, /max_request_usd/);
 });
+
+test('router: models: [...] fallback list on the OpenAI surface', async (t) => {
+  const local = await startFakeOllama();
+  const router = await startOllamaRouter({ port: 0, ollama: local.origin, mdns: false, log: () => {} });
+  t.after(async () => { await router.close(); await local.close(); });
+  const res = await fetch(`${router.origin}/v1/chat/completions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'missing:latest', models: ['tiny:latest'], messages: [{ role: 'user', content: 'fb' }] }),
+  });
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).choices[0].message.content, 'v1:fb');
+});

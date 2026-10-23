@@ -144,3 +144,16 @@ test('onp/auto with nothing callable explains how to add keys', async (t) => {
   const body = await res.json();
   assert.match(JSON.stringify(body), /OPENROUTER_API_KEY/);
 });
+
+test('models: [...] fallback list (OpenRouter-compatible) tries the next model', async (t) => {
+  const { registry } = await setupNetwork(t);
+  const gw = await startGateway({ port: 0, registry: registry.origin });
+  t.after(() => gw.close());
+
+  const res = await fetch(`${gw.origin}/v1/chat/completions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'nope/nothing', models: ['also/missing', 'org.opennodes.fixture/echo-1'], messages: [{ role: 'user', content: 'fallback' }] }),
+  });
+  assert.equal(res.status, 200);
+  assert.match((await res.json()).choices[0].message.content, /^echo: fallback/);
+});

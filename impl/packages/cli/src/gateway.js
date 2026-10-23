@@ -3,7 +3,7 @@
 // does discovery, policy, revision pinning, price_changed recovery, fallback, and receipts.
 import { appendFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
-import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend, parseAutoModel, AUTO_MODEL_NAMES } from '@opennodes/core';
+import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend, parseAutoModel, AUTO_MODEL_NAMES, responseBudgetMs, fetchWithin } from '@opennodes/core';
 import { OnpClient } from './client.js';
 
 const CACHE_TTL_MS = 30_000;
@@ -157,7 +157,15 @@ export async function startGateway({
     // BYOK: attach the operator's key for this upstream host (imported catalogs
     // like OpenRouter/HF need their own credentials; ONP nodes may need none).
     const upstreamKey = creds[new URL(offering.endpoints.openai).hostname];
-    const upstream = await fetch(`${offering.endpoints.openai}/chat/completions`, {
+    // Give up on this node if it hasn't started answering within a budget built from its measured
+    // latency and the request size, so failover reaches the next candidate quickly.
+    const { models: _fallbacks, ...upstreamBody } = body;   // the fallback list is ours, not the node's
+    const budgetMs = responseBudgetMs(offering, {
+      stream: Boolean(body.stream),
+      promptTokens: Math.ceil(JSON.stringify(body.messages ?? '').length / 4),
+      maxTokens: body.max_tokens ?? body.max_completion_tokens ?? 512,
+    });
+    const upstream = await fetchWithin(`${offering.endpoints.openai}/chat/completions`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -165,9 +173,8 @@ export async function startGateway({
         'onp-card-revision': offering.card_revision,
         ...(upstreamKey ? { authorization: `Bearer ${upstreamKey}` } : {}),
       },
-      body: JSON.stringify({ ...body, model: offering.binding.model_id }),
-      signal: AbortSignal.timeout(120_000),
-    });
+      body: JSON.stringify({ ...upstreamBody, model: offering.binding.model_id }),
+    }, budgetMs);
 
     if (upstream.status === 409) return { retryPricing: true };
     if (!upstream.ok) return { failed: `upstream ${upstream.status}` };
@@ -224,6 +231,17 @@ export async function startGateway({
       if (!authed(req, res)) return;
       const body = await readJson(req, 10_000_000);
       const candidates = await resolve(body.model, body);
+      // OpenRouter-compatible fallback list: `models: [...]` adds further models to try, in order.
+      if (Array.isArray(body.models)) {
+        const seen = new Set(candidates.map((o) => `${o.node_id}/${o.offering_id}`));
+        for (const m of body.models.slice(0, 10)) {
+          if (typeof m !== 'string' || m === body.model) continue;
+          for (const o of await resolve(m, body)) {
+            const key = `${o.node_id}/${o.offering_id}`;
+            if (!seen.has(key)) { seen.add(key); candidates.push(o); }
+          }
+        }
+      }
       if (!candidates.length && (parseAutoModel(body.model, 'onp/') || virtuals[body.model])) {
         return problem(res, 404, 'no-callable-offerings',
           `nothing in the registry matches ${body.model} that this gateway can call: free registered nodes need no key; ` +
@@ -246,6 +264,7 @@ export async function startGateway({
         } catch (err) {
           errors.push(`${candidates[i].node_id}/${candidates[i].offering_id}: ${err.message}`);
         }
+        if (res.headersSent) return res.end();   // a stream started and broke: nothing more we can send
       }
       problem(res, 502, 'all-candidates-failed', errors.join(' | '));
     }],

@@ -240,6 +240,34 @@ export function inJurisdiction(offering, spec) {
   return true;
 }
 
+/**
+ * How long a client should wait for an offering to *start* answering before failing over to the next
+ * candidate. Built from what the registry measured (time to first token, throughput), the prompt size,
+ * and — for non-streamed requests, whose headers only arrive once the whole answer is done — the
+ * expected generation time. Bounded to [floorMs, ceilMs]. Once a stream has started it is never cut.
+ */
+export function responseBudgetMs(offering, { stream = false, promptTokens = 0, maxTokens = 512, floorMs = 15_000, ceilMs = 180_000 } = {}) {
+  const ttft = offering?.observed?.ttft_ms?.p95 ?? (offering?.observed?.ttft_ms?.p50 ? offering.observed.ttft_ms.p50 * 2 : null)
+    ?? offering?.serving?.expected_ttft_ms?.p95 ?? 10_000;
+  const tps = (offering?.observed?.tps > 0 ? offering.observed.tps : null) ?? offering?.serving?.expected_tps?.p50 ?? 10;
+  let budget = 3 * ttft + promptTokens * 15;                    // ~15 ms per prompt token covers CPU prefill
+  if (!stream) budget += (maxTokens / tps) * 1000 * 1.5;          // the whole answer before the first byte
+  return Math.round(Math.min(ceilMs, Math.max(floorMs, budget)));
+}
+
+/** fetch() that gives up if the response hasn't *started* within budgetMs; the body may then take as long as it needs. */
+export async function fetchWithin(url, init, budgetMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error(`no response within ${Math.round(budgetMs / 1000)} s`)), budgetMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    throw controller.signal.aborted ? controller.signal.reason : err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const AUTO_PRESETS = Object.freeze({ cheap: 'cheap', fast: 'fast', quality: 'quality', private: 'private' });
 
 /** Auto-routing model names listed by the gateway and the Ollama router (any auto-<country> also works). */

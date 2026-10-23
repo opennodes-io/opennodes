@@ -10,6 +10,7 @@ import { Readable } from 'node:stream';
 import {
   createApp, listen, closeApp, sendJson, problem, readJson,
   verifyJws, keyFromJwk, costForUsage, estimateBounds, round6, extractFeatures, recommend, parseAutoModel, AUTO_MODEL_NAMES,
+  responseBudgetMs, fetchWithin,
 } from '@opennodes/core';
 import { OnpClient } from '@opennodes/cli';
 import {
@@ -201,16 +202,24 @@ export async function startOllamaRouter({
   async function onpFetch(entry, openaiBody) {
     const o = entry.offering;
     const upstreamKey = keys[new URL(o.endpoints.openai).hostname];
-    const res = await fetch(`${o.endpoints.openai}/chat/completions`, {
+    // Move on to the next candidate if this node hasn't started answering within a budget built
+    // from its measured latency and the request size. LAN nodes are rarely measured: longer floor.
+    const { models: _fallbacks, ...forwarded } = openaiBody;
+    const budgetMs = responseBudgetMs(o, {
+      stream: Boolean(openaiBody.stream),
+      promptTokens: Math.ceil(JSON.stringify(openaiBody.messages ?? openaiBody.prompt ?? '').length / 4),
+      maxTokens: openaiBody.max_tokens ?? openaiBody.max_completion_tokens ?? 512,
+      ...(entry.tier === 'public' ? {} : { floorMs: 60_000, ceilMs: 300_000 }),
+    });
+    const res = await fetchWithin(`${o.endpoints.openai}/chat/completions`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         ...(entry.tier === 'public' || entry.kind === 'onp' ? { 'onp-offering': `${o.node_id}/${o.offering_id}`, 'onp-card-revision': o.card_revision } : {}),
         ...(upstreamKey ? { authorization: `Bearer ${upstreamKey}` } : {}),
       },
-      body: JSON.stringify({ ...openaiBody, model: entry.upstreamModel }),
-      signal: AbortSignal.timeout(300_000),
-    });
+      body: JSON.stringify({ ...forwarded, model: entry.upstreamModel }),
+    }, budgetMs);
     return res;
   }
 
@@ -371,13 +380,24 @@ export async function startOllamaRouter({
     ['GET', '/v1/models', async (req, res) => sendJson(res, 200, { object: 'list', data: [...AUTO_MODEL_NAMES, ...(await catalog()).map((e) => e.name)].map((id) => ({ id, object: 'model', owned_by: 'opennodes-ollama-router' })) })],
     ['POST', '/v1/chat/completions', async (req, res) => {
       const body = await readJson(req, 50_000_000);
-      const candidates = await resolve(body.model, { messages: body.messages, maxTokens: body.max_tokens });
+      const want = { messages: body.messages, maxTokens: body.max_tokens };
+      const candidates = await resolve(body.model, want);
+      // OpenRouter-compatible fallback list: `models: [...]` adds further models to try, in order.
+      if (Array.isArray(body.models)) {
+        const keyOf = (e) => `${e.tier}|${e.origin ?? ''}|${e.offering ? `${e.offering.node_id}/${e.offering.offering_id}` : e.name}`;
+        const seen = new Set(candidates.map(keyOf));
+        for (const m of body.models.slice(0, 10)) {
+          if (typeof m !== 'string' || m === body.model) continue;
+          for (const e of await resolve(m, want)) if (!seen.has(keyOf(e))) { seen.add(keyOf(e)); candidates.push(e); }
+        }
+      }
+      const { models: _fallbacks, ...forwarded } = body;
       await dispatch(res, body.model, candidates, async (entry) => {
         const over = checkBudget(entry, body); if (over) return { failed: over };
         const t0 = performance.now();
         const upstream = entry.kind === 'ollama'
-          ? await fetch(`${entry.origin}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, model: entry.upstreamModel }), signal: AbortSignal.timeout(600_000) })
-          : await onpFetch(entry, body);
+          ? await fetch(`${entry.origin}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...forwarded, model: entry.upstreamModel }), signal: AbortSignal.timeout(600_000) })
+          : await onpFetch(entry, forwarded);
         if (!upstream.ok) return { failed: `upstream ${upstream.status}` };
         const receiptHeader = upstream.headers.get('onp-receipt');
         res.writeHead(200, { 'content-type': upstream.headers.get('content-type') ?? 'application/json' });
