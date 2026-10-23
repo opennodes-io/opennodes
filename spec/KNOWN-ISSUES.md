@@ -19,6 +19,7 @@ Two independent technical reviews of Draft 0.1 (October 2026) raised the points 
 | `request_hash` was undefined and the two reference implementations hashed differently — now SHA-256 of the raw request body bytes; the test node was aligned | ONP-5 §5 |
 | Reasoning ("thinking") tokens: counted in `completion_tokens` at the output price, never billed twice | ONP-5 §1 |
 | Scenario `if` conditions had no grammar (a client using `eval` would run untrusted code) — now a fixed small grammar, and clients MUST NOT use a general-purpose evaluator | ONP-6 §5 |
+| Server location was not checked at all (a node could declare an EU operator while running elsewhere). Now: IP geolocation + network owner, and round-trip times from two probe sites (Nuremberg, Helsinki) against physical limits; a server found outside the requested jurisdiction is excluded from jurisdiction filters. Evidence, not proof — a forwarding front server still defeats it (attested residency below) | ONP-3 §6.4; reference registry 0.1.22 |
 
 ## Planned for Draft 0.2
 
@@ -30,7 +31,7 @@ Two independent technical reviews of Draft 0.1 (October 2026) raised the points 
 | `model.artifact` cannot name a file or revision inside a repository (e.g. one GGUF quantization) | Optional `:{tag}` / `@{revision}` suffix; schema pattern widened |
 | Operator country vs. where an offering runs; endpoints per offering | Per-offering execution location (ISO 3166-1) and optional per-offering endpoints |
 | Receipts for audits | Optional account binding (hash of the buyer account or a client nonce) and execution location in the signed receipt — still operator statements, not proof |
-| Attested residency; latency plausibility | An auditor credential for residency; registries flag offerings whose measured latency is implausible for the declared location (not yet implemented) |
+| Attested residency | An auditor credential for residency (the network checks above are signals, not proof); operator identity checks (registered EU company, sanctions screening) before an "EU operator" label |
 | Pricing gaps | Optional separate reasoning-token price and prompt-cache write price |
 | Reference implementations | Python Node Kit: exact RFC 8785 number formatting (e.g. `1e-7`); drop the internal `_jws` member from signature entries; persist receipts instead of keeping them only in memory |
 | Well-known URI | Register `open-node.json` with IANA (RFC 8615) once the card format stabilizes |

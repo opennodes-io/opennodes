@@ -226,13 +226,18 @@ export function jurisdictionCountries(spec) {
 
 /**
  * Is the offering's operator in the jurisdiction? Registered nodes declare their country; imports of
- * known providers carry an inferred one (`jurisdiction.basis`). No country counts as outside.
+ * known providers carry an inferred one (`jurisdiction.basis`). No country counts as outside. When the
+ * registry's server-location check found the API host in a country outside the jurisdiction (and not
+ * behind a CDN, and the geolocation wasn't contradicted by latency), the offering is excluded too.
  */
 export function inJurisdiction(offering, spec) {
   const allowed = jurisdictionCountries(spec);
   if (!allowed) return true;
   const country = offering.jurisdiction?.country;
-  return Boolean(country) && allowed.has(String(country).toUpperCase());
+  if (!country || !allowed.has(String(country).toUpperCase())) return false;
+  const loc = offering.jurisdiction?.location;
+  if (loc?.server_country && !loc.cdn && loc.verdict !== 'inconsistent' && !allowed.has(String(loc.server_country).toUpperCase())) return false;
+  return true;
 }
 
 const AUTO_PRESETS = Object.freeze({ cheap: 'cheap', fast: 'fast', quality: 'quality', private: 'private' });

@@ -138,6 +138,11 @@ export function summarizeNode(node, offeringLimit = 25) {
     payment_schemes: (card.payment?.schemes ?? []).map((s) => s.scheme),
     listed_at: node.created_at ?? null,
     updated_at: node.updated_at ?? null,
+    location: node.location ? {
+      verdict: node.location.verdict, declared: node.location.declared ?? null,
+      server: node.location.server ?? null, latency: node.location.latency?.verdict ?? 'unknown',
+      checked_at: node.location.checked_at ?? null,
+    } : null,
     availability: liveness.length ? {
       checks: liveness.length,
       ok: liveness.filter((p) => p.ok).length,

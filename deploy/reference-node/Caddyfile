@@ -1,4 +1,10 @@
 {$NODE_HOST} {
 	encode zstd gzip
-	reverse_proxy node:8800
+	# Optional probe agent (compose profile "probe"); answers only with a valid token.
+	handle_path /onp-probe/* {
+		reverse_proxy probe:8810
+	}
+	handle {
+		reverse_proxy node:8800
+	}
 }

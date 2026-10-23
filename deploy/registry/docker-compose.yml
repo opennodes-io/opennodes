@@ -27,6 +27,11 @@ services:
       ONP_TRUST_PROXY: "1"                           # client address from X-Forwarded-For (Caddy in front)
       ONP_REIMPORT: "1"                              # keep imported catalogs fresh (6h)
       ONP_REIMPORT_SOURCES: openrouter,huggingface,models-dev,ollama
+      # Server-location checks (ONP-3 §6.4): this site + the Helsinki probe agent (token in .env).
+      ONP_LOCATION: "1"
+      ONP_PROBE_SITE: "DE Nuremberg 49.4527 11.0783"
+      ONP_PROBE_AGENTS: "FI Helsinki 60.1719 24.9347 https://helsinki.opennodes.io/onp-probe"
+      ONP_PROBE_AGENT_TOKEN: ${PROBE_AGENT_TOKEN:-}
     volumes:
       - ./data:/data
     depends_on:

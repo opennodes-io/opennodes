@@ -54,7 +54,14 @@ async function buildOfferings(store) {
     const stageA = probes.filter((p) => p.stage === 'A');
     const probeSuccess = stageA.length ? stageA.filter((p) => p.ok).length / stageA.length : 0;
     const tier = node.state === 'indexed' ? 'unverified' : node.state;
-    const availability = (await store.getObservations(node.id, '_node')).availability ?? null;
+    const nodeObs = await store.getObservations(node.id, '_node');
+    const availability = nodeObs.availability ?? null;
+    const loc = nodeObs.location ?? null;
+    // Server-location check (location.js): what the registry found, next to what the operator declared.
+    const location = loc ? {
+      verdict: loc.verdict, server_country: loc.server?.country ?? null, network: loc.server?.network ?? null,
+      cdn: Boolean(loc.server?.cdn), latency: loc.latency?.verdict ?? 'unknown', checked_at: loc.checked_at,
+    } : null;
     for (const offering of card.offerings) {
       const obs = await store.getObservations(node.id, offering.offering_id);
       // Measured values override claims (DS-ADM-03/04): cap the advertised context to
@@ -86,6 +93,7 @@ async function buildOfferings(store) {
           country: card.node?.operator?.country ?? null,
           regions: card.node?.regions ?? [],
           basis: card.node?.operator?.country ? (node.source === 'import' ? 'inferred' : 'declared') : null,
+          location,
         },
         // Allocated hardware for THIS offering (offering-level override wins over the
         // node-level description) — same artifact on different vendors runs on different

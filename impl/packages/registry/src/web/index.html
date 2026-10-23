@@ -1779,6 +1779,24 @@ function claimBanner(n, card) {
   </div>`;
 }
 
+/** Server-location check (registry location.js) in plain words. */
+function locationRow(loc) {
+  if (!loc) return '';
+  const srv = loc.server || {};
+  const words = {
+    match: `✓ server in ${esc(srv.country)}, as declared`,
+    same_region: `✓ server in ${esc(srv.country)} (EEA); operator declared ${esc(loc.declared)}`,
+    mismatch: `<b style="color:var(--bad, #b42318)">⚠ server in ${esc(srv.country)}, operator declared ${esc(loc.declared)}</b>`,
+    cdn: `behind a CDN (${esc(srv.network || 'anycast')}) — location not determinable from the network`,
+    inconsistent: `<b style="color:var(--bad, #b42318)">⚠ geolocation (${esc(srv.country || '?')}) contradicted by measured latency</b>`,
+    unknown: `not determined${loc.reason ? ' — ' + esc(loc.reason) : ''}`,
+  };
+  const lat = loc.latency || {};
+  const sites = (lat.sites || []).map((v) => `${esc(v.site)} ${v.rtt_ms} ms`).join(', ');
+  const latWord = { consistent: 'consistent', too_slow: 'slower than expected from every site (soft warning)', too_fast: 'faster than physics allows for the geolocated point', unknown: 'not measured' }[lat.verdict || 'unknown'];
+  return `<tr><td style="color:var(--muted)" class="mono">server</td><td style="font-size:0.8rem">${words[loc.verdict] || esc(loc.verdict)}${srv.asn ? ` · AS${srv.asn}${srv.network ? ' ' + esc(srv.network) : ''}` : ''}<br><span style="color:var(--muted)">latency ${latWord}${sites ? ' (' + sites + ')' : ''} · checked ${esc((loc.checked_at || '').slice(0, 10))} · evidence, not proof</span></td></tr>`;
+}
+
 async function loadNode(id) {
   $('#node-title').textContent = id;
   try {
@@ -1812,6 +1830,7 @@ async function loadNode(id) {
       <div class="panel pad" style="max-width:56rem; margin-top:0.6rem"><table class="grid">
         <tr><td style="color:var(--muted); width:8rem" class="mono">endpoint</td><td class="mono" style="font-size:0.74rem">${card.endpoints?.openai ? esc(card.endpoints.openai) : '— <span style="font-family:inherit; color:var(--muted)">listing only: no known API endpoint, not callable from OpenNodes</span>'}</td></tr>
         ${docsUrl(card.endpoints) ? `<tr><td style="color:var(--muted)" class="mono">docs</td><td class="mono" style="font-size:0.74rem"><a href="${esc(docsUrl(card.endpoints))}" target="_blank" rel="noopener">${esc(docsUrl(card.endpoints))}</a></td></tr>` : ''}
+        ${locationRow(n.location)}
         ${card.hardware ? `<tr><td style="color:var(--muted)" class="mono">hardware</td><td style="font-size:0.78rem">${hwStr({ hardware: card.hardware })}</td></tr>` : ''}
         <tr><td style="color:var(--muted)" class="mono">revision</td><td class="mono" style="font-size:0.74rem">${esc(card.revision ?? '—')}</td></tr>
       </table></div>

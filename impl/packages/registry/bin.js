@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { startRegistry } from './src/server.js';
+import { parseSite } from './src/location.js';
 
 const dbPath = process.env.ONP_DB ?? ':memory:'; // sqlite path/:memory: or postgres:// URL
 const persistent = dbPath !== ':memory:' && !dbPath.startsWith('postgres');
@@ -18,6 +19,14 @@ const registry = await startRegistry({
     livenessIntervalMs: Number(process.env.ONP_LIVENESS_MS ?? 300_000),
     blindIntervalMs: Number(process.env.ONP_BLIND_MS ?? 3_600_000),
   },
+  // Server-location checks: ONP_LOCATION=1, this registry's site, and optional remote probe agents
+  // ("FI Helsinki 60.17 24.93 https://host/onp-probe", comma-separated) sharing ONP_PROBE_AGENT_TOKEN.
+  location: process.env.ONP_LOCATION === '1' ? {
+    selfSite: parseSite(process.env.ONP_PROBE_SITE),
+    agents: (process.env.ONP_PROBE_AGENTS ?? '').split(',').map(parseSite).filter((a) => a?.url)
+      .map((a) => ({ ...a, token: process.env.ONP_PROBE_AGENT_TOKEN ?? null })),
+    intervalMs: Number(process.env.ONP_LOCATION_MS ?? 24 * 3600 * 1000),
+  } : null,
   reimport: process.env.ONP_REIMPORT === '1' ? {
     intervalMs: Number(process.env.ONP_REIMPORT_MS ?? 6 * 3600 * 1000),
     sources: (process.env.ONP_REIMPORT_SOURCES ?? 'openrouter,huggingface').split(','),

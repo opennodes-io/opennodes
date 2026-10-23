@@ -20,6 +20,7 @@ import { mcpRoutes } from './mcp.js';
 import { hostControlsNamespace, isPrivateHost, makeRateLimiter } from './namespace.js';
 import { exportRoutes } from './export.js';
 import { collapseFlaps } from './feed.js';
+import { checkNodeLocation } from './location.js';
 import {
   importModelsDev, importHuggingFace, importOpenRouter,
   importOllamaLibrary, parseOllamaLibrary,
@@ -39,6 +40,7 @@ export async function startRegistry({
   registerPerHour = 0,                  // per-client cap on register/verify calls (0 = unlimited; set in production)
   admitCooldownMs = 0,                  // minimum gap between Stage B runs per node (0 = none; set in production)
   trustProxy = false,                   // read the client address from X-Forwarded-For (behind Caddy / a CDN)
+  location = null,                      // { selfSite, agents, intervalMs, fetchImpl, resolve, rtt } to check server locations
 } = {}) {
   const store = watchStoreWrites(await createStore(dbPath)); // sqlite path/:memory: or postgres:// URL; writes refresh the cached catalog
   const safeFetch = makeSafeFetch({ allowPrivate: allowPrivateTargets });
@@ -230,6 +232,7 @@ export async function startRegistry({
       await store.setState(params.id, stageA.ok ? 'community' : 'indexed',
         stageA.ok ? 'Stage A passed' : 'Stage A failures: ' + stageA.results.filter((r) => !r.ok).map((r) => r.kind).join(','));
       const claimed = stageA.ok ? await supersedeImports(params.id) : [];
+      if (location) locateNode(params.id).catch(() => {});   // background: never delays registration
       sendJson(res, 200, {
         node_id: params.id,
         state: (await store.getNode(params.id)).state,
@@ -342,6 +345,7 @@ export async function startRegistry({
         card: await store.latestCard(params.id),
         probes: (await store.probesFor(params.id)).slice(0, 20),
         history: await store.transitionsFor(params.id),
+        location: (await store.getObservations(params.id, '_node')).location ?? null,
       });
     }],
 
@@ -407,6 +411,14 @@ export async function startRegistry({
     // Delist (admin): operator opt-out of an imported listing, or retiring a node. Search,
     // the directory and Stage C skip delisted nodes, and re-imports never revive them.
     // Body {reason}. A registered node returns by registering again; relist re-opens imports.
+    // Server-location check on demand (admin): geolocation + network + RTT from the probe sites.
+    ['POST', '/v0/admin/nodes/:id/locate', async (req, res, { params }) => {
+      if (!adminOk(req, res)) return;
+      if (!location) return problem(res, 409, 'location-checks-disabled', 'start the registry with location checks enabled');
+      const node = await store.getNode(params.id);
+      if (!node) return problem(res, 404, 'unknown-node', params.id);
+      sendJson(res, 200, await locateNode(node.id));
+    }],
     ['POST', '/v0/admin/nodes/:id/delist', async (req, res, { params }) => {
       if (!adminOk(req, res)) return;
       const node = await store.getNode(params.id);
@@ -496,8 +508,37 @@ export async function startRegistry({
     ...exportRoutes(store, registryKeys),
   ], { cors: true }); // public read API: third-party web clients may call it directly
 
+  // ---- server-location checks (location.js) ----
+  const asHolders = new Map();
+  async function locateNode(nodeId) {
+    const card = await store.latestCard(nodeId);
+    const result = await checkNodeLocation(card, { ...location, asHolders });
+    await store.setObservation(nodeId, '_node', 'location', result);
+    return result;
+  }
+  // Daily sweep over registered nodes and imports that carry a country (the ones jurisdiction
+  // filters can select), one at a time so the lookup service is never hammered.
+  function startLocationSweep() {
+    let stopped = false, timer = null;
+    const sweep = async () => {
+      for (const node of await store.allNodes()) {
+        if (stopped) return;
+        if (['delisted', 'claimed', 'submitted', 'challenged'].includes(node.state)) continue;
+        const card = await store.latestCard(node.id);
+        if (!card?.endpoints?.openai) continue;
+        if (node.source === 'import' && !card.node?.operator?.country) continue;
+        await locateNode(node.id).catch(() => {});
+        await new Promise((r) => setTimeout(r, location.pauseMs ?? 2000));
+      }
+    };
+    const loop = async () => { if (stopped) return; await sweep().catch(() => {}); if (!stopped) timer = setTimeout(loop, location.intervalMs ?? 24 * 3600 * 1000); };
+    timer = setTimeout(loop, location.firstDelayMs ?? 60_000);
+    return { stop: () => { stopped = true; clearTimeout(timer); } };
+  }
+
   const stageCHandle = stageC ? startStageC(store, { safeFetch, fetchFor: authFetch, refreshCard, ...stageC }) : null;
   const reimportHandle = reimport ? startReimport(store, { safeFetch, ...reimport }) : null;
+  const locationHandle = location ? startLocationSweep() : null;
   const actualPort = await listen(app, port, host);
   return {
     port: actualPort,
@@ -507,6 +548,7 @@ export async function startRegistry({
     close: async () => {
       stageCHandle?.stop();
       reimportHandle?.stop();
+      locationHandle?.stop();
       await closeApp(app);
       await store.close();
     },

@@ -41,6 +41,22 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # Optional second measuring point for the registry's server-location checks
+  # (`docker compose --profile probe up -d`; set PROBE_* in .env).
+  probe:
+    image: node:24-alpine
+    profiles: ["probe"]
+    command: ["node", "/app/agent.mjs"]
+    environment:
+      PROBE_TOKEN: ${PROBE_TOKEN:-}
+      PROBE_SITE: ${PROBE_SITE:-}
+      PROBE_LAT: ${PROBE_LAT:-}
+      PROBE_LON: ${PROBE_LON:-}
+    volumes:
+      - ./probe-agent:/app:ro
+    mem_limit: 128m
+    restart: unless-stopped
+
   caddy:
     image: caddy:2-alpine
     ports:

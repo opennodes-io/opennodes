@@ -152,7 +152,7 @@ test('jurisdiction: EEA filter in the advisor and in registry search; local alwa
   assert.deepEqual(await search('jurisdiction=eea'), ['org.opennodes.fixture']);
   assert.deepEqual(await search('jurisdiction=US,GB'), []);
   const one = (await (await fetch(`${registry.origin}/v0/offerings`)).json()).offerings[0];
-  assert.deepEqual(one.jurisdiction, { country: 'DE', regions: one.jurisdiction.regions, basis: 'declared' });
+  assert.deepEqual(one.jurisdiction, { country: 'DE', regions: one.jurisdiction.regions, basis: 'declared', location: null });
 
   // imports: a known European provider gets an inferred country; an unknown one gets none
   await fetch(`${registry.origin}/v0/import/models-dev`, {
