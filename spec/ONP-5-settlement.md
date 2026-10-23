@@ -23,6 +23,7 @@ Defined in ONP-2 §5 (`offering.pricing`). Units by modality:
 Rules:
 - Currency is ISO-4217 (stablecoin settlement converts at scheme layer; the advertised currency is what receipts denominate).
 - **Price-in-force = price in the card revision the client pinned** via `ONP-Card-Revision` (ONP-4 §2). Nodes wanting to reprice publish a new revision; in-flight and just-pinned requests either honor the old price or 409 — silent repricing is non-conformant.
+- **Reasoning tokens** (a model's "thinking" output) are output tokens: they are included in `usage.completion_tokens` and billed at `output_per_mtok`. Nodes MAY also report them separately (e.g. `usage.completion_tokens_details.reasoning_tokens`, as OpenAI does) but MUST NOT bill them twice. A separate reasoning price and prompt-cache *write* pricing are Draft 0.2 items.
 - `free_tier` and fully free offerings (`schemes: ["free"]`) are first-class: free offerings still return receipts (usage accounting without billing), keeping ranking signals uniform.
 
 ## 2. Payment schemes
@@ -64,7 +65,7 @@ Any party may operate settlement (registries are the natural ones). Requirements
 
 ## 5. Usage receipts
 
-Response header `ONP-Receipt` carries (inline or by URL) a JWS signed by the node:
+Response header `ONP-Receipt` carries the receipt as an inline compact JWS signed by the node, or a URL to fetch it — always a URL for streamed responses (ONP-4 §2):
 
 ```json
 {
@@ -72,7 +73,7 @@ Response header `ONP-Receipt` carries (inline or by URL) a JWS signed by the nod
   "node_id": "ai.example-lab.inference",
   "offering_id": "llama-4-70b-instruct-fp8",
   "card_revision": "2026-08-20T12:00:00Z",
-  "request_hash": "sha256:…",          // hash of canonical request, no content retained
+  "request_hash": "sha256:…",          // sha256 of the raw request body bytes, no content retained
   "usage": {"prompt_tokens": 1204, "completion_tokens": 833},
   "amount": {"currency": "USD", "value": 0.002162},
   "scheme": "x402",
@@ -81,7 +82,10 @@ Response header `ONP-Receipt` carries (inline or by URL) a JWS signed by the nod
 }
 ```
 
-Receipts are the audit primitive: clients verify `amount = usage × pinned price`; settlement operators redeem against them; registries sample them during conformance probes (§ONP-3 6.2) to catch usage inflation. Receipts contain no prompt/response content — only the hash, so either side can prove what request a receipt refers to without the receipt leaking data.
+- **`request_hash`** is `sha256:` followed by the lowercase hex SHA-256 of the **raw HTTP request body bytes exactly as received** — no parsing or re-serialization — so the client, which kept the bytes it sent, can prove which request a receipt belongs to.
+- The receipt is a JWS over the JCS-canonical (RFC 8785) JSON payload, like the card (ONP-2 §8).
+
+Receipts are the audit primitive: clients verify `amount = usage × pinned price`; settlement operators redeem against them; registries sample them during conformance probes (ONP-3 §6.2) to catch usage inflation. Receipts contain no prompt/response content — only the hash, so either side can prove what request a receipt refers to without the receipt leaking data.
 
 ## 6. Disputes (informative, Draft 0.1)
 

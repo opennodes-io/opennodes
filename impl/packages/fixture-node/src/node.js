@@ -60,12 +60,13 @@ export async function startFixtureNode({
   const keys = generateKeypair();
   const state = { challenges: new Map(), card: null, origin: null, requests: 0 };
 
-  const makeReceipt = (offering, usage, requestBody, pinnedRevision) => signJson({
+  // request_hash = sha256 over the raw request body bytes as received (ONP-5 §5).
+  const makeReceipt = (offering, usage, requestBytes, pinnedRevision) => signJson({
     receipt_id: `r_${randomUUID()}`,
     node_id: 'org.opennodes.fixture',
     offering_id: offering.offering_id,
     card_revision: pinnedRevision ?? state.card.revision,
-    request_hash: 'sha256:' + createHash('sha256').update(JSON.stringify(requestBody)).digest('hex'),
+    request_hash: 'sha256:' + createHash('sha256').update(requestBytes).digest('hex'),
     usage,
     amount: { currency: offering.pricing.currency, value: costForUsage(offering.pricing, usage.prompt_tokens, usage.completion_tokens) },
     scheme: 'free',
@@ -91,7 +92,10 @@ export async function startFixtureNode({
       sendJson(res, 200, { object: 'list', data: [{ id: MODEL_ID, object: 'model', owned_by: 'org.opennodes.fixture' }] });
     }],
     ['POST', '/v1/chat/completions', async (req, res) => {
-      const body = await readJson(req);
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const requestBytes = Buffer.concat(chunks);
+      const body = requestBytes.length ? JSON.parse(requestBytes.toString('utf8')) : {};
       if (body.model !== MODEL_ID) return problem(res, 404, 'model-not-found', String(body.model));
 
       const offering = state.card.offerings[0];
@@ -120,7 +124,7 @@ export async function startFixtureNode({
         completion_tokens: approxTokens(reply),
       };
       usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
-      const receipt = makeReceipt(offering, usage, body, pinned);
+      const receipt = makeReceipt(offering, usage, requestBytes, pinned);
       const completion = {
         id: `chatcmpl-${randomUUID()}`,
         object: 'chat.completion',

@@ -53,6 +53,7 @@ MCP standardized how AI applications reach *tools*; the OpenAI API shape standar
 - [ONP-4 — Invocation profiles](spec/ONP-4-invocation.md) — bindings for text, image/diffusion, embeddings, agents
 - [ONP-5 — Settlement](spec/ONP-5-settlement.md) — price advertisement, payment schemes (x402 / prepaid / free), signed usage receipts
 - [ONP-6 — Bridging](spec/ONP-6-bridging.md) — connecting discovered nodes to MCP servers, WebMCP sites, and conventional web data
+- [Known issues → Draft 0.2](spec/KNOWN-ISSUES.md) — what external reviews raised about Draft 0.1, and what was fixed (errata 2026-10-23), planned, or not adopted
 
 ### Development requirements
 - [REQ-001 — Discovery Service (registry)](requirements/REQ-001-discovery-service.md) — MVP registry: registration, admission battery, search, estimation, MCP surface; acceptance criteria.

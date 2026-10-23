@@ -1,6 +1,6 @@
 ﻿# ONP-1: Overview, Terminology, Architecture, Conformance
 
-**OpenNodes Protocol — Draft 0.1 — 2026-08-20**
+**OpenNodes Protocol — Draft 0.1 — 2026-08-20 (errata 2026-10-23; open items: [KNOWN-ISSUES.md](KNOWN-ISSUES.md))**
 
 The key words MUST, MUST NOT, REQUIRED, SHOULD, SHOULD NOT, MAY are to be interpreted as described in RFC 2119.
 
@@ -29,7 +29,7 @@ ONP standardizes the **discovery layer for AI inference endpoints** and the thin
 | **Attester** | A party that issues signed statements (W3C Verifiable Credentials) about a Node or Offering — benchmark results, uptime history, conformance-test passes. A registry can be an attester; so can third parties (labs, universities, audit firms). |
 | **AI Node Client** | An application (desktop, mobile, OS-integrated, or SDK embedded in a dev tool) that queries registries, selects and invokes nodes, handles settlement, and bridges nodes to MCP/WebMCP/web data. |
 | **Scenario** | A portable, declarative description of a multi-step task spanning one or more Offerings and tool connections, executed by a client. See ONP-6 §5. |
-| **Trust tier** | `unverified` → `community` → `verified` → `attested`. Assigned per Node by each registry according to ONP-3 §6. |
+| **Trust tier** | `unverified` → `community` → `verified` → `attested`. Earned per Node through the registry's admission battery (ONP-3 §4a) and kept by continuous observation (ONP-3 §6); see §3a for how tiers and offering-level results apply. |
 
 ## 3. Architecture
 
@@ -58,6 +58,23 @@ Three independent conformance classes; any party can implement any subset:
 - **ONP Registry** — implements the ONP-3 OpenAPI; performs namespace verification and liveness probing; labels trust tiers; exposes ranking-signal provenance.
 - **ONP Client** — can resolve Node Cards directly and via registries, invoke at least the `openai.chat` binding, and enforce user-set spend/trust policies.
 
+## 3a. Trust tiers, verification, and client policy
+
+**What each tier means.** A registry assigns a tier to a **node**, and all of the node's offerings carry it:
+
+| Tier | Earned by |
+|---|---|
+| `unverified` | Being listed: a registration whose namespace is proven but which has not passed Stage A, or a listing imported from a public catalog and not yet claimed by its operator. Nothing about the endpoint has been checked. |
+| `community` | **Stage A** (ONP-3 §4a): signed card fetchable, health live, one conforming invocation per offering, `/models` agrees with the card. |
+| `verified` | **Stage B**: identity probes against a reference of the claimed model, context-window retrieval probes, a capacity ramp, capability spot-checks — then **Stage C** continuous liveness and blind probes to keep it. |
+| `attested` | `verified` plus third-party attestations the registry accepts (ONP-3 §7). The required set is a Draft 0.2 item. |
+
+The registry's own probes are the primary evidence; attestations add to them and never replace a failed measurement.
+
+**Offering-level results.** Some outcomes qualify a single offering rather than the node: a context window that fails retrieval is **capped** to the largest verified size; measured latency and throughput **replace** claimed values in search results; an identity failure marks the claimed artifact **disputed** (a registry MAY also withdraw the node's tier). Search results therefore carry both the node's tier and the offering's own observations.
+
+**Client policy.** A client's trust, jurisdiction, data-policy, capability and price constraints are **hard filters**, applied to the node tier and the offering-level observations — never weights in a score. A client that pins a selection SHOULD re-resolve it before the next paid invocation once the registry reports a demotion, suspension or dispute (listing history, ONP-3 §3).
+
 ## 4. Layering on existing standards (normative reuse)
 
 | Layer | ONP uses | ONP defines |
@@ -73,13 +90,19 @@ Three independent conformance classes; any party can implement any subset:
 
 ## 5. Versioning
 
-Every ONP document and every Node Card carries `"onp": "0.1"`. Within a major version, additive changes only; unknown fields MUST be ignored (must-ignore semantics). Registries advertise supported versions in `GET /v0/health`.
+Every ONP document and every Node Card carries an `"onp"` version string (`"0.1"` today). Registries advertise the versions they accept in `GET /v0/health`. Unknown fields MUST be ignored (must-ignore semantics).
+
+- **Drafts (`0.x`)** may change incompatibly between drafts; each draft lists its changes, and registries SHOULD keep accepting cards of the previous draft for at least 6 months after a new draft is published.
+- **From `1.0`**, changes within a major version are additive only. A change that would make a conforming card, request or receipt invalid, or change the meaning of an existing field, requires a new major version.
+- **Major-version transitions:** registries SHOULD accept both the old and the new major version for at least 12 months after the new one is published, and SHOULD label which version each listing uses; nodes keep publishing a card the registries they rely on accept, and move when ready. Each major version's documents include a migration section.
+- **Extensions** outside the spec use field names prefixed `x-` and MUST NOT change the meaning of standard fields.
 
 ## 6. Threat model (summary)
 
-The full considerations live in each part; the four attacks ONP is designed around:
+The full considerations live in each part; the attacks ONP is designed around:
 
-1. **Impersonation** (claiming to serve "GPT-5" while serving something cheaper) → signed cards, trust tiers, registry conformance probes that run blind test prompts against offerings (ONP-3 §6), benchmark attestations.
+1. **Impersonation** (claiming to serve "GPT-5" while serving something cheaper) → signed cards, trust tiers, identity probes at admission (ONP-3 §4a) and blind probes at unpredictable times afterwards (ONP-3 §6), benchmark attestations.
 2. **Metadata inflation** (fake benchmark scores, fake hardware) → self-reported fields are explicitly labeled `claimed`; only attester-signed values may be labeled `attested`; registries MUST NOT rank on unverified claims without disclosing so.
 3. **Rug-pull pricing** (advertise low, bill high) → the price in force is the one in the signed Node Card revision referenced at invocation time; receipts (ONP-5 §5) bind usage to that revision; clients enforce ceilings.
 4. **Registry capture** (a registry favoring its own nodes) → ranking-signal provenance is mandatory and machine-readable; federation makes switching registries cheap; the Node Card lives at the node's origin, not in any registry.
+5. **Residency misstatement / silent sub-processing** (a node declaring an EU or Canadian operator while forwarding requests to a third party elsewhere) → the declared country and data policy are signed, attributable statements of the operator, not registry findings, and are labeled as declared (or, for unclaimed imports, inferred); registries SHOULD flag offerings whose measured latency is implausible for the declared location; attested residency (an auditor's credential) is a Draft 0.2 item. Clients that need a hard guarantee rely on attested or contractual residency, not on declarations alone.

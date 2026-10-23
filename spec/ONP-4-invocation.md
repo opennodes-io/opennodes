@@ -37,9 +37,11 @@ Every text-modality ONP Node MUST implement this profile for at least one offeri
 |---|---|---|
 | `ONP-Offering` | request | `{node_id}/{offering_id}` the client believes it is invoking; node MUST 409 if the id no longer matches the model behind the endpoint |
 | `ONP-Card-Revision` | request | Card revision the client priced against; node MUST 409 (`price_changed`) if superseded by a revision with different pricing for the offering |
-| `ONP-Receipt` | response | URL or inline JWS of the usage receipt (ONP-5 §5) |
+| `ONP-Receipt` | response | Inline compact JWS of the usage receipt, or a URL where it can be fetched (ONP-5 §5) |
 
 Both 409s are RFC 9457 problems (ONP-3 §2): `type` `https://opennodes.io/problems/offering-mismatch` or `https://opennodes.io/problems/price_changed`, `title` the bare name.
+
+**Streaming.** Response headers are sent before the first token, when usage is not yet known, so for `stream: true` the `ONP-Receipt` header MUST carry a URL; the node makes the receipt available there once the stream ends (the URL returns the compact JWS as `text/plain`; until then it MAY answer 404 or 202) and SHOULD keep it available for at least 24 hours. A node MAY additionally send the receipt in-band as a final SSE event after the usage chunk — `event: onp.receipt` with `data: {"onp_receipt": "<compact JWS>"}` — and clients that do not recognise the event ignore it. Non-streaming responses SHOULD carry the receipt inline.
 
 These three headers are the whole "protocol": they pin *what* you think you're calling and *at what price*, which plain OpenAI-compatibility cannot express.
 

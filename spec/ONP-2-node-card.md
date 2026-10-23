@@ -52,6 +52,8 @@ The Node Card is the self-description document of an AI Node. It is the unit reg
 
 - `id` — reverse-DNS, MUST be under a domain the operator controls (verified per ONP-3 §4, same challenge family as the MCP Registry).
 - `did` — OPTIONAL W3C DID; `did:web` RECOMMENDED so the DID resolves through the same origin that hosts the card.
+- `operator.country` — ISO 3166-1 alpha-2 country of the **operator** (its legal jurisdiction), as declared by the operator. It is not a statement of where the hardware runs; `regions` is free-form. A per-offering execution location is a Draft 0.2 item (see [KNOWN-ISSUES.md](KNOWN-ISSUES.md)). Registries present this value as *declared*; jurisdiction filters (ONP-3 §5) use it.
+- One origin hosts exactly one card (§1): an operator with several sites or regions publishes one card per host (e.g. `fi.inference.example.com`, `de.inference.example.com`), each with its own node id under the operator's domain.
 
 ## 4. `endpoints`
 
@@ -118,7 +120,7 @@ The core of the card. Each entry joins **model artifact ↔ serving configuratio
 Field rules:
 
 - `modality` ∈ `text` | `image` | `audio` | `video` | `embedding` | `multimodal` | `agent`. Diffusion models use `image`/`video` with the corresponding binding profile (ONP-4 §4) and per-unit pricing (`per_image`, `per_second`).
-- `model.artifact` — a URI linking the served weights to a public artifact record where one exists: `hf:{org}/{repo}` (Hugging Face model card) or `urn:proprietary:{vendor}:{model}` for closed models (e.g. `urn:proprietary:openai:gpt-5`). This is the endpoint↔artifact join.
+- `model.artifact` — a URI linking the served weights to a public artifact record where one exists: `hf:{org}/{repo}` (Hugging Face model card) or `urn:proprietary:{vendor}:{model}` for closed models (e.g. `urn:proprietary:openai:gpt-5`). This is the endpoint↔artifact join. Draft 0.1 has no way to name a specific file or revision inside a repository (e.g. one GGUF quantization); until Draft 0.2 adds an optional `:{tag}` / `@{revision}` suffix, state the quantization in `model.quantization` and pin the exact weights with `model.revision_pin`.
 - Every performance or quality number carries `basis`: **`claimed`** (self-reported) or **`attested`** (backed by a linked Verifiable Credential from an attester). Registries and clients MUST NOT present claimed values as verified.
 - `serving.languages` — declared language coverage with coarse grades (`native` | `strong` | `basic`); per-language eval attestations upgrade a grade to `attested`. This powers the `lang=` search filter (ONP-3 §5) — language-optimal routing is a first-class selection criterion, not an afterthought.
 - `binding.profile` — an ONP-4 profile identifier; `model_id` is the string a client passes on the wire (e.g. as OpenAI `model`).
@@ -153,8 +155,12 @@ The `mlperf.system_id` link is the standard way to make a hardware claim checkab
 
 ## 8. `signatures`
 
-The card MUST carry at least one JWS (RFC 7515, detached payload = the card minus `signatures`) by a key discoverable via the origin (`/.well-known/jwks.json`) or the node's DID document. Registries MUST reject unsigned cards for `verified`+ tiers and SHOULD accept-but-label them at lower tiers.
+The card MUST carry at least one JWS (RFC 7515) by a key discoverable via the origin (`/.well-known/jwks.json`) or the node's DID document. Registries MUST reject unsigned cards for `verified`+ tiers and SHOULD accept-but-label them at lower tiers.
+
+- **Payload:** the card without its `signatures` member, serialized with the **JSON Canonicalization Scheme (JCS, RFC 8785)** — keys sorted, no insignificant whitespace, numbers and strings in their ECMAScript form — so implementations in any language produce the same bytes. The payload is detached: it is not carried in the signature.
+- **Signature entries:** `{"protected": "<base64url header>", "signature": "<base64url>", "kid": "<key id>"}`. The verifier rebuilds the compact JWS as `protected.base64url(JCS(card − signatures)).signature`. Other members of a signature entry MUST be ignored.
+- **Algorithm:** `EdDSA` (Ed25519) is RECOMMENDED and is what the reference implementations use.
 
 ## 9. JSON Schema
 
-A normative JSON Schema for the card lives at `schemas/ai-node.schema.json` (to be generated from this document; the prose is authoritative in Draft 0.1).
+A JSON Schema for the card lives at [`schemas/open-node.schema.json`](../schemas/open-node.schema.json) (`$id` `https://opennodes.io/schemas/0.1/open-node.schema.json`); the reference implementations validate against it. Where the schema and this prose disagree, the prose is authoritative in Draft 0.1.
