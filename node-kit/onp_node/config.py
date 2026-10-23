@@ -38,6 +38,12 @@ schemes = ["free"]
 retention = "none"
 training_on_inputs = false
 
+[receipts]
+# Every signed receipt is appended here (no prompt text: ids, token counts, amount, request
+# hash) and the newest `keep` stay retrievable by id. Set file = "" to keep them in memory only.
+file = "onp-receipts.jsonl"
+keep = 50000
+
 # Disclose the silicon behind this node — same model, different hardware, different
 # product. Claimed until attested; the registry's measured TTFT/TPS always wins.
 # [hardware]

@@ -5,7 +5,9 @@ signed receipts (inline for non-streaming, by-URL for streams), and health."""
 import hashlib
 import json
 import uuid
+from collections import OrderedDict, deque
 from datetime import datetime, UTC
+from pathlib import Path
 
 from aiohttp import web, ClientSession, ClientTimeout
 
@@ -20,8 +22,47 @@ def _approx_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
+class ReceiptStore:
+    """Signed receipts this node issued, retrievable by id (streams announce theirs by URL).
+    Memory holds the newest `keep`; with `path`, every receipt is also appended to a JSON-lines
+    file (the operator's audit trail) and the newest `keep` are reloaded on restart."""
+
+    def __init__(self, keep: int = 50_000, path=None):
+        self.keep = max(1, int(keep))
+        self.path = Path(path) if path else None
+        self._items: OrderedDict[str, str] = OrderedDict()
+        if self.path and self.path.exists():
+            with self.path.open(encoding="utf-8") as f:
+                for line in deque(f, maxlen=self.keep):
+                    try:
+                        rec = json.loads(line)
+                        self._remember(rec["receipt_id"], rec["jws"])
+                    except (ValueError, KeyError, TypeError):
+                        continue  # a torn last line after a crash, or foreign content
+
+    def _remember(self, receipt_id: str, jws: str):
+        self._items[receipt_id] = jws
+        self._items.move_to_end(receipt_id)
+        while len(self._items) > self.keep:
+            self._items.popitem(last=False)
+
+    def add(self, receipt_id: str, jws: str):
+        self._remember(receipt_id, jws)
+        if self.path:
+            # Opened per write so external rotation (logrotate) needs no signal.
+            with self.path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps({"receipt_id": receipt_id, "jws": jws}) + "\n")
+
+    def get(self, receipt_id: str):
+        return self._items.get(receipt_id)
+
+    def __len__(self):
+        return len(self._items)
+
+
 class NodeKitServer:
-    def __init__(self, card: dict, private_key, engine_base: str, challenge_file=None, engine_timeout_s: float = 300):
+    def __init__(self, card: dict, private_key, engine_base: str, challenge_file=None, engine_timeout_s: float = 300,
+                 receipts_keep: int = 50_000, receipts_file=None):
         self.key = private_key
         # CPU-only engines need minutes to read a long prompt; too short a limit turns a
         # registry context probe into a 504 instead of a measurement.
@@ -29,7 +70,7 @@ class NodeKitServer:
         self.card = sign_card(card, private_key)
         self.engine_base = engine_base.rstrip("/")
         self.challenge_file = challenge_file
-        self.receipts: dict[str, str] = {}          # receipt_id -> jws
+        self.receipts = ReceiptStore(receipts_keep, receipts_file)
         self.offering_by_model = {o["binding"]["model_id"]: o for o in card["offerings"]}
         self.session: ClientSession | None = None
 
@@ -40,13 +81,13 @@ class NodeKitServer:
              "status": status, "detail": detail},
             status=status, content_type="application/problem+json")
 
-    def _make_receipt(self, offering, usage, request_bytes, pinned_revision, scheme="free"):
+    def _make_receipt(self, offering, usage, request_bytes, pinned_revision, scheme="free", receipt_id=None):
         pricing = offering["pricing"]
         amount = round(
             pricing.get("input_per_mtok", 0) * usage["prompt_tokens"] / 1_000_000
             + pricing.get("output_per_mtok", 0) * usage["completion_tokens"] / 1_000_000, 6)
         payload = {
-            "receipt_id": f"r_{uuid.uuid4()}",
+            "receipt_id": receipt_id or f"r_{uuid.uuid4()}",
             "node_id": self.card["node"]["id"],
             "offering_id": offering["offering_id"],
             "card_revision": pinned_revision or self.card["revision"],
@@ -57,7 +98,7 @@ class NodeKitServer:
             "issued_at": _now(),
         }
         jws = sign_json(payload, self.key)
-        self.receipts[payload["receipt_id"]] = jws
+        self.receipts.add(payload["receipt_id"], jws)
         return payload["receipt_id"], jws
 
     # -- routes --------------------------------------------------------------
@@ -148,8 +189,8 @@ class NodeKitServer:
                 usage = {"prompt_tokens": _approx_tokens(prompt_text),
                          "completion_tokens": max(1, completion_chars // 4)}
                 usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
-            rid, jws = self._make_receipt(offering, usage, raw, pinned)
-            self.receipts[receipt_id] = jws  # reachable under the pre-announced id
+            # Issued under the id already announced in the ONP-Receipt URL.
+            self._make_receipt(offering, usage, raw, pinned, receipt_id=receipt_id)
             return resp
 
         payload = await upstream.json()

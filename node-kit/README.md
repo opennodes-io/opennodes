@@ -14,7 +14,11 @@ Requires Python ≥3.11. Dependencies: `aiohttp`, `cryptography`.
   with the ONP layer: header validation (409 `offering-mismatch` / `price_changed`), usage
   accounting (engine `usage` passed through; approximated when the engine omits it), and
   **signed receipts** — inline JWS header for non-streaming, by-URL (`/onp/receipts/{id}`,
-  materialized after the stream ends) for streaming. Plain OpenAI traffic without ONP headers
+  materialized after the stream ends) for streaming. Every receipt is appended to
+  `onp-receipts.jsonl` — your audit trail: ids, token counts, amount and request hash, never
+  prompt text — and the newest 50,000 stay retrievable by id, also after a restart
+  (`[receipts] file` / `keep` in `onp-node.toml`; `file = ""` keeps them in memory only; the
+  file grows ~0.8 KB per request, rotate it like any log). Plain OpenAI traffic without ONP headers
   passes untouched (NK-INV-02) — existing engine users are unaffected.
 - **`onp-node check`** — client-side Stage A self-test (card, signature, health,
   models agreement, blind invocation with usage + receipt); `register` refuses to submit
