@@ -15,7 +15,7 @@ import { runStageB, captureFingerprints } from './stageb.js';
 import { startStageC } from './stagec.js';
 import { startReimport } from './reimport.js';
 import { makeSafeFetch } from './safefetch.js';
-import { searchOfferings, searchOfferingsPaged, collectOfferings, RANK_COMPONENTS } from './search.js';
+import { searchOfferings, searchOfferingsPaged, collectOfferings, watchStoreWrites, RANK_COMPONENTS } from './search.js';
 import { mcpRoutes } from './mcp.js';
 import { hostControlsNamespace, isPrivateHost, makeRateLimiter } from './namespace.js';
 import { exportRoutes } from './export.js';
@@ -40,7 +40,7 @@ export async function startRegistry({
   admitCooldownMs = 0,                  // minimum gap between Stage B runs per node (0 = none; set in production)
   trustProxy = false,                   // read the client address from X-Forwarded-For (behind Caddy / a CDN)
 } = {}) {
-  const store = await createStore(dbPath); // sqlite path/:memory: or postgres:// URL
+  const store = watchStoreWrites(await createStore(dbPath)); // sqlite path/:memory: or postgres:// URL; writes refresh the cached catalog
   const safeFetch = makeSafeFetch({ allowPrivate: allowPrivateTargets });
   const webApp = readFileSync(fileURLToPath(new URL('./web/index.html', import.meta.url)), 'utf8');
   let registryKeys;

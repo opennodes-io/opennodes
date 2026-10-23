@@ -248,3 +248,30 @@ test('admin delist hides a node, survives re-import, and relist / re-registratio
   assert.equal(back.state, 'community');
   assert.equal((await post('/v0/admin/nodes/nope.none/delist')).status, 404);
 });
+
+test('catalog cache: reused between reads, rebuilt after any store write, ranks never leak', async (t) => {
+  const { collectOfferings, searchOfferingsPaged } = await import('../packages/registry/src/search.js');
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  t.after(() => registry.close());
+  const { store } = registry;
+  const catalog = (name) => ({ acmecloud: { id: 'acmecloud', name, api: 'https://api.acmecloud.example/v1',
+    models: { a: { id: 'a', name: 'A', cost: { input: 0.1, output: 0.2 } }, b: { id: 'b', name: 'B', cost: { input: 1, output: 2 } } } } });
+  const post = (body) => fetch(`${registry.origin}/v0/import/models-dev`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  await post({ catalog: catalog('Acme') });
+  const first = await collectOfferings(store);
+  assert.equal(await collectOfferings(store), first, 'second read reuses the cached array');
+  const [p1, p2] = await Promise.all([collectOfferings(store), collectOfferings(store)]);
+  assert.equal(p1, p2, 'concurrent reads share one result');
+
+  // a write through the store marks the catalog stale: the next read sees it
+  await store.setState('import.modelsdev.acmecloud', 'delisted', 'test');
+  assert.equal((await collectOfferings(store)).length, 0);
+  await store.setState('import.modelsdev.acmecloud', 'indexed', 'test');
+  assert.equal((await collectOfferings(store)).length, 2);
+
+  // ranking annotates copies: the cached offerings stay clean
+  const { offerings } = await searchOfferingsPaged(store, new URLSearchParams('sort=price'));
+  assert.ok(offerings.every((o) => typeof o.rank === 'number'));
+  assert.ok((await collectOfferings(store)).every((o) => o.rank === undefined));
+});

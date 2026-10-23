@@ -4,8 +4,47 @@ import { inJurisdiction } from '@opennodes/core';
 export const RANK_COMPONENTS = { price: 0.35, tier: 0.35, probe_success: 0.30 };
 const TIER_SCORE = { unverified: 0, community: 0.4, verified: 0.8, attested: 1.0 };
 
-/** Flatten indexed nodes into searchable offering summaries. */
+// The assembled catalog (10k+ offerings, ~one store read each) is kept in memory per store and
+// rebuilt only after a write (see watchStoreWrites) or after MAX_AGE_MS as a safety net. Concurrent
+// requests share one rebuild. Callers must not mutate the returned offerings.
+const MAX_AGE_MS = 60_000;
+const catalogs = new WeakMap();   // store -> { items, at, stale, building }
+
+/** Mark the cached catalog stale: the next read rebuilds it. */
+export function markCatalogStale(store) {
+  const entry = catalogs.get(store);
+  if (entry) entry.stale = true;
+}
+
+/** Wrap the store's write methods so any change to nodes, cards, probes or observations marks the catalog stale. */
+export function watchStoreWrites(store) {
+  for (const name of ['upsertNode', 'setState', 'saveRevision', 'recordProbe', 'addFingerprints', 'setObservation']) {
+    const write = store[name];
+    if (typeof write !== 'function' || write.__marksCatalogStale) continue;
+    const wrapped = async function (...args) {
+      try { return await write.apply(this, args); } finally { markCatalogStale(store); }
+    };
+    wrapped.__marksCatalogStale = true;
+    store[name] = wrapped;
+  }
+  return store;
+}
+
+/** Searchable offering summaries, from memory when nothing has changed. */
 export async function collectOfferings(store) {
+  let entry = catalogs.get(store);
+  if (entry?.items && !entry.stale && Date.now() - entry.at < MAX_AGE_MS) return entry.items;
+  if (entry?.building) return entry.building;
+  if (!entry) { entry = {}; catalogs.set(store, entry); }
+  entry.stale = false;   // a write landing during the rebuild sets it again, so the next read rebuilds
+  entry.building = buildOfferings(store).then(
+    (items) => { entry.items = items; entry.at = Date.now(); entry.building = null; return items; },
+    (err) => { entry.building = null; throw err; });
+  return entry.building;
+}
+
+/** Flatten indexed nodes into searchable offering summaries. */
+async function buildOfferings(store) {
   const out = [];
   for (const node of await store.allNodes()) {
     if (['delisted', 'suspended', 'submitted', 'challenged', 'disputed', 'claimed'].includes(node.state)) continue;
@@ -103,6 +142,8 @@ export async function searchOfferingsPaged(store, query) {
       || o.offering_id.includes(needle) || o.node_id.includes(needle));
   }
 
+  // Rank depends on the filtered set: annotate copies, never the shared cached offerings.
+  items = items.map((o) => ({ ...o }));
   const maxPrice = Math.max(...items.map((o) => o.pricing.input_per_mtok ?? 0), 0.000001);
   for (const o of items) {
     const components = {
