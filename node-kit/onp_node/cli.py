@@ -30,6 +30,51 @@ async def interrogate_engine(base_url: str, key: str | None = None) -> list[str]
             return [m["id"] for m in (await r.json()).get("data", [])]
 
 
+def _params_b(size) -> float | None:
+    """Ollama's parameter_size ("8.2B", "567M") in billions."""
+    try:
+        s = str(size).strip().upper()
+        return round(float(s[:-1]) / (1000 if s.endswith("M") else 1), 3) if s[-1:] in ("B", "M") else None
+    except ValueError:
+        return None
+
+
+async def engine_details(base_url: str, models: list[str], key: str | None = None) -> dict:
+    """What the engine says about each model, for the card: vLLM's served context length
+    (max_model_len); Ollama's size, quantization, family and tool/vision support. Ollama's
+    context is left to the config: it serves less than a model's trained maximum. Best effort."""
+    headers = {"authorization": f"Bearer {key}"} if key else {}
+    details: dict[str, dict] = {m: {} for m in models}
+    base = base_url.rstrip("/")
+    async with ClientSession(timeout=ClientTimeout(total=10)) as session:
+        try:
+            async with session.get(f"{base}/models", headers=headers) as r:
+                for m in (await r.json()).get("data", []) if r.status == 200 else []:
+                    if m.get("id") in details and isinstance(m.get("max_model_len"), int):
+                        details[m["id"]]["context_window"] = m["max_model_len"]
+        except Exception:
+            pass
+        origin = base[:-3] if base.endswith("/v1") else base
+        for m in models:
+            try:
+                async with session.post(f"{origin}/api/show", json={"model": m}, headers=headers) as r:
+                    if r.status != 200:
+                        break  # not Ollama
+                    show = await r.json()
+            except Exception:
+                break
+            d, caps = show.get("details") or {}, show.get("capabilities") or []
+            info = details[m]
+            if _params_b(d.get("parameter_size")):
+                info["params_b"] = _params_b(d.get("parameter_size"))
+            if d.get("quantization_level"):
+                info["quantization"] = d["quantization_level"]
+            if d.get("family"):
+                info["family"] = d["family"]
+            info["supports"] = [s for c, s in (("tools", "tool_calls"), ("vision", "vision")) if c in caps]
+    return details
+
+
 def namespace_ok(node_id: str, public_url: str) -> bool:
     """A registry only accepts a card served by a host that controls the node id (reverse-DNS):
     the host itself or a parent domain. ai.example.org may serve org.example.ai[.anything]."""
@@ -75,7 +120,8 @@ def make_server() -> tuple[NodeKitServer, dict]:
         if missing:
             raise SystemExit(f"config lists models the engine does not serve: {missing}")
         models = [m for m in models if m in include]
-    card = stable_revision(build_card(cfg, models), REVISION_STATE)
+    details = asyncio.run(engine_details(cfg["engine"]["base_url"], models))
+    card = stable_revision(build_card(cfg, models, details), REVISION_STATE)
     receipts = cfg.get("receipts", {})
     return NodeKitServer(card, key, cfg["engine"]["base_url"], challenge_file=CHALLENGE,
                          engine_timeout_s=cfg["engine"].get("timeout_s", 300),
@@ -190,8 +236,8 @@ def cmd_register(args):
 # their own domain, and registries probe their real API with a probe key they provide.
 
 def make_static_card(cfg: dict, models: list[str], api_base: str, health_url: str | None,
-                     signup: str | None, key, state_path: Path) -> tuple[dict, dict]:
-    card = build_card(cfg, models)
+                     signup: str | None, key, state_path: Path, details: dict | None = None) -> tuple[dict, dict]:
+    card = build_card(cfg, models, details)
     base = api_base.rstrip("/")
     card["endpoints"] = {"openai": base, "health": health_url or f"{base}/models"}
     if signup:
@@ -214,7 +260,8 @@ def cmd_card(args):
         if missing:
             raise SystemExit(f"config lists models the API does not serve: {missing}")
         models = [m for m in models if m in include]
-    card, jwks = make_static_card(cfg, models, api_base, args.health, args.signup, key, REVISION_STATE)
+    details = asyncio.run(engine_details(api_base, models, engine_key))
+    card, jwks = make_static_card(cfg, models, api_base, args.health, args.signup, key, REVISION_STATE, details)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "open-node.json").write_text(json.dumps(card, indent=2), encoding="utf-8")

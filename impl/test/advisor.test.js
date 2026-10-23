@@ -216,3 +216,36 @@ test('fetchWithin gives up on a node that never answers', async (t) => {
   await assert.rejects(fetchWithin(`http://127.0.0.1:${server.address().port}/`, {}, 300), /no response within/);
   assert.ok(performance.now() - t0 < 3000);
 });
+
+test('routing a real request: tools and JSON needs come from the request, not the prompt words', () => {
+  const guessed = extractFeatures('hi, how are you today?');
+  assert.equal(guessed.needs.tools, true, 'describing a task: "today" suggests a web search');
+  const routed = extractFeatures('hi, how are you today?', { request: { tools: undefined, json: false } });
+  assert.equal(routed.needs.tools, false, 'no tools sent: any model will do');
+  assert.equal(extractFeatures('look it up', { request: { tools: [{ type: 'function' }] } }).needs.tools, true);
+  assert.equal(extractFeatures('extract as json', { request: { json: false } }).needs.json, false);
+  assert.equal(extractFeatures('hello', { request: { json: true } }).needs.json, true);
+});
+
+test('auto-private: simple requests stay on this machine, demanding ones go to the strongest LAN model', () => {
+  const free = { modality: 'text', pricing: { input_per_mtok: 0, output_per_mtok: 0 }, data_policy: { retention: 'none', training_on_inputs: false }, observed: { probe_success: 1, probes: 0 } };
+  const local = (id, params_b) => ({ ...free, node_id: 'local', offering_id: id, tier: 'local', source: 'local', local: { run: `ollama run ${id}` },
+    model: { name: id, params_b }, serving: { context_window: 8192, supports: ['streaming', 'tool_calls'] } });
+  const h100 = { ...free, node_id: 'org.lab.h100', offering_id: 'qwen3-235b', tier: 'lan', source: 'lan',
+    model: { name: 'Qwen/Qwen3-235B-A22B-FP8', params_b: 235 }, serving: { context_window: 32768, supports: ['streaming', 'tool_calls'], expected_tps: { p50: 60, basis: 'claimed' } } };
+  const pick = (pool, prompt, tools) => recommend(pool, extractFeatures(prompt, { request: { tools, json: false } }),
+    { preset: 'private', prefer_local: true, limit: 3 }).recommendations[0].offering;
+
+  for (const pool of [[local('qwen3:8b', 8.2), h100], [local('llama3.2:3b', 3.2), h100]]) {
+    const own = `local/${pool[0].offering_id}`;
+    assert.equal(pick(pool, 'hi, how are you today?'), own);
+    assert.equal(pick(pool, 'What is the capital of Australia?'), own);
+    assert.equal(pick(pool, 'Prove step by step that the algorithm terminates.'), 'org.lab.h100/qwen3-235b');
+    assert.equal(pick(pool, 'Debug this function and find the root cause: ' + 'x = y; '.repeat(80)), 'org.lab.h100/qwen3-235b');
+    assert.equal(pick(pool, 'Summarize this report: ' + 'word '.repeat(9000)), 'org.lab.h100/qwen3-235b');
+    assert.equal(pick(pool, 'Find the order status', [{ type: 'function' }]), 'org.lab.h100/qwen3-235b');
+  }
+  // Other presets are unchanged: the own-machine bonus still applies to every task outside auto-private.
+  const quality = recommend([local('qwen3:8b', 8.2), h100], extractFeatures('hi there', { request: {} }), { preset: 'quality', prefer_local: true });
+  assert.equal(quality.recommendations[0].offering, 'org.lab.h100/qwen3-235b');
+});

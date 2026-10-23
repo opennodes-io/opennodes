@@ -143,12 +143,12 @@ export async function startOllamaRouter({
   };
 
   /** Resolve a requested model name to an ordered list of catalog entries. */
-  async function resolve(name, { messages = [], prompt = null, maxTokens = null } = {}) {
+  async function resolve(name, { messages = [], prompt = null, maxTokens = null, request = null } = {}) {
     const auto = parseAutoModel(name);
     if (auto) {
       const { preset } = auto;
       const text = prompt ?? lastUserText(messages);
-      const features = extractFeatures(text, { messages: prompt ? [] : messages.slice(0, -1), est_output_tokens: maxTokens });
+      const features = extractFeatures(text, { messages: prompt ? [] : messages.slice(0, -1), est_output_tokens: maxTokens, request });
       const pool = preset === 'private' ? await localEntries() : await catalog();
       const result = recommend(pool.map((e) => e.offering), features, {
         preset, limit: 5, prefer_local: true, max_total_usd: pol.max_request_usd, region: pol.region,
@@ -365,7 +365,7 @@ export async function startOllamaRouter({
 
     ['POST', '/api/chat', async (req, res) => {
       const body = await readJson(req, 50_000_000);
-      const candidates = await resolve(body.model, { messages: body.messages, maxTokens: body.options?.num_predict });
+      const candidates = await resolve(body.model, { messages: body.messages, maxTokens: body.options?.num_predict, request: { tools: body.tools, json: Boolean(body.format) } });
       await dispatch(res, body.model, candidates, async (entry) => {
         const over = checkBudget(entry, body); if (over) return { failed: over };
         return entry.kind === 'ollama' ? viaOllama(entry, body, res, body.model, '/api/chat') : viaOnp(entry, body, res, body.model, 'chat');
@@ -374,7 +374,7 @@ export async function startOllamaRouter({
 
     ['POST', '/api/generate', async (req, res) => {
       const body = await readJson(req, 50_000_000);
-      const candidates = await resolve(body.model, { prompt: body.prompt ?? '', maxTokens: body.options?.num_predict });
+      const candidates = await resolve(body.model, { prompt: body.prompt ?? '', maxTokens: body.options?.num_predict, request: { tools: [], json: Boolean(body.format) } });
       await dispatch(res, body.model, candidates, async (entry) => {
         const over = checkBudget(entry, body); if (over) return { failed: over };
         return entry.kind === 'ollama' ? viaOllama(entry, body, res, body.model, '/api/generate') : viaOnp(entry, body, res, body.model, 'generate');
@@ -389,7 +389,7 @@ export async function startOllamaRouter({
     ['GET', '/v1/models', async (req, res) => sendJson(res, 200, { object: 'list', data: [...AUTO_MODEL_NAMES, ...(await catalog()).map((e) => e.name)].map((id) => ({ id, object: 'model', owned_by: 'opennodes-ollama-router' })) })],
     ['POST', '/v1/chat/completions', async (req, res) => {
       const body = await readJson(req, 50_000_000);
-      const want = { messages: body.messages, maxTokens: body.max_tokens };
+      const want = { messages: body.messages, maxTokens: body.max_tokens, request: { tools: body.tools, json: ['json_object', 'json_schema'].includes(body.response_format?.type) } };
       const candidates = await resolve(body.model, want);
       // OpenRouter-compatible fallback list: `models: [...]` adds further models to try, in order.
       if (Array.isArray(body.models)) {

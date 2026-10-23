@@ -4,6 +4,6 @@
   "type": "module",
   "main": "src/node.js",
   "dependencies": {
-    "@opennodes/core": "0.1.8"
+    "@opennodes/core": "0.1.9"
   }
 }

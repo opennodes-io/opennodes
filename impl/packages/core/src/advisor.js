@@ -61,8 +61,11 @@ const CUES = {
 /**
  * Extract routing features from a task description (or raw prompt).
  * Never returns the text itself — only what a router needs.
+ * request: when routing a real API call, { tools, json } from that call. What it needs is then
+ * read from the call itself (tools sent, JSON output asked for), not guessed from the prompt's
+ * words — "what's on today?" needs no tool-capable model unless the client sends tools.
  */
-export function extractFeatures(task, { attachments = [], est_output_tokens = null, messages = [] } = {}) {
+export function extractFeatures(task, { attachments = [], est_output_tokens = null, messages = [], request = null } = {}) {
   const text = typeof task === 'string' ? task : String(task?.prompt ?? task?.text ?? '');
   const historyChars = messages.reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content ?? '').length), 0);
   const attachmentTokens = attachments.reduce((n, a) => n + Math.ceil((a.chars ?? a.size_bytes ?? 0) / 4) + (a.type === 'image' ? 1000 : 0), 0);
@@ -112,9 +115,9 @@ export function extractFeatures(task, { attachments = [], est_output_tokens = nu
     est_input_tokens: estInput,
     est_output_tokens: estOutput,
     needs: {
-      tools: tools.length > 0 || taskClass === 'agentic',
+      tools: request ? (request.tools?.length ?? 0) > 0 : tools.length > 0 || taskClass === 'agentic',
       tool_categories: tools,
-      json: CUES.extraction.test(text) && /json|schema|structured/i.test(text),
+      json: request ? Boolean(request.json) : CUES.extraction.test(text) && /json|schema|structured/i.test(text),
       vision: hasImages,
       long_context: estInput > 16_000,
       reasoning,
@@ -143,6 +146,15 @@ const BENCH_FOR_CLASS = {
   agentic: /swe-?bench|tau-?bench|bfcl|tool|agent/i,
 };
 
+/** Quality prior of a ~8B model: enough for light work (see isLight). */
+const LIGHT_ENOUGH = 0.33;
+
+/** Quick, simple work a small model on the user's own machine handles well. */
+export function isLight(features) {
+  return features.needs.reasoning === 'low' && !features.needs.long_context && !features.needs.tools
+    && !['code', 'agentic', 'reasoning', 'writing'].includes(features.task_class);
+}
+
 /** Per-task weights (must sum to 1). */
 export function weightsFor(features, preset = null) {
   let w = { quality: 0.35, price: 0.25, trust: 0.20, perf: 0.20 };
@@ -153,7 +165,14 @@ export function weightsFor(features, preset = null) {
   if (preset === 'cheap') w = { quality: 0.15, price: 0.55, trust: 0.15, perf: 0.15 };
   if (preset === 'fast') w = { quality: 0.2, price: 0.15, trust: 0.15, perf: 0.5 };
   if (preset === 'quality') w = { quality: 0.6, price: 0.05, trust: 0.2, perf: 0.15 };
-  if (preset === 'private') w = { quality: 0.25, price: 0.15, trust: 0.45, perf: 0.15 };
+  if (preset === 'private') {
+    // The pool is the user's own machines, so privacy needs no weight: rank for the task as
+    // `auto` does (a hard task goes to the strongest machine). Trust keeps a floor for pools
+    // that also hold community-tier nodes.
+    const trust = Math.max(w.trust, 0.3);
+    const k = (1 - trust) / (1 - w.trust);
+    w = { quality: w.quality * k, price: w.price * k, trust, perf: w.perf * k };
+  }
   return w;
 }
 
@@ -327,17 +346,20 @@ export function recommend(offerings, features, policy = {}) {
   });
 
   const w = weightsFor(features, policy.preset ?? null);
+  // auto-private, simple request: a mid-size model (~8B) is good enough, so a bigger one earns
+  // nothing more and the user's own machine wins; demanding work still goes to the strongest.
+  const qualityCap = policy.preset === 'private' && isLight(features) ? LIGHT_ENOUGH : 1;
   const maxPrice = Math.max(...candidates.map((o) => o.pricing?.input_per_mtok ?? 0), 0.000001);
   const scored = candidates.map((o) => {
     const prior = qualityPrior(o, features);
     const components = {
-      quality: round2(prior.q * languageFit(o, features.language)),
+      quality: round2(Math.min(qualityCap, prior.q * languageFit(o, features.language))),
       price: round2(1 - (o.pricing?.input_per_mtok ?? maxPrice) / maxPrice),
       trust: round2(0.7 * (TIER_SCORE[o.tier] ?? 0) + 0.3 * (o.observed?.probe_success ?? 0)),
       perf: round2(perfScore(o, features)),
     };
     let score = Object.entries(w).reduce((s, [k, wk]) => s + wk * components[k], 0);
-    if (policy.prefer_local && o.local) score += 0.1;
+    if (policy.prefer_local && o.local && (policy.preset !== 'private' || isLight(features))) score += 0.1;
     const bounds = estimateBounds(o.pricing ?? {}, features.est_input_tokens, features.est_output_tokens);
     return { offering: o, score: round2(score), components, basis: prior.basis, estimate: { currency: o.pricing?.currency ?? 'USD', ...bounds } };
   }).filter((c) => c.estimate.max <= (policy.max_total_usd ?? Infinity));

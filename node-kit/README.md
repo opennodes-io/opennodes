@@ -53,6 +53,19 @@ onp-node check
 onp-node register https://registry.example.org
 ```
 
+**Describe each model** so clients route well — a 235B model on four H100s and a 3B model on a
+laptop must not look alike. Ollama engines report size, quantization and tool/vision support
+themselves; vLLM reports the context length it serves (`max_model_len`). Add or correct the rest
+in `onp-node.toml`, keyed by the engine's model id:
+
+```toml
+[model."Qwen/Qwen3-235B-A22B-FP8"]
+params_b = 235
+supports = ["tool_calls", "json_mode"]   # also "vision"
+languages = ["en", "de", { lang = "pl", grade = "native" }]
+expected_tps = 60                        # claimed; the registry's measurements are shown beside it
+```
+
 ## Card-only listing (you already run an OpenAI-compatible API)
 
 If you operate a production API and won't put a proxy in its path, list it with a static card instead. The kit signs the card once; you host two JSON files on your domain; the registry probes your real API with a key you provide.
