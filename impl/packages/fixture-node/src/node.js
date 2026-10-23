@@ -59,6 +59,7 @@ export async function startFixtureNode({
 } = {}) {
   const keys = generateKeypair();
   const state = { challenges: new Map(), card: null, origin: null, requests: 0 };
+  const streamedReceipts = new Map();   // receipt_id -> JWS, for streams (receipt by URL)
 
   // request_hash = sha256 over the raw request body bytes as received (ONP-5 §5).
   const makeReceipt = (offering, usage, requestBytes, pinnedRevision) => signJson({
@@ -84,6 +85,12 @@ export async function startFixtureNode({
     ['GET', '/.well-known/onp-challenge/:token', (req, res, { params }) => {
       if (acceptAnyChallenge || state.challenges.has(params.token)) sendJson(res, 200, { token: params.token });
       else problem(res, 404, 'unknown-challenge', params.token);
+    }],
+    ['GET', '/onp/receipts/:id', (req, res, { params }) => {
+      const jws = streamedReceipts.get(params.id);
+      if (!jws) return problem(res, 404, 'unknown-receipt', params.id);
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end(jws);
     }],
     ['GET', '/onp/health', (req, res) => {
       sendJson(res, 200, { status: 'ok', load: 0.1, queue_ms: 5 });
@@ -135,15 +142,19 @@ export async function startFixtureNode({
       };
 
       if (body.stream) {
-        res.writeHead(200, { 'content-type': 'text/event-stream', 'onp-receipt': receipt });
+        // Like the Node Kit: a streamed receipt is announced by URL and exists only once the stream ends.
+        const receiptId = `r_${randomUUID()}`;
+        res.writeHead(200, { 'content-type': 'text/event-stream', 'onp-receipt': `${state.origin}/onp/receipts/${receiptId}` });
         const chunk = (delta, extra = {}) => res.write(`data: ${JSON.stringify({
           id: completion.id, object: 'chat.completion.chunk', model: MODEL_ID,
           choices: [{ index: 0, delta, finish_reason: extra.finish ?? null }], ...extra.usage ? { usage } : {},
         })}\n\n`);
         chunk({ role: 'assistant', content: reply });
+        await new Promise((r) => setTimeout(r, 30));   // tokens arrive over time, as from a real engine
         chunk({}, { finish: 'stop', usage: true });
         res.write('data: [DONE]\n\n');
         res.end();
+        streamedReceipts.set(receiptId, receipt);
       } else {
         sendJson(res, 200, completion, { 'onp-receipt': receipt });
       }

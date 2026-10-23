@@ -175,7 +175,16 @@ export async function startOllamaRouter({
   }
 
   async function verifyReceipt(entry, receiptJws) {
-    if (receiptJws.startsWith('http')) receiptJws = (await (await fetch(receiptJws, { signal: AbortSignal.timeout(10_000) })).text()).trim();
+    if (receiptJws.startsWith('http')) {
+      // Published by URL once a stream ends: only from the node's own origin, brief retry while it materializes.
+      if (new URL(receiptJws).origin !== new URL(entry.offering.endpoints.openai).origin) throw new Error(`receipt URL outside the node's origin: ${receiptJws}`);
+      for (let i = 0; ; i++) {
+        const r = await fetch(receiptJws, { signal: AbortSignal.timeout(10_000) });
+        if (r.ok) { receiptJws = (await r.text()).trim(); break; }
+        if (r.status !== 404 || i >= 4) throw new Error(`receipt ${r.status}`);
+        await new Promise((ok) => setTimeout(ok, 250 * (i + 1)));
+      }
+    }
     const origin = entry.origin;
     if (!jwksCache.has(origin)) jwksCache.set(origin, await (await fetch(`${origin}/.well-known/jwks.json`)).json());
     const receipt = verifyJws(receiptJws, keyFromJwk(jwksCache.get(origin).keys[0]));

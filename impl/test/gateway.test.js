@@ -73,6 +73,16 @@ test('streaming passes through with usage in final chunk', async (t) => {
   assert.match(text, /echo: stream me/);
   assert.match(text, /"usage"/);
   assert.match(text, /data: \[DONE\]/);
+
+  // The streamed receipt (published by URL after the stream) is fetched, verified and recorded.
+  let ledger;
+  for (let i = 0; i < 20; i++) {
+    ledger = await (await fetch(`${gw.origin}/gateway/receipts`)).json();
+    if (ledger.count) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.equal(ledger.count, 1);
+  assert.ok(ledger.entries[0].receipt_id && ledger.entries[0].cost !== null, JSON.stringify(ledger.entries[0]));
 });
 
 test('reprice mid-session: gateway recovers transparently, receipt uses new revision', async (t) => {

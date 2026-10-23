@@ -3,6 +3,7 @@
 // does discovery, policy, revision pinning, price_changed recovery, fallback, and receipts.
 import { appendFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
+import { createHash } from 'node:crypto';
 import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend, parseAutoModel, AUTO_MODEL_NAMES, responseBudgetMs, fetchWithin } from '@opennodes/core';
 import { OnpClient } from './client.js';
 
@@ -121,26 +122,39 @@ export async function startGateway({
     return offering ? [offering] : [];
   }
 
-  async function verifyReceipt(offering, receiptJws) {
-    if (receiptJws.startsWith('http')) {
-      // Streaming responses carry the receipt by URL (materialized after the stream ends).
-      receiptJws = (await (await fetch(receiptJws, { signal: AbortSignal.timeout(10_000) })).text()).trim();
-    }
+  /** sent: { revision, bytes } of the request as pinned and sent, to check the receipt is about it. */
+  async function verifyReceipt(offering, receiptJws, sent = null) {
     const origin = new URL(offering.endpoints.openai).origin;
+    if (receiptJws.startsWith('http')) receiptJws = await fetchReceipt(receiptJws, origin);
     if (!jwksCache.has(origin)) {
       jwksCache.set(origin, await (await fetch(`${origin}/.well-known/jwks.json`)).json());
     }
     const receipt = verifyJws(receiptJws, keyFromJwk(jwksCache.get(origin).keys[0]));
     const expected = costForUsage(offering.pricing, receipt.usage.prompt_tokens, receipt.usage.completion_tokens);
     if (round6(receipt.amount.value) !== round6(expected)) throw new Error('receipt amount mismatch');
+    if (sent?.revision && receipt.card_revision !== sent.revision) throw new Error('receipt names another card revision');
+    if (sent?.bytes && receipt.request_hash !== `sha256:${createHash('sha256').update(sent.bytes).digest('hex')}`) {
+      throw new Error('receipt request_hash does not match the request sent');
+    }
     return receipt;
+  }
+
+  /** Fetch a receipt published by URL: only from the node's own origin; brief retry while it materializes. */
+  async function fetchReceipt(url, origin) {
+    if (new URL(url).origin !== origin) throw new Error(`receipt URL outside the node's origin: ${url}`);
+    for (let i = 0; ; i++) {
+      const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+      if (res.ok) return (await res.text()).trim();
+      if (res.status !== 404 || i >= 4) throw new Error(`receipt ${res.status}`);
+      await new Promise((r) => setTimeout(r, 250 * (i + 1)));
+    }
   }
 
   function logRequest(entry) {
     receipts.push(entry);
     if (ledgerPath) appendFileSync(ledgerPath, JSON.stringify(entry) + '\n');
     console.log(`[gateway] ${entry.model} -> ${entry.offering} rev=${entry.revision} ` +
-      `${entry.cost != null ? entry.currency + ' ' + entry.cost : 'no-receipt'} ${entry.latency_ms}ms${entry.fallback ? ' (fallback)' : ''}`);
+      `${entry.cost != null ? entry.currency + ' ' + entry.cost : entry.receipt_error ? 'RECEIPT FAILED: ' + entry.receipt_error : 'no-receipt'} ${entry.latency_ms}ms${entry.fallback ? ' (fallback)' : ''}`);
   }
 
   const authed = (req, res) => {
@@ -165,6 +179,7 @@ export async function startGateway({
       promptTokens: Math.ceil(JSON.stringify(body.messages ?? '').length / 4),
       maxTokens: body.max_tokens ?? body.max_completion_tokens ?? 512,
     });
+    const requestBytes = JSON.stringify({ ...upstreamBody, model: offering.binding.model_id });
     const upstream = await fetchWithin(`${offering.endpoints.openai}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -173,24 +188,29 @@ export async function startGateway({
         'onp-card-revision': offering.card_revision,
         ...(upstreamKey ? { authorization: `Bearer ${upstreamKey}` } : {}),
       },
-      body: JSON.stringify({ ...upstreamBody, model: offering.binding.model_id }),
+      body: requestBytes,
     }, budgetMs);
 
     if (upstream.status === 409) return { retryPricing: true };
     if (!upstream.ok) return { failed: `upstream ${upstream.status}` };
 
-    const receiptJws = upstream.headers.get('onp-receipt');
-    let receipt = null;
-    try { if (receiptJws) receipt = await verifyReceipt(offering, receiptJws); }
-    catch (err) { return { failed: `receipt verification: ${err.message}` }; }
-
+    const receiptRef = upstream.headers.get('onp-receipt');
+    const sent = { revision: offering.card_revision, bytes: requestBytes };
     const entry = {
       ts: new Date().toISOString(), model: requestedModel,
       offering: `${offering.node_id}/${offering.offering_id}`, revision: offering.card_revision,
-      receipt_id: receipt?.receipt_id ?? null, cost: receipt?.amount.value ?? null,
-      currency: receipt?.amount.currency ?? null, usage: receipt?.usage ?? null,
+      receipt_id: null, cost: null, currency: null, usage: null,
       latency_ms: Math.round(performance.now() - t0),
     };
+    const settle = (receipt) => Object.assign(entry, receipt && {
+      receipt_id: receipt.receipt_id, cost: receipt.amount.value, currency: receipt.amount.currency, usage: receipt.usage,
+    });
+
+    if (!body.stream) {
+      // Whole answer in hand: a receipt that doesn't verify means trying the next node instead.
+      try { if (receiptRef) settle(await verifyReceipt(offering, receiptRef, sent)); }
+      catch (err) { return { failed: `receipt verification: ${err.message}` }; }
+    }
 
     if (body.stream) {
       res.writeHead(200, { 'content-type': upstream.headers.get('content-type') ?? 'text/event-stream' });
@@ -200,6 +220,10 @@ export async function startGateway({
         nodeStream.on('end', resolve);
         nodeStream.on('error', reject);
       });
+      // A streamed receipt is published by URL once the stream ends, so it is checked afterwards;
+      // the answer is already delivered, so a failure is recorded in the ledger, not retried.
+      try { if (receiptRef) settle(await verifyReceipt(offering, receiptRef, sent)); }
+      catch (err) { entry.receipt_error = err.message; }
     } else {
       const completion = await upstream.json();
       sendJson(res, 200, { ...completion, model: requestedModel });
