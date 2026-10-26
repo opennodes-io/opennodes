@@ -65,8 +65,10 @@ services:
       OLLAMA_CONTEXT_LENGTH: "8192"
     # The demo model shares a 4 GB server with the registry and Postgres. Cap it so a long
     # prompt gets the model restarted instead of freezing the machine (OOM on 2026-10-10 and -20).
-    mem_limit: 2g
-    memswap_limit: 2g
+    # 2 GB proved too tight for llama3.2:1b at 8192 context (2026 MiB resident, limit hit
+    # ~4,800 times in 6 days): 2.5 GB plus 0.5 GB of swap, leaving ~0.5 GB for everything else.
+    mem_limit: 2560m
+    memswap_limit: 3g
     volumes:
       - ollama:/root/.ollama
     restart: unless-stopped
