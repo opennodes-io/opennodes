@@ -606,8 +606,39 @@ function provLine(o) {
   return bits.join(' · ');
 }
 
+const PAGE = 60;
+let listQuery = '', listTotal = 0;
+
+// Count line and the "Show more" button at the end of the list.
+function updateListFooter() {
+  $('#m-more')?.remove();
+  const shown = lastResults.length;
+  $('#m-counts').textContent = fmtInt(listTotal) + ' offerings' + (shown < listTotal ? ` · showing 1–${fmtInt(shown)}` : '');
+  if (shown < listTotal) {
+    $('#m-list').insertAdjacentHTML('beforeend', `<button class="btn" id="m-more" style="background:var(--panel); color:var(--accent); align-self:stretch">Show ${fmtInt(Math.min(PAGE, listTotal - shown))} more</button>`);
+    $('#m-more').addEventListener('click', loadMore);
+  }
+}
+
+async function loadMore() {
+  const btn = $('#m-more');
+  btn.disabled = true;
+  const query = listQuery;
+  const p = new URLSearchParams(query);
+  p.set('offset', lastResults.length);
+  try {
+    const { offerings } = await api('/v0/offerings?' + p);
+    if (query !== listQuery) return;   // the filters changed meanwhile
+    const start = lastResults.length;
+    lastResults = lastResults.concat(offerings);
+    btn.insertAdjacentHTML('beforebegin', offerings.map(renderItem).join(''));
+    [...document.querySelectorAll('#m-list .mitem')].slice(start).forEach((el) => el.addEventListener('click', () => selectModel(el)));
+    updateListFooter();
+  } catch (e) { btn.disabled = false; btn.textContent = 'Retry — ' + e.message; }
+}
+
 async function search() {
-  const p = new URLSearchParams({ limit: 60 });
+  const p = new URLSearchParams({ limit: PAGE });
   if ($('#f-q').value) p.set('q', $('#f-q').value);
   if ($('#f-modality').value) p.set('modality', $('#f-modality').value);
   if ($('#f-verified').classList.contains('on')) p.set('tier', 'verified');
@@ -615,13 +646,15 @@ async function search() {
   if ($('#f-price').value) p.set('max_input_price', $('#f-price').value);
   if (sup.size) p.set('supports', [...sup].join(','));
   p.set('sort', $('#f-sort').value);
+  listQuery = p.toString();
   try {
     const { offerings, total } = await api('/v0/offerings?' + p);
+    if (listQuery !== p.toString()) return;   // a newer search is under way
     lastResults = offerings;
-    const n = total ?? offerings.length;
-    $('#m-counts').textContent = fmtInt(n) + ' offerings' + (offerings.length < n ? ` · showing top ${offerings.length}` : '');
+    listTotal = total ?? offerings.length;
     $('#m-list').innerHTML = offerings.map(renderItem).join('')
       || '<p class="sub">No offerings match. A fresh registry fills up via catalog imports and node registrations.</p>';
+    updateListFooter();
     document.querySelectorAll('.mitem').forEach((el) => el.addEventListener('click', () => selectModel(el)));
     // keep the current selection when still listed, else select the first result
     const current = $('#model-card')?.dataset.artifact;

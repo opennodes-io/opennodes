@@ -51,8 +51,11 @@ async function buildOfferings(store) {
     const card = await store.latestCard(node.id);
     if (!card) continue;
     const probes = await store.probesFor(node.id);
-    const stageA = probes.filter((p) => p.stage === 'A');
-    const probeSuccess = stageA.length ? stageA.filter((p) => p.ok).length / stageA.length : 0;
+    // Pass rate over the recent window of conformance (A) and continuous (C) checks. Stage A
+    // alone runs every 6 h and is pushed out of the window by liveness checks within hours,
+    // which left healthy verified nodes showing 0 probes and a 0 pass rate.
+    const checks = probes.filter((p) => p.stage === 'A' || p.stage === 'C');
+    const probeSuccess = checks.length ? checks.filter((p) => p.ok).length / checks.length : 0;
     const tier = node.state === 'indexed' ? 'unverified' : node.state;
     const nodeObs = await store.getObservations(node.id, '_node');
     const availability = nodeObs.availability ?? null;
@@ -102,7 +105,7 @@ async function buildOfferings(store) {
         benchmarks: offering.benchmarks ?? null,
         observed: {
           probe_success: round2(probeSuccess),
-          probes: stageA.length,
+          probes: checks.length,
           ttft_ms: obs.ttft_ms ?? null,
           tps: obs.tps ?? null,
           availability,
@@ -152,10 +155,14 @@ export async function searchOfferingsPaged(store, query) {
 
   // Rank depends on the filtered set: annotate copies, never the shared cached offerings.
   items = items.map((o) => ({ ...o }));
-  const maxPrice = Math.max(...items.map((o) => o.pricing.input_per_mtok ?? 0), 0.000001);
+  // Price scores by position among the results (cheapest 1, dearest 0), not against the single
+  // most expensive offering: one outlier made almost everything "cheap" and every import tie.
+  const prices = items.map((o) => o.pricing.input_per_mtok).filter((p) => p != null).sort((a, b) => a - b);
+  const cheaperThan = (p) => { let lo = 0, hi = prices.length; while (lo < hi) { const m = (lo + hi) >> 1; if (prices[m] < p) lo = m + 1; else hi = m; } return lo; };
   for (const o of items) {
+    const p = o.pricing.input_per_mtok;
     const components = {
-      price: 1 - (o.pricing.input_per_mtok ?? maxPrice) / maxPrice,
+      price: p == null ? 0 : prices.length > 1 ? 1 - cheaperThan(p) / (prices.length - 1) : 1,
       tier: TIER_SCORE[o.tier] ?? 0,
       probe_success: o.observed.probe_success,
     };
@@ -172,11 +179,17 @@ export async function searchOfferingsPaged(store, query) {
     if (sort === 'price') return (a.pricing.input_per_mtok ?? Infinity) - (b.pricing.input_per_mtok ?? Infinity);
     if (sort === 'ttft') return ttftOf(a) - ttftOf(b);
     if (sort === 'tps') return tpsOf(b) - tpsOf(a);
-    return b.rank - a.rank;
+    // Equal rank: callable before listing-only, larger context first, then by name — a stable,
+    // meaningful order instead of whatever order the catalogs were imported in.
+    return b.rank - a.rank || Number(b.invocable) - Number(a.invocable)
+      || (b.serving?.context_window ?? 0) - (a.serving?.context_window ?? 0)
+      || String(a.model?.name ?? '').localeCompare(String(b.model?.name ?? ''))
+      || `${a.node_id}/${a.offering_id}`.localeCompare(`${b.node_id}/${b.offering_id}`);
   });
 
   const limit = Math.min(Number(q('limit') ?? 50), 200);
-  return { offerings: items.slice(0, limit), total: items.length };
+  const offset = Math.max(0, Math.floor(Number(q('offset') ?? 0)) || 0);
+  return { offerings: items.slice(offset, offset + limit), total: items.length, offset };
 }
 
 export async function searchOfferings(store, query) {
