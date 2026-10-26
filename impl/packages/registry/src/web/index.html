@@ -47,6 +47,13 @@
   .mitem .t .nm { font-weight: 600; font-size: 0.86rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mitem .b { display: flex; gap: 0.8rem; margin-top: 0.25rem; font-size: 0.7rem; color: var(--muted); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
   .mdetail { min-height: 30rem; }
+  .scorebox { margin: 0.4rem 0 0.8rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: 0.5rem 0.75rem; font-size: 0.8rem; }
+  .scorebox summary { cursor: pointer; }
+  .scorebox table { width: 100%; border-collapse: collapse; margin-top: 0.4rem; }
+  .scorebox td { padding: 0.2rem 0.5rem 0.2rem 0; border-top: 1px solid var(--line-2); vertical-align: top; }
+  .scorebox td.num { text-align: right; white-space: nowrap; }
+  .scorebox td.sub { font-size: 0.74rem; }
+  .scorebox tr.tot td { border-top: 1px solid var(--line); }
   .pager { display: flex; align-items: center; justify-content: center; gap: 0.3rem; margin-top: 0.5rem; font-size: 0.78rem; color: var(--muted); flex-wrap: wrap; }
   .pager:empty { display: none; }
   .pgbtn { font: inherit; min-width: 2rem; padding: 0.25rem 0.5rem; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--accent); cursor: pointer; }
@@ -267,6 +274,7 @@
   </div>
   <p class="desc" id="md-desc" hidden></p>
   <div class="statstrip" id="md-stats"></div>
+  <div id="md-score"></div>
   <div class="secnav" id="md-nav"></div>
   <h2 id="sec-offerings">Offerings <span class="counts" id="md-count"></span></h2>
   <div class="panel tablewrap" id="md-offerings"></div>
@@ -726,8 +734,10 @@ function renderAdvice(r) {
   });
 }
 
+let listedOffering = null;   // the list entry the detail was opened from: its score is explained there
 function selectModel(el) {
   document.querySelectorAll('.mitem').forEach((x) => x.classList.toggle('sel', x === el));
+  listedOffering = lastResults.find((o) => `${o.node_id}/${o.offering_id}` === el.dataset.key) ?? null;
   const host = $('#m-detail');
   if (!host.contains($('#model-card'))) { host.innerHTML = ''; host.appendChild($('#model-card')); }
   loadModel(el.dataset.artifact);
@@ -736,7 +746,7 @@ function selectModel(el) {
 let lastResults = [];
 function renderItem(o) {
   const obs = o.observed || {};
-  return `<div class="mitem" data-artifact="${esc(o.model.artifact)}">
+  return `<div class="mitem" data-artifact="${esc(o.model.artifact)}" data-key="${esc(o.node_id + '/' + o.offering_id)}">
     <div class="t">
       <span class="nm">${esc(o.model.name)}</span>
       ${tierChip(o.tier)}
@@ -839,6 +849,35 @@ function renderRow(o, idx) {
 }
 
 /* ---------- model detail ---------- */
+// How the list's ranking score for the selected entry was computed: weight × component per part.
+function renderScore(artifact) {
+  const host = $('#md-score');
+  const o = listedOffering;
+  if (!o?.rank_explanation || o.model.artifact !== artifact) { host.innerHTML = ''; return; }
+  const { weights, components } = o.rank_explanation;
+  const obs = o.observed || {};
+  const why = {
+    price: o.pricing?.input_per_mtok == null ? 'no price published'
+      : `${o.pricing.input_per_mtok === 0 ? 'free' : '$' + fmt(o.pricing.input_per_mtok) + '/MTok in'} — position among the listed results (cheapest 1.00, dearest 0.00)`,
+    tier: {
+      verified: 'verified: passed identity, context and capacity checks',
+      community: 'community: passed the registration checks',
+      attested: 'attested by a third party',
+    }[o.tier] ?? (o.source === 'import' ? 'unverified: imported from a public catalog, not checked by this registry' : 'unverified: not checked yet'),
+    probe_success: obs.probes > 0 ? `${Math.round((obs.probe_success ?? 0) * obs.probes)} of the last ${obs.probes} checks passed` : 'no checks yet',
+  };
+  const label = { price: 'Price', tier: 'Trust tier', probe_success: 'Check pass rate' };
+  const rows = Object.keys(weights).map((k) => `<tr>
+      <td>${label[k] ?? esc(k)}</td>
+      <td class="num mono">${fmt(components[k] ?? 0)} × ${fmt(weights[k])}</td>
+      <td class="num mono"><b>${fmt((components[k] ?? 0) * weights[k])}</b></td>
+      <td class="sub">${esc(why[k] ?? '')}</td></tr>`).join('');
+  host.innerHTML = `<details class="scorebox" open>
+    <summary>Ranking score <b class="mono">${fmt(o.rank)}</b> <span class="sub">for ${esc(o.node_id)} in the current list</span></summary>
+    <table>${rows}<tr class="tot"><td>Total</td><td></td><td class="num mono"><b>${fmt(o.rank)}</b></td><td class="sub">weighted sum; measured values, never paid placement</td></tr></table>
+  </details>`;
+}
+
 async function loadModel(artifact) {
   $('#model-card').dataset.artifact = artifact;
   $('#md-crumb').innerHTML = '<a href="#/">Models</a> / ' + esc(artifact);
@@ -891,6 +930,8 @@ async function loadModel(artifact) {
       released ? stat(esc(released), 'RELEASED') : '',
       first.modalities ? stat(esc((first.modalities.input || []).join('+')) + ' → ' + esc((first.modalities.output || []).join('+')), 'MODALITIES') : '',
     ].filter(Boolean).join('');
+
+    renderScore(artifact);
 
     // section nav (anchors appear only for sections that render)
     const navBits = [['#sec-offerings', 'OFFERINGS'], ['#sec-play', 'PLAYGROUND']];
