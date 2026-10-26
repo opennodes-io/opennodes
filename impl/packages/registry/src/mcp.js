@@ -3,7 +3,7 @@
 // MCP host gets ONP discovery (recommend, search_offerings, get_offering, get_node, estimate) for free.
 import { readFileSync } from 'node:fs';
 import { readJson, sendJson, problem, estimateBounds, round6, extractFeatures, recommend, MCP_TOOLS, MCP_INSTRUCTIONS, summarizeNode } from '@opennodes/core';
-import { searchOfferingsPaged, searchOfferings, collectOfferings } from './search.js';
+import { searchOfferingsPaged, searchOfferings, collectOfferings, pricePublished } from './search.js';
 
 const PROTOCOL_VERSION = '2025-06-18';
 const { version: VERSION } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
@@ -61,7 +61,7 @@ async function runTool(store, name, args = {}) {
     case 'estimate': {
       const all = await collectOfferings(store);
       const steps = [];
-      let min = 0, max = 0, currency = 'USD';
+      let min = 0, max = 0, currency = 'USD', incomplete = false;
       for (const step of args.steps ?? []) {
         let offering;
         if (step.offering) {
@@ -79,13 +79,15 @@ async function runTool(store, name, args = {}) {
         const bounds = estimateBounds(offering.pricing, step.est_input_tokens ?? 0, step.est_output_tokens ?? 0);
         currency = offering.pricing.currency;
         min += bounds.min; max += bounds.max;
+        const unpriced = !pricePublished(offering.pricing);   // unknown cost, not zero
+        incomplete ||= unpriced;
         steps.push({
           offering: `${offering.node_id}/${offering.offering_id}`,
           card_revision: offering.card_revision,
-          cost: { currency, ...bounds },
+          cost: { currency, ...bounds, ...(unpriced ? { price_published: false } : {}) },
         });
       }
-      return { total: { currency, min: round6(min), max: round6(max) }, steps };
+      return { total: { currency, min: round6(min), max: round6(max), ...(incomplete ? { incomplete: true } : {}) }, steps };
     }
     default:
       throw new Error(`unknown tool: ${name}`);

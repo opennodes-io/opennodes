@@ -534,7 +534,10 @@ const ago = (iso) => {
   return Math.round(s / 86400) + 'd ago';
 };
 const tierChip = (t) => `<span class="chip t-${esc(t)}">${esc(String(t).toUpperCase())}</span>`;
-const priceStr = (p) => {
+const SUBSCRIPTION_NODE = /token-plan|\.gitlab$/;
+const pricePublished = (p) => p && (p.input_per_mtok != null || p.output_per_mtok != null);
+const priceStr = (p, nodeId = '') => {
+  if (!pricePublished(p)) return SUBSCRIPTION_NODE.test(nodeId) ? 'in a subscription plan' : 'price not published';
   const i = p.input_per_mtok ?? 0, o = p.output_per_mtok ?? 0;
   return (i === 0 && o === 0) ? 'free' : `$${fmt(i)} / $${fmt(o)} per MTok`;
 };
@@ -753,7 +756,7 @@ function renderItem(o) {
       ${o.local ? '<span class="chip loc">LOCAL</span>' : (o.source === 'import' ? '<span class="chip imp">IMP</span>' : '')}
     </div>
     <div class="b">
-      <span><b style="color:var(--ink)">${priceStr(o.pricing)}</b></span>
+      <span><b style="color:var(--ink)">${priceStr(o.pricing, o.node_id)}</b></span>
       ${o.serving?.context_window ? `<span>ctx ${fmtInt(o.serving.context_window)}${o.serving.context_capped_from ? ' <span class="micro m-warn">▼</span>' : ''}</span>` : (o.serving?.context_capped_from ? '<span>ctx <span class="micro m-warn">unverified</span></span>' : '')}
       ${obs.ttft_ms?.p50 != null ? `<span>${obs.ttft_ms.p50}ms <span class="micro m-measured">●</span></span>` : ''}
       <span class="mono">${fmt(o.rank)}</span>
@@ -814,7 +817,7 @@ window.toggleRow = async function (el, idx) {
       ? others.slice(0, 5).map((x) => `<div class="alsorow">
           <a href="#/node/${encodeURIComponent(x.node_id)}" class="mono" style="font-size:0.72rem">${esc(x.node_id)}</a>
           ${tierChip(x.tier)}
-          <span class="num" style="color:var(--muted)">${priceStr(x.pricing)}</span>
+          <span class="num" style="color:var(--muted)">${priceStr(x.pricing, x.node_id)}</span>
           ${x.observed?.ttft_ms?.p50 != null ? `<span class="num" style="color:var(--muted)">${x.observed.ttft_ms.p50}ms <span class="micro m-measured">●</span></span>` : ''}
         </div>`).join('') + (others.length > 5 ? `<div class="alsorow"><a href="#/model/${encodeURIComponent(o.model.artifact)}">+${others.length - 5} more on the model page</a></div>` : '')
       : 'no other nodes serve this exact artifact';
@@ -838,7 +841,7 @@ function renderRow(o, idx) {
       </span>
     </div>
     <div class="l2 num">
-      <span><b>${priceStr(o.pricing)}</b></span>
+      <span><b>${priceStr(o.pricing, o.node_id)}</b></span>
       ${ctxBit(o)}
       ${measuredBits(o).join('')}
       ${(o.serving?.supports || []).filter((s) => s !== 'streaming').map((s) => `<span class="chip">${esc(s)}</span>`).join('')}
@@ -857,7 +860,7 @@ function renderScore(artifact) {
   const { weights, components } = o.rank_explanation;
   const obs = o.observed || {};
   const why = {
-    price: o.pricing?.input_per_mtok == null ? 'no price published'
+    price: o.pricing?.input_per_mtok == null ? `${priceStr(o.pricing, o.node_id)} — no price points`
       : `${o.pricing.input_per_mtok === 0 ? 'free' : '$' + fmt(o.pricing.input_per_mtok) + '/MTok in'} — position among the listed results (cheapest 1.00, dearest 0.00)`,
     tier: {
       verified: 'verified: passed identity, context and capacity checks',
@@ -889,7 +892,7 @@ async function loadModel(artifact) {
     const list = offerings.filter((o) => o.model.artifact === artifact);
     if (!list.length) { $('#md-title').textContent = 'Not found'; return; }
     const tierOrder = { verified: 3, community: 2, unverified: 1 };
-    list.sort((a, b) => (tierOrder[b.tier] ?? 0) - (tierOrder[a.tier] ?? 0) || (a.pricing.input_per_mtok ?? 0) - (b.pricing.input_per_mtok ?? 0));
+    list.sort((a, b) => (tierOrder[b.tier] ?? 0) - (tierOrder[a.tier] ?? 0) || (a.pricing.input_per_mtok ?? Infinity) - (b.pricing.input_per_mtok ?? Infinity));
     const first = list[0];
     $('#md-title').textContent = first.model.name;
     // the artifact chip links to its authoritative home: Hugging Face for hf: artifacts
@@ -917,14 +920,14 @@ async function loadModel(artifact) {
     if (desc) $('#md-desc').textContent = desc;
 
     // stats strip: aggregate honestly across serving nodes
-    const prices = list.map((o) => o.pricing.input_per_mtok ?? 0);
+    const prices = list.filter((o) => pricePublished(o.pricing)).map((o) => o.pricing.input_per_mtok ?? 0);
     const minP = Math.min(...prices), maxP = Math.max(...prices);
     const ctxMax = Math.max(...list.map((o) => o.serving?.context_window ?? 0), 0);
     const verified = list.filter((o) => o.tier === 'verified').length;
     const released = list.map((o) => o.model.released).find(Boolean);
     const stat = (v, l) => `<span class="stat"><span class="sv">${v}</span><span class="sl">${l}</span></span>`;
     $('#md-stats').innerHTML = [
-      stat(minP === 0 && maxP === 0 ? 'free' : (minP === maxP ? '$' + fmt(minP) : '$' + fmt(minP) + '–' + fmt(maxP)), '$/MTOK IN ACROSS NODES'),
+      stat(!prices.length ? priceStr(first.pricing, first.node_id) : minP === 0 && maxP === 0 ? 'free' : (minP === maxP ? '$' + fmt(minP) : '$' + fmt(minP) + '–' + fmt(maxP)), '$/MTOK IN ACROSS NODES'),
       ctxMax ? stat(fmtInt(ctxMax), 'MAX CONTEXT') : '',
       stat(`${verified}/${list.length}`, 'VERIFIED NODES'),
       released ? stat(esc(released), 'RELEASED') : '',
@@ -939,7 +942,7 @@ async function loadModel(artifact) {
     // playground targets: this page's offerings + a custom endpoint (e.g. local Ollama)
     pgOfferings = list.filter(invocable);
     $('#pg-target').innerHTML = pgOfferings.map((o, i) =>
-      `<option value="${i}">${esc(o.node_id)} — ${priceStr(o.pricing)} [${esc(o.tier)}]</option>`).join('')
+      `<option value="${i}">${esc(o.node_id)} — ${priceStr(o.pricing, o.node_id)} [${esc(o.tier)}]</option>`).join('')
       + '<option value="custom">custom endpoint (your local Ollama / any OpenAI-compatible server)</option>';
     $('#pg-customrow').hidden = pgOfferings.length > 0;   // listing-only offerings leave just the custom endpoint
     $('#pg-out').textContent = '';
@@ -962,7 +965,7 @@ async function loadModel(artifact) {
           <a href="#/node/${encodeURIComponent(o.node_id)}" style="font-weight:600">${esc(o.node_id)}</a>
           <span style="display:flex; gap:0.3rem">${tierChip(o.tier)}${o.institutional ? '<span class="chip inst">institutional</span>' : ''}${o.source === 'import' ? '<span class="chip imp">IMPORTED</span>' : ''}</span>
         </div></td>
-        <td><b>${priceStr(o.pricing)}</b></td>
+        <td><b>${priceStr(o.pricing, o.node_id)}</b></td>
         <td>${hwStr(o) || '<span style="color:var(--faint)" title="Vendor has not disclosed the hardware behind this offering">undisclosed</span>'}</td>
         <td>${ctx}</td>
         <td>${ttft}</td>
@@ -1003,7 +1006,7 @@ async function loadModel(artifact) {
           $('#md-relsec').innerHTML = `<h2 id="sec-related">More from ${esc(first.model.family)}</h2><div class="relcards">` +
             cards.map((r) => `<a class="relcard" href="#/model/${encodeURIComponent(r.model.artifact)}">
               <span class="rn">${esc(r.model.name)}</span>
-              <span class="rm">${esc(r.modality)} · ${priceStr(r.pricing)}</span></a>`).join('') + '</div>';
+              <span class="rm">${esc(r.modality)} · ${priceStr(r.pricing, r.node_id)}</span></a>`).join('') + '</div>';
           navBits.push(['#sec-related', 'RELATED']);
         }
       } catch { /* related is optional */ }
@@ -1105,7 +1108,7 @@ async function loadChatTargets() {
       const local = rest.filter((o) => o.local);            // Ollama library: runs on the visitor's own machine
       const imports = rest.filter((o) => !o.local);
       chat.offerings = [...ready, ...local, ...imports];
-      const opt = (o, i) => `<option value="${i}">${esc(o.model.name)} — ${esc(o.node_id)} — ${priceStr(o.pricing)}</option>`;
+      const opt = (o, i) => `<option value="${i}">${esc(o.model.name)} — ${esc(o.node_id)} — ${priceStr(o.pricing, o.node_id)}</option>`;
       $('#ch-add').innerHTML = '<option value="">+ Add a model…</option>'
         + (ready.length ? `<optgroup label="Ready to use — no key needed (${ready.length})">${ready.map((o, i) => opt(o, i)).join('')}</optgroup>` : '')
         + (local.length ? `<optgroup label="On your machine — needs a local Ollama with this model pulled">${local.map((o, i) => opt(o, ready.length + i)).join('')}</optgroup>` : '')
@@ -1905,7 +1908,7 @@ async function loadNode(id) {
     const offerRows = offers.slice(0, 50).map((o) => `<tr>
       <td><a href="#/model/${encodeURIComponent(o.model?.artifact ?? '')}" style="font-weight:600">${esc(o.model?.name ?? o.offering_id)}</a></td>
       <td><span class="chip">${esc(o.modality)}</span></td>
-      <td class="num"><b>${priceStr(o.pricing || {})}</b></td>
+      <td class="num"><b>${priceStr(o.pricing || {}, o.node_id)}</b></td>
       <td>${hwStr({ hardware: o.hardware ?? card.hardware }) || '<span style="color:var(--faint)">undisclosed</span>'}</td>
       <td class="num">${o.serving?.context_window ? fmtInt(o.serving.context_window) : '—'}</td>
       <td>${(o.serving?.supports || []).filter((s) => s !== 'streaming').map((s) => `<span class="chip">${esc(s)}</span>`).join(' ') || '—'}</td>

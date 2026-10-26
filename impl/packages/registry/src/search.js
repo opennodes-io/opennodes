@@ -119,6 +119,9 @@ async function buildOfferings(store) {
   return out;
 }
 
+/** Whether an offering publishes a per-token price (imports with no known price leave it out). */
+export const pricePublished = (pricing) => pricing?.input_per_mtok != null || pricing?.output_per_mtok != null;
+
 /** Search returning the page plus the total number of matches (before `limit`). */
 export async function searchOfferingsPaged(store, query) {
   let items = await collectOfferings(store);

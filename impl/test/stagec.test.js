@@ -315,3 +315,36 @@ test('catalog listing: paging, price scored by position, meaningful tie order, p
   assert.equal(fixture.observed.probes, 100);
   assert.ok(fixture.observed.probe_success >= 0.98, String(fixture.observed.probe_success));
 });
+
+test('prices: missing is "not published", subscription plans carry no per-token price, only real zeros are free', async (t) => {
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  t.after(() => registry.close());
+  await fetch(`${registry.origin}/v0/import/models-dev`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ catalog: {
+      acme: { id: 'acme', name: 'Acme', api: 'https://api.acme.example/v1', models: {
+        unpriced: { id: 'unpriced', name: 'Unpriced' },
+        gratis: { id: 'gratis', name: 'Gratis', cost: { input: 0, output: 0 } },
+        paid: { id: 'paid', name: 'Paid', cost: { input: 1, output: 2 } },
+      } },
+      'acme-token-plan': { id: 'acme-token-plan', name: 'Acme plan', api: 'https://plan.acme.example/v1', models: {
+        planned: { id: 'planned', name: 'Planned', cost: { input: 0, output: 0 } },
+      } },
+    } }),
+  });
+  const get = async (qs) => (await (await fetch(`${registry.origin}/v0/offerings?${qs}`)).json()).offerings;
+  const byId = Object.fromEntries((await get('limit=10')).map((o) => [o.offering_id, o]));
+  assert.equal(byId.unpriced.pricing.input_per_mtok, undefined, 'no price invented');
+  assert.equal(byId.planned.pricing.input_per_mtok, undefined, 'subscription plan: no per-token price');
+  assert.equal(byId.gratis.pricing.input_per_mtok, 0);
+  assert.deepEqual((await get('max_input_price=0')).map((o) => o.offering_id), ['gratis'], 'only real zeros count as free');
+  assert.equal(byId.unpriced.rank_explanation.components.price, 0, 'no price points without a price');
+
+  const est = await (await fetch(`${registry.origin}/v0/estimate`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ steps: [{ offering: `${byId.unpriced.node_id}/unpriced`, est_input_tokens: 1000, est_output_tokens: 500 },
+      { offering: `${byId.paid.node_id}/paid`, est_input_tokens: 1000, est_output_tokens: 500 }] }),
+  })).json();
+  assert.equal(est.steps[0].cost.price_published, false);
+  assert.equal(est.total.incomplete, true, 'a total with an unpriced step is marked incomplete');
+});

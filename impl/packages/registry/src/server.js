@@ -15,7 +15,7 @@ import { runStageB, captureFingerprints } from './stageb.js';
 import { startStageC } from './stagec.js';
 import { startReimport } from './reimport.js';
 import { makeSafeFetch } from './safefetch.js';
-import { searchOfferings, searchOfferingsPaged, collectOfferings, watchStoreWrites, RANK_COMPONENTS } from './search.js';
+import { searchOfferings, searchOfferingsPaged, collectOfferings, watchStoreWrites, RANK_COMPONENTS, pricePublished } from './search.js';
 import { mcpRoutes } from './mcp.js';
 import { hostControlsNamespace, isPrivateHost, makeRateLimiter } from './namespace.js';
 import { exportRoutes } from './export.js';
@@ -366,7 +366,7 @@ export async function startRegistry({
       if (!Array.isArray(steps) || steps.length === 0) return problem(res, 400, 'missing-steps', 'body must be {"steps": [...]}');
       const all = await collectOfferings(store);
       const out = [];
-      let min = 0, max = 0;
+      let min = 0, max = 0, incomplete = false;
       let currency = 'USD';
       for (const step of steps) {
         let offering;
@@ -385,13 +385,16 @@ export async function startRegistry({
         const bounds = estimateBounds(offering.pricing, step.est_input_tokens ?? 0, step.est_output_tokens ?? 0);
         currency = offering.pricing.currency;
         min += bounds.min; max += bounds.max;
+        // No published per-token price: the step's cost is unknown, not zero.
+        const unpriced = !pricePublished(offering.pricing);
+        incomplete ||= unpriced;
         out.push({
           offering: `${offering.node_id}/${offering.offering_id}`,
           card_revision: offering.card_revision,
-          cost: { currency: offering.pricing.currency, ...bounds },
+          cost: { currency: offering.pricing.currency, ...bounds, ...(unpriced ? { price_published: false } : {}) },
         });
       }
-      sendJson(res, 200, { total: { currency, min: round6(min), max: round6(max) }, steps: out });
+      sendJson(res, 200, { total: { currency, min: round6(min), max: round6(max), ...(incomplete ? { incomplete: true } : {}) }, steps: out });
     }],
 
     // ONP-3 §5b: task → ranked offerings with estimate + explanation. Accepts either a

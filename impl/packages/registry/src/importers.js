@@ -71,6 +71,14 @@ export const KNOWN_PROVIDER_COUNTRY = Object.freeze({
   mistral: 'FR', stackit: 'DE', hetzner: 'DE', infomaniak: 'CH',
 });
 
+/** Providers whose models are included in a subscription plan rather than priced per token. */
+export const SUBSCRIPTION_PROVIDERS = /token-plan|^gitlab$/;
+
+function perTokenPriced(providerId, model) {
+  if (SUBSCRIPTION_PROVIDERS.test(providerId)) return false;
+  return model?.cost?.input != null || model?.cost?.output != null;
+}
+
 /**
  * Import a models.dev-shaped catalog: { providerId: { id, name, api?, doc?, models: { key: model } } }.
  * Each provider becomes a synthetic node `import.modelsdev.{provider}`; each model an offering.
@@ -102,10 +110,14 @@ export async function importModelsDev(store, catalog) {
           ...(model?.tool_call ? { supports: ['tool_calls'] } : {}),
         },
         binding: { profile: 'onp.openai.chat/v1', model_id: model?.id ?? modelKey },
+        // A missing cost is "not published", never "free"; subscription plans (token plans,
+        // GitLab Duo) list 0 because usage is included in the plan, not because it is free.
         pricing: {
           currency: 'USD',
-          input_per_mtok: Number(model?.cost?.input ?? 0),
-          output_per_mtok: Number(model?.cost?.output ?? 0),
+          ...(perTokenPriced(providerId, model) ? {
+            input_per_mtok: Number(model.cost.input ?? 0),
+            output_per_mtok: Number(model.cost.output ?? 0),
+          } : {}),
           schemes: ['prepaid'],
         },
       });
