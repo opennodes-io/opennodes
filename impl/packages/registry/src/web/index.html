@@ -47,6 +47,12 @@
   .mitem .t .nm { font-weight: 600; font-size: 0.86rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mitem .b { display: flex; gap: 0.8rem; margin-top: 0.25rem; font-size: 0.7rem; color: var(--muted); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
   .mdetail { min-height: 30rem; }
+  .pager { display: flex; align-items: center; justify-content: center; gap: 0.3rem; margin-top: 0.5rem; font-size: 0.78rem; color: var(--muted); flex-wrap: wrap; }
+  .pager:empty { display: none; }
+  .pgbtn { font: inherit; min-width: 2rem; padding: 0.25rem 0.5rem; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--accent); cursor: pointer; }
+  .pgbtn:disabled { color: var(--faint); cursor: default; }
+  .pgnum { padding: 0 0.3rem; }
+  .pgnum input { width: 4rem; font: inherit; padding: 0.2rem 0.3rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); text-align: center; }
 
   /* chat */
   .chatgrid { display: grid; grid-template-columns: minmax(0, 1fr) 19rem; gap: 1.2rem; align-items: start; }
@@ -244,7 +250,7 @@
     <div id="adv-out"></div>
   </details>
   <div class="mgrid">
-    <div class="mlist" id="m-list"></div>
+    <div class="mcol"><div class="mlist" id="m-list"></div><div class="pager" id="m-pager"></div></div>
     <div class="mdetail" id="m-detail"><p class="sub">Select a model from the list.</p></div>
   </div>
 </div>
@@ -607,34 +613,47 @@ function provLine(o) {
 }
 
 const PAGE = 60;
-let listQuery = '', listTotal = 0;
+let listQuery = '', listTotal = 0, listPage = 0;
 
-// Count line and the "Show more" button at the end of the list.
-function updateListFooter() {
-  $('#m-more')?.remove();
-  const shown = lastResults.length;
-  $('#m-counts').textContent = fmtInt(listTotal) + ' offerings' + (shown < listTotal ? ` · showing 1–${fmtInt(shown)}` : '');
-  if (shown < listTotal) {
-    $('#m-list').insertAdjacentHTML('beforeend', `<button class="btn" id="m-more" style="background:var(--panel); color:var(--accent); align-self:stretch">Show ${fmtInt(Math.min(PAGE, listTotal - shown))} more</button>`);
-    $('#m-more').addEventListener('click', loadMore);
-  }
+// Count line and page controls under the list: first / previous / page N of M / next / last.
+function updatePager() {
+  const pages = Math.max(1, Math.ceil(listTotal / PAGE));
+  const from = listTotal ? listPage * PAGE + 1 : 0, to = Math.min(listTotal, (listPage + 1) * PAGE);
+  $('#m-counts').textContent = fmtInt(listTotal) + ' offerings' + (pages > 1 ? ` · ${fmtInt(from)}–${fmtInt(to)}` : '');
+  const pager = $('#m-pager');
+  if (pages <= 1) { pager.innerHTML = ''; return; }
+  const btn = (label, page, title) => `<button class="pgbtn" data-page="${page}" title="${title}"${page < 0 || page >= pages || page === listPage ? ' disabled' : ''}>${label}</button>`;
+  pager.innerHTML = btn('«', 0, 'first page') + btn('‹', listPage - 1, 'previous page')
+    + `<span class="pgnum">Page <input id="m-page" type="number" min="1" max="${pages}" value="${listPage + 1}" aria-label="page number"> of ${fmtInt(pages)}</span>`
+    + btn('›', listPage + 1, 'next page') + btn('»', pages - 1, 'last page');
+  pager.querySelectorAll('.pgbtn').forEach((b) => b.addEventListener('click', () => goToPage(Number(b.dataset.page))));
+  $('#m-page').addEventListener('change', (e) => goToPage(Math.min(pages, Math.max(1, Math.round(Number(e.target.value) || 1))) - 1));
 }
 
-async function loadMore() {
-  const btn = $('#m-more');
-  btn.disabled = true;
+async function goToPage(page) {
   const query = listQuery;
   const p = new URLSearchParams(query);
-  p.set('offset', lastResults.length);
+  p.set('offset', page * PAGE);
+  $('#m-pager').querySelectorAll('button, input').forEach((el) => { el.disabled = true; });
   try {
-    const { offerings } = await api('/v0/offerings?' + p);
+    const { offerings, total } = await api('/v0/offerings?' + p);
     if (query !== listQuery) return;   // the filters changed meanwhile
-    const start = lastResults.length;
-    lastResults = lastResults.concat(offerings);
-    btn.insertAdjacentHTML('beforebegin', offerings.map(renderItem).join(''));
-    [...document.querySelectorAll('#m-list .mitem')].slice(start).forEach((el) => el.addEventListener('click', () => selectModel(el)));
-    updateListFooter();
-  } catch (e) { btn.disabled = false; btn.textContent = 'Retry — ' + e.message; }
+    listPage = page;
+    listTotal = total ?? listTotal;
+    lastResults = offerings;
+    renderList(offerings);
+    $('#m-list').scrollTop = 0;
+    updatePager();
+  } catch (e) { updatePager(); $('#m-pager').insertAdjacentHTML('beforeend', '<span class="err">' + esc(e.message) + '</span>'); }
+}
+
+// Render one page of the list, keeping the highlighted model when it is on this page.
+function renderList(offerings) {
+  $('#m-list').innerHTML = offerings.map(renderItem).join('')
+    || '<p class="sub">No offerings match. A fresh registry fills up via catalog imports and node registrations.</p>';
+  document.querySelectorAll('.mitem').forEach((el) => el.addEventListener('click', () => selectModel(el)));
+  const current = $('#model-card')?.dataset.artifact;
+  document.querySelectorAll('.mitem').forEach((el) => el.classList.toggle('sel', el.dataset.artifact === current));
 }
 
 async function search() {
@@ -652,17 +671,16 @@ async function search() {
     if (listQuery !== p.toString()) return;   // a newer search is under way
     lastResults = offerings;
     listTotal = total ?? offerings.length;
-    $('#m-list').innerHTML = offerings.map(renderItem).join('')
-      || '<p class="sub">No offerings match. A fresh registry fills up via catalog imports and node registrations.</p>';
-    updateListFooter();
-    document.querySelectorAll('.mitem').forEach((el) => el.addEventListener('click', () => selectModel(el)));
+    listPage = 0;
+    renderList(offerings);
+    updatePager();
     // keep the current selection when still listed, else select the first result
     const current = $('#model-card')?.dataset.artifact;
     const keep = current && [...document.querySelectorAll('.mitem')].find((el) => el.dataset.artifact === current);
     const target = keep ?? document.querySelector('.mitem');
     if (target) selectModel(target);
     else $('#m-detail').innerHTML = '<p class="sub">No offerings match.</p>';
-  } catch (e) { $('#m-list').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
+  } catch (e) { $('#m-list').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; $('#m-pager').innerHTML = ''; }
 }
 
 /* ---------- advisor (ONP-3 §5b) ---------- */
