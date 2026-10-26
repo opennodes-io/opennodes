@@ -290,6 +290,7 @@
         <input class="wide mono" id="pg-key" type="password" placeholder="optional" style="font-size:0.78rem">
       </div>
     </div>
+    <p class="sub" id="pg-note" hidden style="margin:0.6rem 0 0; font-size:0.8rem"></p>
     <div id="pg-customrow" hidden style="display:grid; grid-template-columns: 2fr 1fr; gap:0.8rem">
       <div><label class="f">Custom OpenAI-compatible endpoint <span style="font-weight:400">(e.g. your local Ollama: http://127.0.0.1:11434/v1)</span></label>
         <input class="wide mono" id="pg-endpoint" placeholder="http://127.0.0.1:11434/v1" style="font-size:0.78rem"></div>
@@ -303,6 +304,7 @@
       <span class="prov" id="pg-meta"></span>
     </div>
     <div id="pg-out" style="margin-top:0.8rem; font-size:0.88rem; white-space:pre-wrap; line-height:1.55"></div>
+    <div id="pg-hosted"></div>
   </div>
   <div id="md-perfsec"></div>
   <div id="md-benchsec"></div>
@@ -534,7 +536,7 @@ const ago = (iso) => {
   return Math.round(s / 86400) + 'd ago';
 };
 const tierChip = (t) => `<span class="chip t-${esc(t)}">${esc(String(t).toUpperCase())}</span>`;
-const SUBSCRIPTION_NODE = /token-plan|\.gitlab$/;
+const SUBSCRIPTION_NODE = /-plan(-|$)|\.gitlab$/;
 const pricePublished = (p) => p && (p.input_per_mtok != null || p.output_per_mtok != null);
 const priceStr = (p, nodeId = '') => {
   if (!pricePublished(p)) return SUBSCRIPTION_NODE.test(nodeId) ? 'in a subscription plan' : 'price not published';
@@ -611,6 +613,8 @@ function ctxBit(o) {
 }
 /** Listing-only imports carry no endpoints.openai: they are shown but never called. */
 const invocable = (o) => o.invocable !== false && Boolean(o.endpoints?.openai);
+/** Ollama library entries and local-app catalogs have no server: their endpoint is the visitor's own computer. */
+const runsLocally = (o) => Boolean(o.local) || /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(o.endpoints?.openai ?? '');
 /** endpoints.docs only when it is a plain web link (cards are third-party data). */
 const docsUrl = (endpoints) => /^https?:\/\//i.test(endpoints?.docs ?? '') ? endpoints.docs : null;
 function provLine(o) {
@@ -887,6 +891,10 @@ async function loadModel(artifact) {
   $('#md-title').textContent = '…';
   $('#md-offerings').innerHTML = '';
   $('#md-benchsec').innerHTML = '';
+  $('#pg-hosted').innerHTML = '';
+  $('#pg-note').hidden = true;
+  $('#pg-target').innerHTML = '';
+  pgOfferings = [];
   try {
     const { offerings } = await api('/v0/offerings?limit=100&q=' + encodeURIComponent(artifact));
     const list = offerings.filter((o) => o.model.artifact === artifact);
@@ -939,14 +947,17 @@ async function loadModel(artifact) {
     // section nav (anchors appear only for sections that render)
     const navBits = [['#sec-offerings', 'OFFERINGS'], ['#sec-play', 'PLAYGROUND']];
 
-    // playground targets: this page's offerings + a custom endpoint (e.g. local Ollama)
-    pgOfferings = list.filter(invocable);
-    $('#pg-target').innerHTML = pgOfferings.map((o, i) =>
-      `<option value="${i}">${esc(o.node_id)} — ${priceStr(o.pricing, o.node_id)} [${esc(o.tier)}]</option>`).join('')
+    // playground targets: hosted offerings first, then the ones that run on the visitor's own computer,
+    // then a custom endpoint
+    pgOfferings = [...list.filter((o) => invocable(o) && !runsLocally(o)), ...list.filter((o) => invocable(o) && runsLocally(o))];
+    $('#pg-target').innerHTML = pgOfferings.map((o, i) => `<option value="${i}">${pgLabel(o)}</option>`).join('')
       + '<option value="custom">custom endpoint (your local Ollama / any OpenAI-compatible server)</option>';
     $('#pg-customrow').hidden = pgOfferings.length > 0;   // listing-only offerings leave just the custom endpoint
     $('#pg-out').textContent = '';
     $('#pg-meta').textContent = '';
+    pgUpdateNote();
+    $('#pg-hosted').innerHTML = '';
+    if (pgOfferings.length && pgOfferings.every(runsLocally)) showHostedAlternatives(first, artifact);
     $('#md-offerings').innerHTML = `<table class="grid num"><thead><tr>
       <th>NODE</th><th>PRICE IN/OUT</th><th>HARDWARE</th><th>CONTEXT</th><th>TTFT</th><th>TOK/S</th><th>UP</th><th>CAPABILITIES</th><th>REVISION</th>
     </tr></thead><tbody>` + list.map((o) => {
@@ -1037,8 +1048,55 @@ async function loadModel(artifact) {
 
 /* ---------- playground ---------- */
 let pgOfferings = [];
+const localHost = (o) => { try { return new URL(o.endpoints.openai).host; } catch { return 'localhost'; } };
+function pgLabel(o) {
+  if (!runsLocally(o)) return `${esc(o.node_id)} — ${priceStr(o.pricing, o.node_id)} [${esc(o.tier)}]`;
+  return `your computer — ${esc(o.local?.runtime === 'ollama' ? 'Ollama' : 'local app')} at ${esc(localHost(o))} (no hosted server for this listing)`;
+}
+/** Says plainly where Send goes when the target is the visitor's own machine. */
+function pgUpdateNote() {
+  const note = $('#pg-note');
+  const v = $('#pg-target').value;
+  const o = v === 'custom' ? null : pgOfferings[Number(v)];
+  note.hidden = !o || !runsLocally(o);
+  if (note.hidden) return;
+  const app = o.local?.runtime === 'ollama' ? 'Ollama' : 'the local app';
+  note.innerHTML = `This listing has no server behind it: Send goes to ${app} on <b>your own computer</b> (${esc(localHost(o))}), `
+    + `and answers only if ${app} is running with this model installed${o.local?.run ? ` (<code class="mono">${esc(o.local.run)}</code>)` : ''}. `
+    + 'It tests your machine, not a node.';
+}
+/** On a local-only model page: hosted listings of the same model, so it can be tried without installing anything. */
+async function showHostedAlternatives(first, artifact) {
+  const base = (first.binding?.model_id ?? first.model.name).split(':')[0].toLowerCase();
+  const norm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const needle = norm(base);
+  if (needle.length < 3) return;
+  const variants = [...new Set([base, base.replace(/([a-z])(\d)/, '$1-$2')])];
+  try {
+    const found = new Map();
+    for (const v of variants) {
+      const r = await api('/v0/offerings?limit=200&invocable=true&q=' + encodeURIComponent(v));
+      for (const o of r.offerings) {
+        if (runsLocally(o) || !invocable(o)) continue;
+        if (!norm(`${o.model.name} ${o.model.artifact} ${o.binding?.model_id}`).includes(needle)) continue;
+        found.set(o.node_id + '/' + o.offering_id, o);
+      }
+    }
+    if ($('#model-card').dataset.artifact !== artifact) return;   // the visitor moved on
+    const tierOrder = { attested: 4, verified: 3, community: 2, unverified: 1 };
+    const picks = [...found.values()].sort((a, b) =>
+      (tierOrder[b.tier] ?? 0) - (tierOrder[a.tier] ?? 0)
+      || (a.pricing.input_per_mtok ?? Infinity) - (b.pricing.input_per_mtok ?? Infinity)).slice(0, 6);
+    if (!picks.length) return;
+    $('#pg-hosted').innerHTML = `<p class="sub" style="margin:1rem 0 0.4rem; font-size:0.8rem">To try it without installing anything, open a hosted listing with a matching name:</p>
+      <div class="relcards">` + picks.map((o) => `<a class="relcard" href="#/model/${encodeURIComponent(o.model.artifact)}">
+        <span class="rn">${esc(o.model.name)}</span>
+        <span class="rm">${esc(o.node_id)} · ${priceStr(o.pricing, o.node_id)} · ${o.source === 'import' ? 'your key for that provider' : 'no key needed'}</span></a>`).join('') + '</div>';
+  } catch { /* alternatives are optional */ }
+}
 $('#pg-target').addEventListener('change', () => {
   $('#pg-customrow').hidden = $('#pg-target').value !== 'custom';
+  pgUpdateNote();
 });
 $('#pg-send').addEventListener('click', async () => {
   const out = $('#pg-out'), meta = $('#pg-meta');
@@ -1046,6 +1104,7 @@ $('#pg-send').addEventListener('click', async () => {
   if (!prompt) return;
   const isCustom = $('#pg-target').value === 'custom';
   const offering = isCustom ? null : pgOfferings[Number($('#pg-target').value)];
+  if (!isCustom && !offering) return;
   const base = isCustom ? $('#pg-endpoint').value.trim().replace(/\/$/, '') : offering.endpoints.openai.replace(/\/$/, '');
   const model = isCustom ? $('#pg-model').value.trim() : offering.binding.model_id;
   if (!base || !model) { out.innerHTML = '<span class="err">endpoint and model id are required</span>'; return; }

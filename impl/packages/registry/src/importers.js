@@ -72,7 +72,7 @@ export const KNOWN_PROVIDER_COUNTRY = Object.freeze({
 });
 
 /** Providers whose models are included in a subscription plan rather than priced per token. */
-export const SUBSCRIPTION_PROVIDERS = /token-plan|^gitlab$/;
+export const SUBSCRIPTION_PROVIDERS = /-plan(-|$)|^gitlab$/;   // token, coding, code and step plans
 
 function perTokenPriced(providerId, model) {
   if (SUBSCRIPTION_PROVIDERS.test(providerId)) return false;

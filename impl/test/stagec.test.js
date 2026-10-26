@@ -330,12 +330,16 @@ test('prices: missing is "not published", subscription plans carry no per-token 
       'acme-token-plan': { id: 'acme-token-plan', name: 'Acme plan', api: 'https://plan.acme.example/v1', models: {
         planned: { id: 'planned', name: 'Planned', cost: { input: 0, output: 0 } },
       } },
+      'acme-coding-plan-cn': { id: 'acme-coding-plan-cn', name: 'Acme coding plan', api: 'https://code.acme.example/v1', models: {
+        coder: { id: 'coder', name: 'Coder', cost: { input: 0, output: 0 } },
+      } },
     } }),
   });
   const get = async (qs) => (await (await fetch(`${registry.origin}/v0/offerings?${qs}`)).json()).offerings;
   const byId = Object.fromEntries((await get('limit=10')).map((o) => [o.offering_id, o]));
   assert.equal(byId.unpriced.pricing.input_per_mtok, undefined, 'no price invented');
   assert.equal(byId.planned.pricing.input_per_mtok, undefined, 'subscription plan: no per-token price');
+  assert.equal(byId.coder.pricing.input_per_mtok, undefined, 'coding plans are subscriptions too');
   assert.equal(byId.gratis.pricing.input_per_mtok, 0);
   assert.deepEqual((await get('max_input_price=0')).map((o) => o.offering_id), ['gratis'], 'only real zeros count as free');
   assert.equal(byId.unpriced.rank_explanation.components.price, 0, 'no price points without a price');
