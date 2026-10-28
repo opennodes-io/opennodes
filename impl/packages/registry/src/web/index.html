@@ -24,6 +24,7 @@
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }   /* an inline display (e.g. grid) must not override the hidden attribute */
   body { margin: 0; background: var(--ground); color: var(--ink);
     font-family: "Archivo", "Helvetica Neue", Arial, sans-serif; font-size: 0.9rem; line-height: 1.5; }
   a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
