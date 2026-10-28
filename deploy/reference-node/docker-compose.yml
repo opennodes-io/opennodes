@@ -10,8 +10,10 @@ services:
       # Several small models on a 4 GB host: keep one in memory at a time (a switch costs a
       # few seconds of loading), and cap the container so a spike can't freeze the machine.
       OLLAMA_MAX_LOADED_MODELS: "1"
+    # Plus 0.5 GB of swap: two parallel long prompts pushed the runner to the 3 GB cap and got it
+    # OOM-killed once (2026-10-25); a spike now slows down instead of failing the request.
     mem_limit: 3g
-    memswap_limit: 3g
+    memswap_limit: 3584m
     volumes:
       - ollama:/root/.ollama
     restart: unless-stopped
