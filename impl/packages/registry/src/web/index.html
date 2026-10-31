@@ -11,15 +11,15 @@
 <style>
   :root {
     --ground: #F7F9FA; --panel: #FFFFFF; --panel-2: #EEF2F4;
-    --ink: #1C2733; --muted: #5C6E7E; --faint: #8FA1B0; --line: #D6DEE3; --line-2: #EEF2F4;
-    --accent: #0F7A80; --accent-soft: #E0EFF0; --good: #2F6B3A;
+    --ink: #1C2733; --muted: #4F6170; --faint: #5A6C7C; --line: #D6DEE3; --line-2: #EEF2F4;   /* both ≥4.5:1 on every surface */
+    --accent: #0F7A80; --accent-soft: #E0EFF0; --on-accent: #FFFFFF; --good: #2F6B3A;
     --warn: #A16207; --bad: #A33333; --star: #B45309;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --ground: #101820; --panel: #16202A; --panel-2: #1C2833;
-      --ink: #E4EBF0; --muted: #8FA1B0; --faint: #64788A; --line: #2C3B48; --line-2: #223140;
-      --accent: #4FC0C6; --accent-soft: #12333A; --good: #7CC08A;
+      --ink: #E4EBF0; --muted: #A3B4C2; --faint: #8A9CAB; --line: #2C3B48; --line-2: #223140;
+      --accent: #4FC0C6; --accent-soft: #12333A; --on-accent: #0B1A20; --good: #7CC08A;
       --warn: #D9A648; --bad: #E08585; --star: #D9A648;
     }
   }
@@ -39,7 +39,7 @@
   .toolbar input, .toolbar select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 0.42rem 0.6rem; }
   .toolbar input[type=number] { width: 8.5rem; }
   .mgrid { display: grid; grid-template-columns: 23rem minmax(0, 1fr); gap: 1.2rem; align-items: start; }
-  @media (max-width: 980px) { .mgrid { grid-template-columns: 1fr; } }
+  @media (max-width: 980px) { .mgrid { grid-template-columns: minmax(0, 1fr); } }
   .mlist { display: flex; flex-direction: column; gap: 0.4rem; max-height: 76vh; overflow-y: auto; padding-right: 0.25rem; }
   .mitem { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.6rem 0.75rem; cursor: pointer; }
   .mitem:hover { border-color: var(--accent); }
@@ -64,7 +64,7 @@
 
   /* chat */
   .chatgrid { display: grid; grid-template-columns: minmax(0, 1fr) 19rem; gap: 1.2rem; align-items: start; }
-  @media (max-width: 980px) { .chatgrid { grid-template-columns: 1fr; } }
+  @media (max-width: 980px) { .chatgrid { grid-template-columns: minmax(0, 1fr); } }
   .chatlog { display: flex; flex-direction: column; gap: 0.7rem; min-height: 20rem; max-height: 60vh; overflow-y: auto; padding: 1rem; }
   .msg { max-width: 46rem; font-size: 0.9rem; line-height: 1.55; white-space: pre-wrap; border-radius: 8px; padding: 0.6rem 0.9rem; }
   .msg.user { align-self: flex-end; background: var(--accent-soft); border: 1px solid var(--accent); }
@@ -82,7 +82,17 @@
   nav a.tab:hover { text-decoration: none; color: var(--ink); }
   nav a.tab.active { color: var(--ink); border-bottom-color: var(--accent); }
   nav .spacer { flex: 1; }
-  nav .cta { align-self: center; background: var(--accent); color: #fff; font-weight: 600; font-size: 0.82rem; border-radius: 6px; padding: 0.55rem 1rem; }
+  nav .cta { align-self: center; background: var(--accent); color: var(--on-accent); font-weight: 600; font-size: 0.82rem; border-radius: 6px; padding: 0.55rem 1rem; }
+  /* phones: the tabs wrap onto rows instead of widening the page */
+  @media (max-width: 760px) {
+    nav .wrap { flex-wrap: wrap; height: auto; gap: 0 1.1rem; padding-top: 0.5rem; padding-bottom: 0.5rem; }
+    nav .brand { flex-basis: 100%; padding: 0.2rem 0 0.3rem; }
+    nav a.tab, nav .ext { padding: 0.45rem 0; }
+    nav .spacer { display: none; }
+    nav .cta { margin-top: 0.3rem; }
+  }
+  .rm { font: inherit; cursor: pointer; color: var(--muted); background: none; border: 0; padding: 0.1rem 0.3rem; min-width: 24px; min-height: 24px; border-radius: 4px; }
+  .rm:hover { color: var(--ink); background: var(--line-2); }
   nav .cta:hover { text-decoration: none; opacity: 0.92; }
   nav .ext { align-self: center; font-size: 0.78rem; color: var(--muted); }
 
@@ -161,10 +171,11 @@
     color: var(--muted); text-align: left; padding: 0.55rem 0.8rem; background: var(--panel-2); border-bottom: 1px solid var(--line); white-space: nowrap; }
   table.grid td { padding: 0.7rem 0.8rem; border-bottom: 1px solid var(--line-2); vertical-align: middle; }
   table.grid tr:last-child td { border-bottom: none; }
+  table.grid td.mono, #md-artifact { overflow-wrap: anywhere; white-space: normal; }   /* long ids wrap on phones */
   .tablewrap { overflow-x: auto; }
 
   .btn { font: inherit; font-weight: 600; font-size: 0.82rem; padding: 0.55rem 1rem; border-radius: 6px;
-    border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+    border: 1px solid var(--accent); background: var(--accent); color: var(--on-accent); cursor: pointer; }
   .btn.sec { background: transparent; color: var(--accent); }
   .btn:disabled { opacity: 0.5; cursor: default; }
   input.wide, textarea.wide { width: 100%; box-sizing: border-box; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 0.55rem 0.7rem; }
@@ -178,7 +189,7 @@
   @media (max-width: 560px) { .stage.wide { grid-template-columns: 1fr; gap: 0.15rem; } }
   .tabbtns { display: flex; gap: 0.5rem; flex-wrap: wrap; }
   .tabbtn { font: inherit; font-weight: 600; font-size: 0.8rem; padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; }
-  .tabbtn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .tabbtn.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   /* model/node card header */
   .statstrip { display: flex; flex-wrap: wrap; gap: 1.8rem; margin: 0.8rem 0 0.4rem; }
   .stat { display: flex; flex-direction: column; gap: 0.1rem; }
@@ -1257,7 +1268,7 @@ function renderRoster() {
     <div style="display:flex; align-items:center; gap:0.5rem; border:1px solid var(--line); border-radius:6px; padding:0.35rem 0.6rem; font-size:0.78rem">
       <span class="mono" style="font-size:0.66rem; color:var(--accent)">${i + 1}</span>
       <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"><b>${esc(targetLabel(t))}</b>${t.offering ? ` <span style="color:var(--muted)">${esc(t.offering.node_id)}</span>` : ' <span class="chip">custom</span>'}</span>
-      <span style="cursor:pointer; color:var(--muted)" data-rm="${i}" title="remove">✕</span>
+      <button type="button" class="rm" data-rm="${i}" title="remove" aria-label="Remove ${esc(targetLabel(t))}">✕</button>
     </div>`).join('') || '<p class="prov" style="margin:0">no models yet</p>';
   document.querySelectorAll('#ch-chips [data-rm]').forEach((x) => x.addEventListener('click', () => {
     chat.roster.splice(Number(x.dataset.rm), 1); renderRoster();
