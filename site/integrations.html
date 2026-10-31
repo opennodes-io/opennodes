@@ -5,20 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Integrations — OpenNodes</title>
 <meta name="description" content="How to use OpenNodes from Cursor, Claude Desktop, Claude Code, VS Code, Windsurf, Open WebUI, Continue, Zed, the Ollama CLI, the OpenAI SDK, LangChain, LiteLLM and any MCP-capable agent.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🛰️</text></svg>">
+<link rel="canonical" href="https://opennodes.io/integrations">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="OpenNodes">
+<meta property="og:title" content="Integrations — OpenNodes">
+<meta property="og:description" content="How to use OpenNodes from Cursor, Claude Desktop, Claude Code, VS Code, Windsurf, Open WebUI, Continue, Zed, the Ollama CLI, the OpenAI SDK, LangChain, LiteLLM and any MCP-capable agent.">
+<meta property="og:url" content="https://opennodes.io/integrations">
+<meta property="og:image" content="https://opennodes.io/media/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="OpenNodes — AI inference, measured, not just claimed">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#F7F9FA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101820" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
   :root {
     --ground: #F7F9FA; --panel: #FFFFFF; --panel-2: #EEF2F4;
     --ink: #1C2733; --muted: #5C6E7E; --line: #D6DEE3;
-    --accent: #0F7A80; --accent-soft: #E0EFF0; --good: #2F6B3A;
+    --accent: #0F7A80; --accent-soft: #E0EFF0; --on-accent: #FFFFFF; --good: #2F6B3A;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --ground: #101820; --panel: #16202A; --panel-2: #1C2833;
       --ink: #E4EBF0; --muted: #8FA1B0; --line: #2C3B48;
-      --accent: #4FC0C6; --accent-soft: #12333A; --good: #7CC08A;
+      --accent: #4FC0C6; --accent-soft: #12333A; --on-accent: #0B1A20; --good: #7CC08A;
     }
   }
   * { box-sizing: border-box; }
@@ -42,7 +57,7 @@
   .chip { font-family: "IBM Plex Mono", monospace; font-size: 0.74rem; padding: 0.34rem 0.7rem; border-radius: 2px; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
   .actions { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 1.8rem; }
   .btn { display: inline-block; font-family: "Archivo", sans-serif; font-weight: 600; font-size: 0.95rem; text-decoration: none; padding: 0.65rem 1.2rem; border-radius: 4px; border: 1px solid var(--accent); }
-  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.primary { background: var(--accent); color: var(--on-accent); }
   .btn.secondary { color: var(--accent); background: transparent; }
 
   section { padding: 2.6rem 0; border-bottom: 1px solid var(--line); }
@@ -54,15 +69,20 @@
   .step .d { font-size: 0.92rem; color: var(--muted); font-family: "Archivo", sans-serif; }
   @media (max-width: 560px) { .step { grid-template-columns: 1fr; gap: 0.15rem; } .hero h1 { font-size: 2.3rem; } }
 
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.2rem; }
+  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 1.2rem; }
   @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
-  .card { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: 1rem 1.1rem; }
+  .card { min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: 1rem 1.1rem; }
   .card h3 { font-size: 1rem; margin: 0 0 0.4rem; }
   .card p { font-size: 0.92rem; color: var(--muted); margin: 0; }
 
   ul.spec { list-style: none; padding: 0; margin: 1rem 0 0; }
   ul.spec li { padding: 0.5rem 0; border-bottom: 1px dashed var(--line); font-size: 0.95rem; }
   ul.spec .mono { margin-right: 0.5rem; }
+
+  .codebox { position: relative; margin: 1em 0; }
+  .codebox > pre { margin: 0; padding-right: 4.6rem; }
+  .copy { position: absolute; top: 0.45rem; right: 0.45rem; min-height: 24px; font-family: "Archivo", sans-serif; font-size: 0.72rem; font-weight: 600; padding: 0.25rem 0.6rem; border: 1px solid var(--line); border-radius: 4px; background: var(--panel-2); color: var(--muted); cursor: pointer; }
+  .copy:hover, .copy:focus-visible { color: var(--ink); border-color: var(--accent); }
 
   footer { padding: 2.2rem 0 3rem; font-family: "Archivo", sans-serif; font-size: 0.85rem; color: var(--muted); }
 </style>
@@ -72,8 +92,9 @@
   .card p { margin: 0.35rem 0 0; }
   .card pre { margin: 0.5rem 0 0; font-size: 0.78rem; }
   .lede-s { color: var(--muted); font-size: 0.98rem; max-width: 48rem; margin: 0 0 0.4rem; }
-  nav.top { font-family: "Archivo", sans-serif; font-size: 0.9rem; padding: 1rem 0; border-bottom: 1px solid var(--line); }
-  nav.top a { margin-right: 1.2rem; text-decoration: none; }
+  nav.top { font-family: "Archivo", sans-serif; font-size: 0.9rem; padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
+  nav.top .wrap { display: flex; flex-wrap: wrap; column-gap: 1.2rem; }
+  nav.top a { padding: 0.4rem 0; white-space: nowrap; text-decoration: none; }
   .toc { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
   .toc a { font-family: "IBM Plex Mono", monospace; font-size: 0.74rem; text-decoration: none; padding: 0.3rem 0.6rem; border: 1px solid var(--line); border-radius: 2px; background: var(--panel-2); color: var(--ink); }
 </style>
@@ -181,5 +202,20 @@ onp-node serve &amp;&amp; onp-node check &amp;&amp; onp-node register https://re
   <pre><code>npx @opennodes/registry        # web app + API + MCP on http://127.0.0.1:4300</code></pre><p>Production recipe (Postgres, TLS, backups, re-imports): <a href="https://github.com/opennodes-io/opennodes/tree/main/deploy/registry">deploy/registry</a>. Point any client above at it with <code>ONP_REGISTRY</code>.</p>
 </div></div></div></section>
 <footer><div class="wrap">Requirements: Node ≥ 22.5 for <code>npx</code> commands; Python ≥ 3.11 for the Node Kit. Registry default <code>https://registry.opennodes.io</code>, override with <code>ONP_REGISTRY</code>. Packages: <a href="https://www.npmjs.com/package/@opennodes/cli">@opennodes/cli</a> · <a href="https://www.npmjs.com/package/@opennodes/ollama-router">@opennodes/ollama-router</a> · <a href="https://www.npmjs.com/package/@opennodes/registry">@opennodes/registry</a> · <a href="https://pypi.org/project/onp-node/">onp-node</a>. Apache-2.0.</div></footer>
+<script>
+// Copy buttons on code blocks; without JavaScript the blocks stay plain.
+if (navigator.clipboard) document.querySelectorAll('pre').forEach((pre) => {
+  const box = document.createElement('div'); box.className = 'codebox';
+  pre.replaceWith(box); box.append(pre);
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'copy'; b.textContent = 'Copy'; b.setAttribute('aria-live', 'polite');
+  b.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(pre.innerText.replace(/\n+$/, '')); b.textContent = 'Copied'; }
+    catch { b.textContent = 'Select and copy'; }
+    setTimeout(() => { b.textContent = 'Copy'; }, 1600);
+  });
+  box.append(b);
+});
+</script>
 </body>
 </html>
