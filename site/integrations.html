@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Integrations — OpenNodes</title>
-<meta name="description" content="How to use OpenNodes from Cursor, Claude Desktop, Claude Code, VS Code, Windsurf, Open WebUI, Continue, Zed, the Ollama CLI, the OpenAI SDK, LangChain, LiteLLM and any MCP-capable agent.">
+<meta name="description" content="How to use OpenNodes from Cursor, Claude Desktop, Claude Code, VS Code, Windsurf, Kiro, Open WebUI, Continue, Zed, the Ollama CLI, the OpenAI SDK, LangChain, LiteLLM and any MCP-capable agent.">
 <link rel="canonical" href="https://opennodes.io/integrations">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="OpenNodes">
 <meta property="og:title" content="Integrations — OpenNodes">
-<meta property="og:description" content="How to use OpenNodes from Cursor, Claude Desktop, Claude Code, VS Code, Windsurf, Open WebUI, Continue, Zed, the Ollama CLI, the OpenAI SDK, LangChain, LiteLLM and any MCP-capable agent.">
+<meta property="og:description" content="How to use OpenNodes from Cursor, Claude Desktop, Claude Code, VS Code, Windsurf, Kiro, Open WebUI, Continue, Zed, the Ollama CLI, the OpenAI SDK, LangChain, LiteLLM and any MCP-capable agent.">
 <meta property="og:url" content="https://opennodes.io/integrations">
 <meta property="og:image" content="https://opennodes.io/media/og-card.png">
 <meta property="og:image:width" content="1200">
@@ -123,7 +123,7 @@
   <h1>Use OpenNodes from the tools you already have</h1>
   <p class="lede">Three ways in, all free and open source: an <strong>MCP server</strong> for editors and agents, an <strong>Ollama-compatible router</strong> for local-AI apps, and an <strong>OpenAI-compatible gateway</strong> for SDKs and frameworks. Nothing here routes your prompts through OpenNodes: discovery is metadata, invocation goes straight to the node.</p>
   <div class="toc">
-    <a href="#claude-code">Claude Code</a><a href="#claude-desktop">Claude Desktop</a><a href="#cursor">Cursor</a><a href="#vs-code-copilot-agent-mode">VS Code</a><a href="#windsurf">Windsurf</a><a href="#ollama-cli">Ollama</a><a href="#open-webui">Open WebUI</a><a href="#continue-vs-code-jetbrains">Continue</a><a href="#zed">Zed</a><a href="#openai-sdk-python">OpenAI SDK</a><a href="#langchain-llamaindex-litellm-vercel-ai-sdk-n8n-dify">LangChain / LiteLLM</a><a href="#any-remote-mcp-host-or-agent-framework">Agents (remote MCP)</a><a href="#serve-your-own-model">Operators</a>
+    <a href="#claude-code">Claude Code</a><a href="#claude-desktop">Claude Desktop</a><a href="#cursor">Cursor</a><a href="#vs-code-copilot-agent-mode">VS Code</a><a href="#windsurf">Windsurf</a><a href="#kiro">Kiro</a><a href="#ollama-cli">Ollama</a><a href="#open-webui">Open WebUI</a><a href="#continue-vs-code-jetbrains">Continue</a><a href="#zed">Zed</a><a href="#openai-sdk-python">OpenAI SDK</a><a href="#langchain-llamaindex-litellm-vercel-ai-sdk-n8n-dify">LangChain / LiteLLM</a><a href="#any-remote-mcp-host-or-agent-framework">Agents (remote MCP)</a><a href="#serve-your-own-model">Operators</a>
   </div>
 </div></header>
 <section><div class="wrap"><h2>Editors and assistants (MCP)</h2><p class="lede-s">Any MCP host gets five read-only tools — <code>recommend</code>, <code>search_offerings</code>, <code>get_offering</code>, <code>get_node</code>, <code>estimate</code> — from one stdio server. The advisor extracts features from your prompt locally and sends only those to the registry; the prompt itself never leaves your machine.</p><div class="grid2">
@@ -146,6 +146,10 @@
 <div class="card" id="windsurf">
   <h3>Windsurf <span class="kind">MCP</span></h3>
   <p>Add to <code>~/.codeium/windsurf/mcp_config.json</code>:</p><pre><code>{ "mcpServers": { "opennodes": { "command": "npx", "args": ["-y", "@opennodes/cli", "mcp"] } } }</code></pre>
+</div>
+<div class="card" id="kiro">
+  <h3>Kiro <span class="kind">MCP</span></h3>
+  <p>Add to <code>~/.kiro/settings/mcp.json</code> for all projects, or <code>.kiro/settings/mcp.json</code> for one workspace (Command Palette → "Kiro: Open user MCP config (JSON)"). All five tools are read-only, so they can be auto-approved:</p><pre><code>{ "mcpServers": { "opennodes": { "command": "npx", "args": ["-y", "@opennodes/cli", "mcp"], "autoApprove": ["recommend", "search_offerings", "get_offering", "get_node", "estimate"] } } }</code></pre><p>No install: point Kiro at the hosted server instead. The remote <code>recommend</code> sends the task text to the registry; the local server above sends only features extracted on your machine.</p><pre><code>{ "mcpServers": { "opennodes": { "url": "https://registry.opennodes.io/mcp" } } }</code></pre>
 </div>
 <div class="card" id="any-remote-mcp-host-or-agent-framework">
   <h3>Any remote-MCP host or agent framework <span class="kind">MCP over HTTP</span></h3>
