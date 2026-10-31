@@ -1,6 +1,6 @@
 ﻿# ONP-1: Overview, Terminology, Architecture, Conformance
 
-**OpenNodes Protocol — Draft 0.1 — 2026-08-20**
+**OpenNodes Protocol — Draft 0.1, revision 2 — 2026-10-31** ([changes](CHANGES.md))
 
 The key words MUST, MUST NOT, REQUIRED, SHOULD, SHOULD NOT, MAY are to be interpreted as described in RFC 2119.
 
@@ -73,7 +73,13 @@ Three independent conformance classes; any party can implement any subset:
 
 ## 5. Versioning
 
-Every ONP document and every Node Card carries `"onp": "0.1"`. Within a major version, additive changes only; unknown fields MUST be ignored (must-ignore semantics). Registries advertise supported versions in `GET /v0/health`.
+Every ONP document and every Node Card carries `"onp"` with the version it was written against (currently `"0.1"`). Within a major version, additive changes only:
+
+- **Unknown fields** MUST be ignored (must-ignore semantics).
+- **Higher minor versions** MUST be accepted: a registry or client implementing 0.1 accepts a card that says `"0.2"` and processes the fields it knows. A different *major* version MAY be rejected.
+- **Unknown vocabulary values** are not errors. The vocabulary fields are `modality`, `serving.supports`, payment `scheme` and `data_policy.retention`. Each is an open token list with core values defined in this suite; profiles (e.g. sovereign or vertical profiles) MAY register more. Consumers apply the safe default for that field: an unknown capability is treated as absent, an unknown scheme as unusable, an unknown modality as not matching any search filter, and an unknown retention as `logged`.
+
+Registries advertise supported versions in `GET /v0/health`. The JSON Schema enforces structure; ONP prose is normative for semantics.
 
 ## 6. Threat model (summary)
 

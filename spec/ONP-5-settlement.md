@@ -1,6 +1,6 @@
 ﻿# ONP-5: Settlement — Price Advertisement, Payment Schemes, Receipts
 
-**OpenNodes Protocol — Draft 0.1 — 2026-08-20**
+**OpenNodes Protocol — Draft 0.1, revision 2 — 2026-10-31** ([changes](CHANGES.md))
 
 ONP does not move money. It standardizes three things existing rails leave open: (1) machine-readable **price advertisement at discovery time** (x402 only quotes at call time; catalogs need it earlier), (2) a **scheme negotiation** surface so one client can pay any node, (3) **signed usage receipts** binding what was billed to what was advertised.
 
@@ -27,14 +27,14 @@ Rules:
 
 ## 2. Payment schemes
 
-Card block:
+Card block. The node-level list carries each scheme's parameters; each offering's `pricing.schemes` names a subset of it (ONP-2 §5). The scheme list is open (ONP-1 §5): profiles may register further schemes, and a client that does not know a scheme treats it as unusable.
 
 ```json
 "payment": {
   "schemes": [
     {"scheme": "x402", "networks": ["base", "solana"], "asset": "USDC"},
     {"scheme": "prepaid", "signup": "https://example-lab.ai/keys",
-     "settlement_registry": "https://registry.opennodes.org"},
+     "settlement_registry": "https://registry.opennodes.io"},
     {"scheme": "free"}
   ],
   "probe_allowance": {"requests_per_day": 200}
@@ -81,7 +81,7 @@ Response header `ONP-Receipt` carries (inline or by URL) a JWS signed by the nod
 }
 ```
 
-Receipts are the audit primitive: clients verify `amount = usage × pinned price`; settlement operators redeem against them; registries sample them during conformance probes (§ONP-3 6.2) to catch usage inflation. Receipts contain no prompt/response content — only the hash, so either side can prove what request a receipt refers to without the receipt leaking data.
+Receipts are the audit primitive: clients verify `amount = usage × pinned price`; settlement operators redeem against them; registries sample them during conformance probes (ONP-3 §6.2) to catch usage inflation. Receipts contain no prompt/response content — only the hash, so either side can prove what request a receipt refers to without the receipt leaking data.
 
 ## 6. Disputes (informative, Draft 0.1)
 

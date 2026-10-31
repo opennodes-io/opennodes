@@ -2,7 +2,7 @@
 
 **An open standard for discovering, invoking, and paying AI inference endpoints ("AI Nodes") across vendors — from frontier labs to a university GPU cluster — with bridges to MCP and WebMCP.**
 
-Status: **Draft 0.1 (working proposal, 2026-08-20)** — not affiliated with any standards body yet.
+Status: **Draft 0.1, revision 2 (working proposal, 2026-10-31; [changes](spec/CHANGES.md))** — not affiliated with any standards body yet.
 Home: **opennodes.io**
 
 ## The one-sentence pitch

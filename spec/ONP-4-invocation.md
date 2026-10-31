@@ -1,6 +1,6 @@
 ﻿# ONP-4: Invocation Profiles
 
-**OpenNodes Protocol — Draft 0.1 — 2026-08-20**
+**OpenNodes Protocol — Draft 0.1, revision 2 — 2026-10-31** ([changes](CHANGES.md))
 
 ONP does not define a new inference wire format. An invocation **profile** is a named, versioned contract stating: which existing API shape the offering speaks, the minimum feature subset a conforming node must implement, and how ONP concerns (usage accounting, receipts, payment) ride along. Profiles are identified by reverse-namespace strings carried in `offering.binding.profile`.
 
@@ -66,3 +66,18 @@ An ONP Client MUST implement `onp.openai.chat/v1` (including the ONP headers and
 ## 8. Selection & fallback semantics (informative)
 
 Discovery returns offerings; invocation is point-to-point. Client-side routing (fallback chains, cheapest-conforming, quality-first) is a client feature, not protocol — but the card gives routers everything OpenRouter-style suffixes encode (`:floor` ≈ sort by price, `:nitro` ≈ sort by observed TPS), portable across vendors.
+
+## 9. Errors, refusals and rate limits
+
+Nodes, gateways and registries report errors as RFC 9457 problem details (`application/problem+json`). The `type` is `https://opennodes.io/problems/{name}`. Registered names for invocation:
+
+| Status | Name | When | Client behaviour |
+|---|---|---|---|
+| 409 | `offering-mismatch` | `ONP-Offering` no longer matches the model behind the endpoint (§2) | Re-fetch the card; do not retry blindly |
+| 409 | `price_changed` | The pinned `ONP-Card-Revision` was superseded with different pricing (§2) | Re-fetch, re-apply spend policy (§7), retry or surface |
+| 402 | — | Payment required under the x402 flow (ONP-5 §2.1) | Pay per the 402 requirements |
+| 403 | `policy-refused` | The node or gateway refuses by policy (data policy, region, tier, entitlement); `detail` names the rule | Do not retry the same offering; profiles MAY register more specific names |
+| 429 | `rate-limited` | A rate limit or quota declared in `capacity.rate_limits` (ONP-2 §5), or a registry limit, was hit | Back off. Responses SHOULD carry `Retry-After` and SHOULD carry the IETF `RateLimit` / `RateLimit-Policy` header fields |
+| 503 | `capacity-exhausted` | Temporarily out of capacity | Honour `Retry-After` if present; MAY fall back to another conforming offering (§8) |
+
+A gateway that falls back after a 429 or 503 MUST stay within the caller's policy: same or stricter trust tier, data policy and region. A fallback that weakens any of them is a policy violation, not a recovery.

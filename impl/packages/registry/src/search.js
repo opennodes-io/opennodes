@@ -1,4 +1,12 @@
 // Offering search + transparent ranking (ONP-3 §5–6).
+import { residencyWithin } from '@opennodes/core';
+
+/** BCP 47 prefix match (ONP-3 §5): `fr` matches `fr` and `fr-CA`; `fr-CA` matches only itself. */
+export const langMatches = (tag, wanted) => {
+  const t = String(tag).toLowerCase();
+  const w = String(wanted).toLowerCase();
+  return t === w || t.startsWith(`${w}-`);
+};
 
 export const RANK_COMPONENTS = { price: 0.35, tier: 0.35, probe_success: 0.30 };
 const TIER_SCORE = { unverified: 0, community: 0.4, verified: 0.8, attested: 1.0 };
@@ -39,6 +47,7 @@ export async function collectOfferings(store) {
         binding: offering.binding,
         pricing: offering.pricing,
         data_policy: offering.data_policy ?? null,
+        node_regions: card.node?.regions ?? [],
         // Allocated hardware for THIS offering (offering-level override wins over the
         // node-level description) — same artifact on different vendors runs on different
         // silicon, and clients deserve to see which. Always basis-labeled, never measured.
@@ -76,6 +85,13 @@ export async function searchOfferingsPaged(store, query) {
   }
   if (q('max_input_price')) items = items.filter((o) => (o.pricing.input_per_mtok ?? Infinity) <= Number(q('max_input_price')));
   if (q('scheme')) items = items.filter((o) => o.pricing.schemes.includes(q('scheme')));
+  if (q('region')) {
+    // Residency: the offering's pinning, else the node's regions, must lie entirely inside.
+    items = items.filter((o) => {
+      const pins = o.data_policy?.region_pinning ?? [];
+      return residencyWithin(pins.length ? pins : o.node_regions, q('region'));
+    });
+  }
   if (q('tier')) {
     const order = ['unverified', 'community', 'verified', 'attested'];
     const min = order.indexOf(q('tier'));
@@ -85,7 +101,7 @@ export async function searchOfferingsPaged(store, query) {
     const [lang, minGrade = 'basic'] = q('lang').split(':');
     const grades = ['basic', 'strong', 'native'];
     items = items.filter((o) => (o.serving?.languages ?? []).some(
-      (l) => l.lang === lang && grades.indexOf(l.grade) >= grades.indexOf(minGrade)));
+      (l) => langMatches(l.lang, lang) && grades.indexOf(l.grade) >= grades.indexOf(minGrade)));
   }
   if (q('q')) {
     const needle = q('q').toLowerCase();

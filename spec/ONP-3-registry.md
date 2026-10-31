@@ -1,6 +1,6 @@
 ﻿# ONP-3: Registry & Discovery API
 
-**OpenNodes Protocol — Draft 0.1 — 2026-08-20**
+**OpenNodes Protocol — Draft 0.1, revision 2 — 2026-10-31** ([changes](CHANGES.md))
 
 A registry is any service implementing this API. The architecture copies what worked for the MCP Registry (meta-registry + OpenAPI interface + namespace challenges) and adds what that registry deliberately excluded — liveness, verification, ranking — because for *paid inference* those are the product.
 
@@ -50,12 +50,12 @@ Identical family to the MCP Registry: prove control of the domain in `node.id` v
 Registration alone never grants a trust tier. Tiers above `unverified` are gated by an **automated admission test battery** the registry runs against the live endpoints, using a probe allowance the node declares in its card (`payment.probe_allowance`: free request budget per registry per day) or paying as an ordinary client. All results are recorded as `onp:ConformanceResult` / `onp:BenchmarkResult` attestations (§7), so admission evidence is portable across registries.
 
 **Stage A — Reachability & conformance (gate to `community`, minutes):**
-1. Card well-formed, signed, fetchable; `health` endpoint live.
+1. Card well-formed, signed, fetchable; `health` endpoint live. Card consistency: every offering declares `data_policy`, and every offering's `pricing.schemes` is a subset of the node's `payment.schemes` (ONP-2 §5).
 2. One blind invocation per offering through the declared binding profile; response schema, streaming, and `usage` accounting conform (ONP-4).
 3. `GET /models` agrees with the card's offerings.
 
 **Stage B — Identity & capability (gate to `verified`, hours–days):**
-4. **Model identity fingerprint** — for open-weight artifacts: a fixed battery of prompts at temperature 0 with logprob/output-distribution comparison against a reference run of the claimed artifact+quantization; statistical mismatch ⇒ `disputed`, admission refused. For proprietary artifacts: only the vendor's own verified namespace may claim them (§6.3).
+4. **Model identity fingerprint** — for open-weight artifacts: a fixed battery of prompts at temperature 0, compared against a reference run of the claimed artifact+quantization; statistical mismatch ⇒ `disputed`, admission refused. When the offering declares `logprobs` (ONP-2 §5), registries SHOULD compare token log-probabilities. Otherwise they compare outputs only and SHOULD record the result as lower-confidence. For proprietary artifacts: only the vendor's own verified namespace may claim them (§6.3).
 5. **Context verification** — retrieval probes (needle-in-haystack family) at 25/50/90% of the claimed `context_window`; failure caps the *advertised* window to the largest verified size rather than rejecting outright. Probes SHOULD be sized in the model's own tokens (calibrated from the endpoint's reported `usage.prompt_tokens`), SHOULD place the fact near the *start* of the prompt so that an engine silently discarding the front of an over-long prompt fails, and SHOULD treat a reported `prompt_tokens` well below the probe size as a failed (truncated) probe. The verified size is the largest probe size at which that probe and every smaller one succeeded. Question wording SHOULD be plain ("what is the magic number"): small models refuse or mangle unusual tokens.
 6. **Capacity ramp** — concurrent load stepped up toward claimed throughput; measures TTFT/TPS percentiles under load and sustains ≥ N minutes (registry-declared, default 15). Claimed `expected_ttft_ms`/`expected_tps` outside measured bounds are re-labeled with the registry's observed values in search results — the node's claims are never silently trusted over measurements.
 7. **Capability spot-checks** — if `supports` declares `tool_calls`/`json_mode`/`vision`, one functional probe each.
@@ -79,7 +79,7 @@ Registration alone never grants a trust tier. Tiers above `unverified` are gated
 &supports=tool_calls,json_mode
 &lang=uk:strong               // language + minimum grade (ONP-2 §5)
 &max_input_price=1.00        // USD per MTok
-&region=eu
+&region=EU                   // residency: region_pinning (else node regions) entirely within this code
 &scheme=x402                 // payment scheme
 &tier=verified               // minimum trust tier
 &basis=attested              // only attested performance/benchmarks
@@ -88,6 +88,10 @@ Registration alone never grants a trust tier. Tiers above `unverified` are gated
 &q=free-text
 &limit=50&cursor=…
 ```
+
+Matching rules:
+- `region=X` matches an offering when its `data_policy.region_pinning` — or, if that is empty, the node's `regions` — is non-empty and **every** listed code lies within `X` under the containment rule of ONP-2 §3. A residency requirement is only met when no listed location falls outside it.
+- `lang=fr` matches the tag `fr` and its subtags (`fr-CA`); `lang=fr-CA` matches only `fr-CA`.
 
 Responses return offering summaries: the card excerpt, trust tier, the **effective hardware allocation** (the offering-level `hardware` override if present, else the node-level declaration — see ONP-2 §6), registry **observations** (measured uptime, TTFT/TPS percentiles from probes, price history), and `rank` with `rank_explanation` (§6). Results MUST distinguish card-claimed vs. registry-observed vs. attested values; performance sorts (`ttft`, `tps`) MUST prefer observed values over claims.
 
@@ -109,7 +113,7 @@ Responses return offering summaries: the card excerpt, trust tier, the **effecti
              "expected_latency_ms": {"p50": 3400, "p95": 9100}} ]}
 ```
 
-Steps may name a concrete offering or embed a §5 `select` query (the registry resolves it and reports which offering it priced). Estimates carry the `card_revision` they priced against, so the client can pin the same revision at invocation (ONP-4 §2) and the estimate is enforceable, not advisory. Estimation is free, unauthenticated, and side-effect-free.
+Steps may name a concrete offering or embed a §5 `select` query (the registry resolves it and reports which offering it priced). Estimates carry the `card_revision` they priced against, so the client can pin the same revision at invocation (ONP-4 §2) and the estimate is enforceable, not advisory. Estimation is side-effect-free. Public registries SHOULD offer it free and without authentication. Any registry MAY require authentication (a private or entitlement-scoped catalogue will), and every registry SHOULD rate-limit `estimate` and `recommend` per client, answering `429` per ONP-4 §9.
 
 ## 5b. Recommendation (advisor)
 
@@ -123,10 +127,17 @@ The advisor is deliberately deterministic and reproducible: same catalog, same f
 
 Registries earn their place by turning claims into signals:
 
-1. **Liveness probes** — `health` endpoint, RECOMMENDED ≥ every 5 min for `verified`+; uptime observations published per offering.
-2. **Conformance probes** — periodic blind invocations through the advertised binding (registry pays like any client, or uses a node-granted probe allowance declared in the card). Checks: endpoint speaks the profile; streamed usage matches receipts; latency percentiles.
-3. **Identity probes (anti-impersonation)** — for offerings claiming a known open-weight artifact, registries SHOULD run behavioral fingerprint tests (logprob/output distribution checks against a reference) and MUST downgrade `model.artifact` to `disputed` on failure. For proprietary artifacts (`urn:proprietary:*`), only the vendor's own verified namespace may claim them — a third party cannot list "gpt-5".
-4. **Ranking** — each registry computes `rank` however it wants **but MUST publish, in `GET /v0/health`, the component list and weights** (e.g. `uptime:0.3, price:0.2, attested_quality:0.3, latency:0.2`) and per-result `rank_explanation` with component values. Undisclosed ranking inputs are non-conformant. Paid placement, if any, MUST be labeled `sponsored` and excluded from `rank`.
+### 6.1 Liveness probes
+`health` endpoint, RECOMMENDED ≥ every 5 min for `verified`+; uptime observations published per offering.
+
+### 6.2 Conformance probes
+Periodic blind invocations through the advertised binding (registry pays like any client, or uses a node-granted probe allowance declared in the card). Checks: endpoint speaks the profile; streamed usage matches receipts (receipt sampling, ONP-5 §5); latency percentiles.
+
+### 6.3 Identity probes (anti-impersonation)
+For offerings claiming a known open-weight artifact, registries SHOULD run behavioral fingerprint tests (§4a item 4: log-probability comparison where `logprobs` is declared, output comparison otherwise) and MUST downgrade `model.artifact` to `disputed` on failure. For proprietary artifacts (`urn:proprietary:*`), only the vendor's own verified namespace may claim them — a third party cannot list "gpt-5".
+
+### 6.4 Ranking
+Each registry computes `rank` however it wants **but MUST publish, in `GET /v0/health`, the component list and weights** (e.g. `uptime:0.3, price:0.2, attested_quality:0.3, latency:0.2`) and per-result `rank_explanation` with component values. Undisclosed ranking inputs are non-conformant. Paid placement, if any, MUST be labeled `sponsored` and excluded from `rank`.
 
 ## 7. Attestations
 

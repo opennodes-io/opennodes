@@ -57,7 +57,7 @@ Two reference stacks, cross-verified against each other:
 
 The supply-side on-ramp: a reverse proxy that turns any OpenAI-compatible engine (vLLM, Ollama, TGI) into a conforming node *without touching the engine* — card generation from engine interrogation, Ed25519 signing byte-compatible with the JS verifier, receipts (inline; by-URL for streams), a Stage A self-test that gates registration, and one-command register.
 
-**Verification state:** 35 automated tests (34 passing, 1 opt-in real-Postgres run), including cross-language e2e (Python-signed cards verified by the JS registry), a spawned-child-process MCP handshake, and adversarial cases (an impersonating node is detected and delisted; an overclaimed context window is capped). Validated live against a real deployment: a CPU Ollama box serving Gemma was wrapped, registered, challenge-verified, Stage-A probed, and chatted with through the full gateway chain with a signed receipt.
+**Verification state:** 68 automated tests as of 2026-10-31 (60 JavaScript, 8 Python; all passing except 1 opt-in real-Postgres run), including cross-language e2e (Python-signed cards verified by the JS registry), a spawned-child-process MCP handshake, and adversarial cases (an impersonating node is detected and delisted; an overclaimed context window is capped). Validated live against a real deployment: a CPU Ollama box serving Gemma was wrapped, registered, challenge-verified, Stage-A probed, and chatted with through the full gateway chain with a signed receipt.
 
 ## 4. Development stages completed
 
@@ -106,5 +106,6 @@ The supply-side on-ramp: a reverse proxy that turns any OpenAI-compatible engine
 - **Home:** opennodes.io · **Repo:** github.com/opennodes-io/opennodes
 - **Licenses:** Apache-2.0 (code), CC-BY-4.0 (specification & schemas)
 - **Implementations:** JS reference stack (registry, gateway, CLI/SDK, MCP servers, fixture), Python Node Kit
-- **Live catalog reach via importers:** ~7,800 offerings across OpenRouter, Hugging Face Inference Providers, and models.dev
-- **Tests:** 28 (27 pass, 1 opt-in), including cross-language and adversarial cases
+- **Live catalog reach via importers:** 9,000+ offerings on the hosted registry (October 2026) across OpenRouter, Hugging Face Inference Providers, and models.dev (~7,800 at the August 2026 import)
+- **Tests:** 68 (67 pass, 1 opt-in real-Postgres), including cross-language and adversarial cases
+- **Spec revision:** Draft 0.1, revision 2 (2026-10-31) — compatibility and editorial fixes, see [spec/CHANGES.md](../spec/CHANGES.md)

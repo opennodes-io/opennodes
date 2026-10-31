@@ -1,6 +1,22 @@
-// Stage A admission probes (DS-ADM-01): health, blind invocation, /models agreement.
+// Stage A admission probes (DS-ADM-01): card consistency, health, blind invocation, /models agreement.
 // All outbound traffic goes through the SSRF-guarded fetcher (safefetch.js).
 import { fetchJsonCapped } from './safefetch.js';
+
+/**
+ * Card rules a schema cannot express (ONP-2 §5): every offering declares a data_policy
+ * (required from `community` up), and offers only payment schemes the node declares.
+ * Returns a list of problems; empty means consistent.
+ */
+export function cardConsistency(card) {
+  const nodeSchemes = new Set((card.payment?.schemes ?? []).map((s) => s.scheme));
+  const problems = [];
+  for (const o of card.offerings ?? []) {
+    if (!o.data_policy) problems.push(`${o.offering_id}: no data_policy`);
+    const undeclared = (o.pricing?.schemes ?? []).filter((s) => !nodeSchemes.has(s));
+    if (undeclared.length) problems.push(`${o.offering_id}: schemes not in payment.schemes: ${undeclared.join(', ')}`);
+  }
+  return problems;
+}
 
 /** Run Stage A against a card. Records results via store; returns { ok, results }. */
 export async function runStageA(store, nodeId, card, { safeFetch } = {}) {
@@ -11,6 +27,10 @@ export async function runStageA(store, nodeId, card, { safeFetch } = {}) {
     await store.recordProbe(nodeId, offeringId, 'A', kind, ok, detail, measured);
     results.push({ offeringId, kind, ok, detail });
   };
+
+  // 0. Card consistency (no network)
+  const problems = cardConsistency(card);
+  await record(null, 'card-consistency', problems.length === 0, problems.length ? problems.join('; ') : null);
 
   // 1. Health endpoint
   try {
