@@ -21,19 +21,19 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="preload" href="/media/fonts/source-serif-4-latin-9.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/media/fonts/fonts.css">
 <style>
   :root {
     --ground: #F7F9FA; --panel: #FFFFFF; --panel-2: #EEF2F4;
     --ink: #1C2733; --muted: #5C6E7E; --line: #D6DEE3;
-    --accent: #0F7A80; --accent-soft: #E0EFF0;
+    --accent: #0F7A80; --accent-soft: #EAF4F5; --on-accent: #FFFFFF; --accent-strong: #0B6166;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --ground: #101820; --panel: #16202A; --panel-2: #1C2833;
       --ink: #E4EBF0; --muted: #8FA1B0; --line: #2C3B48;
-      --accent: #4FC0C6; --accent-soft: #12333A;
+      --accent: #4FC0C6; --accent-soft: #12333A; --on-accent: #0B1A20; --accent-strong: #7AD3D8;
     }
   }
   * { box-sizing: border-box; }
@@ -48,10 +48,6 @@
   code { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; font-size: 0.85em; background: var(--panel-2); padding: 0.08em 0.35em; border-radius: 3px; }
   pre { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.9rem 1.1rem; overflow-x: auto; font-size: 0.82rem; line-height: 1.5; }
   pre code { background: none; padding: 0; font-size: 1em; }
-  .eyebrow { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 0 0 0.4rem; }
-  nav.top { font-family: "Archivo", sans-serif; font-size: 0.9rem; padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
-  nav.top .wrap { display: flex; flex-wrap: wrap; column-gap: 1.2rem; }
-  nav.top a { padding: 0.4rem 0; white-space: nowrap; text-decoration: none; }
   header.hero { padding: 3rem 0 2rem; border-bottom: 1px solid var(--line); }
   .hero h1 { font-size: 2.4rem; font-weight: 700; letter-spacing: -0.02em; margin: 0.4rem 0 1rem; }
   section { padding: 2.2rem 0; border-bottom: 1px solid var(--line); }
@@ -65,11 +61,32 @@
   @media (max-width: 560px) { .prob { grid-template-columns: 1fr auto; gap: 0.15rem 0.8rem; } .prob .d { grid-column: 1 / -1; } .hero h1 { font-size: 2rem; } }
   footer { padding: 2.2rem 0 3rem; font-family: "Archivo", sans-serif; font-size: 0.85rem; color: var(--muted); }
 </style>
+<style>
+  /* shared layer: browser surfaces follow the theme; states for links, buttons and focus; the site menu */
+  :root { color-scheme: light dark; }
+  ::selection { background: var(--accent); color: var(--on-accent); }
+  a:hover { text-decoration-thickness: 2px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+  .btn { transition: background-color 0.15s, border-color 0.15s, color 0.15s; }
+  .btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+  .btn.secondary:hover { background: var(--accent-soft); }
+  .skip { position: absolute; left: 1rem; top: -4rem; z-index: 10; font-family: "Archivo", sans-serif; font-weight: 600; padding: 0.5rem 0.9rem; border-radius: 4px; background: var(--accent); color: var(--on-accent); }
+  .skip:focus { top: 0.6rem; }
+  nav.top { font-family: "Archivo", sans-serif; font-size: 0.9rem; padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
+  nav.top .wrap { display: flex; flex-wrap: wrap; align-items: center; column-gap: 1.2rem; }
+  nav.top a { padding: 0.4rem 0; white-space: nowrap; text-decoration: none; }
+  nav.top a:hover { text-decoration: underline; }
+  nav.top a[aria-current="page"] { color: var(--ink); text-decoration: underline; text-underline-offset: 0.4em; text-decoration-thickness: 2px; }
+  nav.top .brand { display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 700; color: var(--ink); margin-right: auto; }
+  nav.top .brand[aria-current="page"] { text-decoration: none; }
+  @media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
+</style>
 </head>
 <body>
-<nav class="top"><div class="wrap"><a href="/">OpenNodes</a><a href="https://registry.opennodes.io/">Registry</a><a href="/integrations">Integrations</a><a href="/about">About &amp; privacy</a><a href="https://github.com/opennodes-io/opennodes">GitHub</a></div></nav>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Site"><div class="wrap"><a class="brand" href="/"><img src="/favicon.svg" width="20" height="20" alt="">OpenNodes</a><a href="https://registry.opennodes.io/">Registry</a><a href="/integrations">Integrations</a><a href="/eu">Europe</a><a href="/about">About</a><a href="https://github.com/opennodes-io/opennodes">GitHub</a></div></nav>
+<main id="main" tabindex="-1">
 <header class="hero"><div class="wrap">
-  <p class="eyebrow">Problem types</p>
   <h1>Errors, by name</h1>
   <p>OpenNodes registries, nodes and gateways report errors as RFC 9457 problem details (<code>application/problem+json</code>). The <code>type</code> is <code>https://opennodes.io/problems/{name}</code>, the <code>title</code> is the bare name, and <code>detail</code> says what went wrong in this case. Match on <code>title</code>.</p>
 <pre><code>HTTP/1.1 409 Conflict
@@ -138,6 +155,8 @@ Content-Type: application/problem+json
     <div class="prob" id="internal-error"><span class="k">internal-error</span><span class="s">500</span><span class="d">Unexpected server error.</span></div>
   </div>
 </div></section>
+
+</main>
 
 <footer><div class="wrap">OpenNodes Protocol · spec CC-BY-4.0, code Apache-2.0 · <a href="https://github.com/opennodes-io/opennodes">github.com/opennodes-io/opennodes</a></div></footer>
 <script>

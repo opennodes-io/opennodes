@@ -21,19 +21,19 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="preload" href="/media/fonts/source-serif-4-latin-9.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/media/fonts/fonts.css">
 <style>
   :root {
     --ground: #F7F9FA; --panel: #FFFFFF; --panel-2: #EEF2F4;
     --ink: #1C2733; --muted: #5C6E7E; --line: #D6DEE3;
-    --accent: #0F7A80; --accent-soft: #E0EFF0; --on-accent: #FFFFFF; --good: #2F6B3A;
+    --accent: #0F7A80; --accent-soft: #EAF4F5; --on-accent: #FFFFFF; --accent-strong: #0B6166; --good: #2F6B3A;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --ground: #101820; --panel: #16202A; --panel-2: #1C2833;
       --ink: #E4EBF0; --muted: #8FA1B0; --line: #2C3B48;
-      --accent: #4FC0C6; --accent-soft: #12333A; --on-accent: #0B1A20; --good: #7CC08A;
+      --accent: #4FC0C6; --accent-soft: #12333A; --on-accent: #0B1A20; --accent-strong: #7AD3D8; --good: #7CC08A;
     }
   }
   * { box-sizing: border-box; }
@@ -48,7 +48,6 @@
   code, .mono { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; font-size: 0.85em; background: var(--panel-2); padding: 0.08em 0.35em; border-radius: 3px; }
   pre { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.9rem 1.1rem; overflow-x: auto; font-size: 0.82rem; line-height: 1.5; }
   pre code { background: none; padding: 0; font-size: 1em; }
-  .eyebrow { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 0 0 0.4rem; }
 
   header.hero { padding: 4.5rem 0 3rem; border-bottom: 1px solid var(--line); }
   .hero h1 { font-size: 3rem; font-weight: 700; letter-spacing: -0.02em; margin: 0.4rem 0 1rem; }
@@ -92,17 +91,35 @@
   @media (max-width: 560px) { table.map { font-size: 0.82rem; } }
 </style>
 <style>
-  nav.top { font-family: "Archivo", sans-serif; font-size: 0.9rem; padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
-  nav.top .wrap { display: flex; flex-wrap: wrap; column-gap: 1.2rem; }
-  nav.top a { padding: 0.4rem 0; white-space: nowrap; text-decoration: none; }
   section ul { padding-left: 1.2rem; } section li { margin: 0.3rem 0; }
+</style>
+<style>
+  /* shared layer: browser surfaces follow the theme; states for links, buttons and focus; the site menu */
+  :root { color-scheme: light dark; }
+  ::selection { background: var(--accent); color: var(--on-accent); }
+  a:hover { text-decoration-thickness: 2px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+  .btn { transition: background-color 0.15s, border-color 0.15s, color 0.15s; }
+  .btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+  .btn.secondary:hover { background: var(--accent-soft); }
+  .skip { position: absolute; left: 1rem; top: -4rem; z-index: 10; font-family: "Archivo", sans-serif; font-weight: 600; padding: 0.5rem 0.9rem; border-radius: 4px; background: var(--accent); color: var(--on-accent); }
+  .skip:focus { top: 0.6rem; }
+  nav.top { font-family: "Archivo", sans-serif; font-size: 0.9rem; padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
+  nav.top .wrap { display: flex; flex-wrap: wrap; align-items: center; column-gap: 1.2rem; }
+  nav.top a { padding: 0.4rem 0; white-space: nowrap; text-decoration: none; }
+  nav.top a:hover { text-decoration: underline; }
+  nav.top a[aria-current="page"] { color: var(--ink); text-decoration: underline; text-underline-offset: 0.4em; text-decoration-thickness: 2px; }
+  nav.top .brand { display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 700; color: var(--ink); margin-right: auto; }
+  nav.top .brand[aria-current="page"] { text-decoration: none; }
+  @media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
 </style>
 </head>
 <body>
-<nav class="top"><div class="wrap"><a href="/">OpenNodes</a><a href="https://registry.opennodes.io/">Registry</a><a href="/integrations">Integrations</a><a href="/about">About &amp; privacy</a><a href="https://github.com/opennodes-io/opennodes">GitHub</a></div></nav>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Site"><div class="wrap"><a class="brand" href="/"><img src="/favicon.svg" width="20" height="20" alt="">OpenNodes</a><a href="https://registry.opennodes.io/">Registry</a><a href="/integrations">Integrations</a><a href="/eu" aria-current="page">Europe</a><a href="/about">About</a><a href="https://github.com/opennodes-io/opennodes">GitHub</a></div></nav>
+<main id="main" tabindex="-1">
 
 <header class="hero"><div class="wrap">
-  <p class="eyebrow">OpenNodes for Europe</p>
   <h1 style="font-size:2.4rem">An open way to find and verify Europe's AI inference</h1>
   <p class="lede">OpenNodes is an open protocol and an open-source registry for <b>finding and verifying AI inference endpoints</b> — from a university GPU cluster or an AI Factory service to a regional cloud. Providers publish a signed self-description; registries check those claims automatically; clients call the provider directly. <b>OpenNodes is never in the data path.</b></p>
   <div class="actions">
@@ -142,6 +159,8 @@
   <h2 style="margin-top:1.6rem">Next</h2>
   <p>ONP Draft 0.2 (attestations, federation, composite nodes), a W3C Community Group for the specification, and pilots with European operators and AI Factory service teams. Interested? <a href="mailto:operators@opennodes.io">operators@opennodes.io</a></p>
 </div></section>
+
+</main>
 
 <footer><div class="wrap">OpenNodes Protocol · spec CC-BY-4.0, code Apache-2.0 · <a href="https://github.com/opennodes-io/opennodes">github.com/opennodes-io/opennodes</a> · <a href="/about">About &amp; privacy</a></div></footer>
 </body>

@@ -21,19 +21,19 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="preload" href="/media/fonts/source-serif-4-latin-9.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/media/fonts/fonts.css">
 <style>
   :root {
     --ground: #F7F9FA; --panel: #FFFFFF; --panel-2: #EEF2F4;
     --ink: #1C2733; --muted: #5C6E7E; --line: #D6DEE3;
-    --accent: #0F7A80; --accent-soft: #E0EFF0; --on-accent: #FFFFFF; --good: #2F6B3A;
+    --accent: #0F7A80; --accent-soft: #EAF4F5; --on-accent: #FFFFFF; --accent-strong: #0B6166; --good: #2F6B3A;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --ground: #101820; --panel: #16202A; --panel-2: #1C2833;
       --ink: #E4EBF0; --muted: #8FA1B0; --line: #2C3B48;
-      --accent: #4FC0C6; --accent-soft: #12333A; --on-accent: #0B1A20; --good: #7CC08A;
+      --accent: #4FC0C6; --accent-soft: #12333A; --on-accent: #0B1A20; --accent-strong: #7AD3D8; --good: #7CC08A;
     }
   }
   * { box-sizing: border-box; }
@@ -48,25 +48,50 @@
   code, .mono { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; font-size: 0.85em; background: var(--panel-2); padding: 0.08em 0.35em; border-radius: 3px; }
   pre { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.9rem 1.1rem; overflow-x: auto; font-size: 0.82rem; line-height: 1.5; }
   pre code { background: none; padding: 0; font-size: 1em; }
-  .eyebrow { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 0 0 0.4rem; }
 
-  header.hero { padding: 4.5rem 0 3rem; border-bottom: 1px solid var(--line); }
-  .hero h1 { font-size: 3rem; font-weight: 700; letter-spacing: -0.02em; margin: 0.4rem 0 1rem; }
-  .hero .lede { font-size: 1.2rem; max-width: 40rem; }
-  .chips { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 1.4rem 0 0; }
-  .chip { font-family: "IBM Plex Mono", monospace; font-size: 0.74rem; padding: 0.34rem 0.7rem; border-radius: 2px; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
-  .actions { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 1.8rem; }
+  header.hero { padding: 3.2rem 0 2.8rem; border-bottom: 1px solid var(--line); }
+  .hero h1 { font-size: 3rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 1rem; }
+  .hero .lede { font-size: 1.2rem; max-width: 40rem; margin: 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 1.6rem; }
   .btn { display: inline-block; font-family: "Archivo", sans-serif; font-weight: 600; font-size: 0.95rem; text-decoration: none; padding: 0.65rem 1.2rem; border-radius: 4px; border: 1px solid var(--accent); }
   .btn.primary { background: var(--accent); color: var(--on-accent); }
   .btn.secondary { color: var(--accent); background: transparent; }
+  .quick { margin: 1rem 0 0; font-family: "Archivo", sans-serif; font-size: 0.9rem; color: var(--muted); }
+
+  /* claimed vs measured: one registered node's card next to what the registry measured */
+  .proof { margin: 2rem 0 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
+  .proof-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0.3rem 1rem; padding: 0.8rem 1.1rem; border-bottom: 1px solid var(--line); font-family: "Archivo", sans-serif; font-size: 0.95rem; }
+  .tier { font-family: "IBM Plex Mono", monospace; font-size: 0.78rem; font-weight: 600; color: var(--on-accent); background: var(--accent); padding: 0.12rem 0.55rem; border-radius: 3px; }
+  .proof table { width: 100%; border-collapse: collapse; font-family: "Archivo", sans-serif; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+  .proof th, .proof td { text-align: left; padding: 0.55rem 1.1rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .proof thead th { font-size: 0.8rem; font-weight: 600; color: var(--muted); background: var(--panel-2); }
+  .proof tbody th { font-weight: 600; white-space: nowrap; }
+  .proof td.claim { color: var(--muted); }
+  .ok { color: var(--good); font-weight: 700; }
+  .proof figcaption { padding: 0.7rem 1.1rem; font-family: "Archivo", sans-serif; font-size: 0.85rem; color: var(--muted); background: var(--panel-2); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  @media (max-width: 560px) {
+    .proof thead { display: none; }
+    .proof tr { display: block; padding: 0.6rem 1.1rem; border-bottom: 1px solid var(--line); }
+    .proof th, .proof td { display: block; padding: 0.05rem 0; border: 0; }
+    .proof td::before { content: attr(data-label) ": "; color: var(--muted); font-size: 0.82rem; }
+  }
 
   section { padding: 2.6rem 0; border-bottom: 1px solid var(--line); }
   section h2 { font-size: 1.5rem; margin: 0 0 1rem; }
+  section h3 { font-size: 1.05rem; margin: 1.6rem 0 0.5rem; }
+  .small { font-size: 0.95rem; }
+  .muted { color: var(--muted); }
+  figure { margin: 1rem 0 0; }
+  figcaption { font-size: 0.82rem; color: var(--muted); }
+  .media { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; }
 
   .steps { display: flex; flex-direction: column; gap: 0.45rem; margin-top: 1.2rem; }
   .step { display: grid; grid-template-columns: 8.5rem 1fr; gap: 0.8rem; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); padding: 0.7rem 0.9rem; align-items: baseline; }
-  .step .k { font-family: "IBM Plex Mono", monospace; font-size: 0.76rem; font-weight: 600; color: var(--accent); }
+  .step .k { font-family: "IBM Plex Mono", monospace; font-size: 0.8rem; font-weight: 600; color: var(--accent); }
   .step .d { font-size: 0.92rem; color: var(--muted); font-family: "Archivo", sans-serif; }
+  ul.points { padding-left: 1.2rem; margin: 1.4rem 0 0; }
+  ul.points li { margin: 0.45rem 0; }
   @media (max-width: 560px) { .step { grid-template-columns: 1fr; gap: 0.15rem; } .hero h1 { font-size: 2.3rem; } }
 
   .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 1.2rem; }
@@ -75,10 +100,6 @@
   .card h3 { font-size: 1rem; margin: 0 0 0.4rem; }
   .card p { font-size: 0.92rem; color: var(--muted); margin: 0; }
 
-  ul.spec { list-style: none; padding: 0; margin: 1rem 0 0; }
-  ul.spec li { padding: 0.5rem 0; border-bottom: 1px dashed var(--line); font-size: 0.95rem; }
-  ul.spec .mono { margin-right: 0.5rem; }
-
   .codebox { position: relative; margin: 1em 0; }
   .codebox > pre { margin: 0; padding-right: 4.6rem; }
   .copy { position: absolute; top: 0.45rem; right: 0.45rem; min-height: 24px; font-family: "Archivo", sans-serif; font-size: 0.72rem; font-weight: 600; padding: 0.25rem 0.6rem; border: 1px solid var(--line); border-radius: 4px; background: var(--panel-2); color: var(--muted); cursor: pointer; }
@@ -86,134 +107,141 @@
 
   footer { padding: 2.2rem 0 3rem; font-family: "Archivo", sans-serif; font-size: 0.85rem; color: var(--muted); }
 </style>
+<style>
+  /* shared layer: browser surfaces follow the theme; states for links, buttons and focus; the site menu */
+  :root { color-scheme: light dark; }
+  ::selection { background: var(--accent); color: var(--on-accent); }
+  a:hover { text-decoration-thickness: 2px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+  .btn { transition: background-color 0.15s, border-color 0.15s, color 0.15s; }
+  .btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+  .btn.secondary:hover { background: var(--accent-soft); }
+  .skip { position: absolute; left: 1rem; top: -4rem; z-index: 10; font-family: "Archivo", sans-serif; font-weight: 600; padding: 0.5rem 0.9rem; border-radius: 4px; background: var(--accent); color: var(--on-accent); }
+  .skip:focus { top: 0.6rem; }
+  nav.top { font-family: "Archivo", sans-serif; font-size: 0.9rem; padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
+  nav.top .wrap { display: flex; flex-wrap: wrap; align-items: center; column-gap: 1.2rem; }
+  nav.top a { padding: 0.4rem 0; white-space: nowrap; text-decoration: none; }
+  nav.top a:hover { text-decoration: underline; }
+  nav.top a[aria-current="page"] { color: var(--ink); text-decoration: underline; text-underline-offset: 0.4em; text-decoration-thickness: 2px; }
+  nav.top .brand { display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 700; color: var(--ink); margin-right: auto; }
+  nav.top .brand[aria-current="page"] { text-decoration: none; }
+  @media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
+</style>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Site"><div class="wrap"><a class="brand" href="/" aria-current="page"><img src="/favicon.svg" width="20" height="20" alt="">OpenNodes</a><a href="https://registry.opennodes.io/">Registry</a><a href="/integrations">Integrations</a><a href="/eu">Europe</a><a href="/about">About</a><a href="https://github.com/opennodes-io/opennodes">GitHub</a></div></nav>
+<main id="main" tabindex="-1">
 
 <header class="hero"><div class="wrap">
-  <p class="eyebrow">OpenNodes · open protocol for AI inference</p>
   <h1>AI inference, measured — not just&nbsp;claimed</h1>
-  <p class="lede">OpenNodes is an open registry of AI inference endpoints, from your own Ollama box to sovereign EU clouds. It checks what each one really serves: which model, how much context actually works, how fast it answers, on what hardware, at what price. <strong>Your prompts go straight to the endpoint you pick — OpenNodes is never in the data path.</strong></p>
-  <div class="chips">
-    <span class="chip">identity checks</span>
-    <span class="chip">measured context windows</span>
-    <span class="chip">pinned prices</span>
-    <span class="chip">signed receipts</span>
-    <span class="chip">out of the data path</span>
-    <span class="chip">open source</span>
-  </div>
+  <p class="lede">OpenNodes is an open registry of AI inference endpoints, from your own Ollama box to sovereign EU clouds. It checks what each one really serves: which model, how much context actually works, how fast it answers, where it runs. <strong>Your prompts go straight to the endpoint you pick — OpenNodes is never in the data path.</strong></p>
+
   <div class="actions">
     <a class="btn primary" href="https://registry.opennodes.io/">Open the registry</a>
-    <a class="btn secondary" href="#ollama">Use it with Ollama</a>
-    <a class="btn secondary" href="/integrations">Integrations</a>
-    <a class="btn secondary" href="https://github.com/opennodes-io/opennodes">GitHub</a>
+    <a class="btn secondary" href="#ollama">Run it with Ollama</a>
   </div>
-  <p style="margin:1.2rem 0 0;font-family:'Archivo',sans-serif;font-size:0.92rem">Building in Europe? <a href="/eu">OpenNodes for Europe</a> — EU/EEA-only routing, no middlebox, verified European models.</p>
+  <p class="quick">Or start now: <code>npx @opennodes/ollama-router</code> · Building in Europe? <a href="/eu">OpenNodes for Europe</a></p>
+
+  <figure class="proof" aria-labelledby="proof-cap">
+    <div class="proof-head">
+      <span><b>Bielik 1.5B v3</b> on <a href="https://registry.opennodes.io/#/node/io.opennodes.helsinki">io.opennodes.helsinki</a></span>
+      <span class="tier" data-k="tier">verified</span>
+    </div>
+    <table>
+      <thead><tr><th scope="col"><span class="sr">Check</span></th><th scope="col">Claimed in its Node Card</th><th scope="col">Measured by the registry</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Model</th><td class="claim" data-label="Claimed">bielik-1.5b-v3.0-instruct</td><td data-label="Measured"><span class="ok" aria-hidden="true">✓</span> serves that model (identity check)</td></tr>
+        <tr><th scope="row">Context window</th><td class="claim" data-label="Claimed">8,192 tokens</td><td data-label="Measured"><span class="ok" aria-hidden="true">✓</span> <span data-k="ctx">8,192 tokens held in a real test</span></td></tr>
+        <tr><th scope="row">Server</th><td class="claim" data-label="Claimed">Finland</td><td data-label="Measured"><span class="ok" aria-hidden="true">✓</span> <span data-k="loc">in Finland, Hetzner network</span></td></tr>
+        <tr><th scope="row">Speed</th><td class="claim" data-label="Claimed">not claimed</td><td data-label="Measured"><span data-k="speed">2.2 s to first token · 35 tokens/s</span></td></tr>
+        <tr><th scope="row">Reliability</th><td class="claim" data-label="Claimed">not claimed</td><td data-label="Measured"><span data-k="probes">100 of the last 100 blind checks passed</span></td></tr>
+      </tbody>
+    </table>
+    <figcaption id="proof-cap"><span data-k="stamp">Registry snapshot, 31 Oct 2026.</span> Where things stand: the verified tier holds the project's reference nodes so far; the 10,000+ imported listings show only their claims until their operators register.</figcaption>
+  </figure>
 </div></header>
 
-<section><div class="wrap">
-  <p class="eyebrow">Start here</p>
-  <h2>Two ways to start</h2>
-
-  <h3 id="ollama" style="font-size:1.1rem">One Ollama endpoint for your laptop, your network, and verified cloud</h3>
-  <p style="font-size:0.95rem">Run one command and every Ollama app — Open WebUI, Continue, Zed, Msty, the <code>ollama</code> CLI — sees one model list: your local models, your other machines on the network (found automatically), and verified public nodes. <code>auto</code> picks a model per prompt; <code>auto-private</code> never leaves your network. No account, no API key.</p>
+<section id="ollama"><div class="wrap">
+  <h2>One Ollama endpoint for your laptop, your network, and verified cloud</h2>
+  <p class="small">Run one command and every Ollama app — Open WebUI, Continue, Zed, Msty, the <code>ollama</code> CLI — sees one model list: your local models, your other machines on the network (found automatically), and verified public nodes. <code>auto</code> picks a model per prompt; <code>auto-private</code> never leaves your network. No account, no API key; needs Node.js 22.5 or later.</p>
   <pre><code>npx @opennodes/ollama-router
 # in another terminal, point Ollama apps at the router:
 export OLLAMA_HOST=127.0.0.1:11435      # PowerShell: $env:OLLAMA_HOST="127.0.0.1:11435"
 ollama run auto-private "summarize this confidential note"   # local / LAN models only</code></pre>
-  <figure style="margin:1rem 0 1.6rem">
-    <video src="media/opennodes-for-ollama.mp4" poster="media/opennodes-for-ollama-poster.jpg" width="960" height="540" controls data-autoplay muted loop playsinline preload="none"
-      style="width:100%;height:auto;border:1px solid var(--line);border-radius:6px;background:#1e1e1e"
+  <figure>
+    <video class="media" src="media/opennodes-for-ollama.mp4" poster="media/opennodes-for-ollama-poster.jpg" width="960" height="540" controls data-autoplay muted loop playsinline preload="none"
+      style="background:#1e1e1e"
       aria-label="Terminal: ollama list shows local models, auto models and a public OpenNodes node; auto-private answers from a local model, and the router explains why"></video>
-    <figcaption style="font-size:0.8rem;color:var(--muted)">Real output: <code>auto-private</code> answered from a local model and the router says why; a public node answers the next prompt.</figcaption>
+    <figcaption>Real output: <code>auto-private</code> answered from a local model and the router says why; a public node answers the next prompt.</figcaption>
   </figure>
-
-  <h3 style="font-size:1.1rem">The registry: what's out there, and what has been checked</h3>
-  <p style="font-size:0.95rem"><a href="https://registry.opennodes.io/">registry.opennodes.io</a> lists 10,000+ offerings from about 250 providers — imported from OpenRouter, Hugging Face Inference Providers, models.dev and the Ollama library, refreshed every six hours — next to nodes registered by their operators. Every result shows its price, its trust tier, and why it ranks where it does.</p>
-  <p style="font-size:0.95rem">A registered node earns its tier by passing the registry's own checks: it serves the model it claims, its context window holds up under a real test (or the listing is capped to what does), and it answers under load. Blind probes at random times keep it honest afterwards. <strong>Where things stand:</strong> imported listings stay <em>unverified</em> until their operator claims them, and the verified tier holds the project's reference nodes while the first operators come on board.</p>
-  <div class="actions" style="margin-top:1rem">
-    <a class="btn secondary" href="https://registry.opennodes.io/">Browse the registry</a>
-    <a class="btn secondary" href="#operators">Operators: claim your listing</a>
-  </div>
 </div></section>
 
 <section><div class="wrap">
-  <p class="eyebrow">In your editor, agent or app</p>
   <h2>Ask for the right model from where you work</h2>
-  <h3 style="font-size:1.05rem">MCP — Cursor, Claude Desktop, Claude Code, VS Code, any agent</h3>
-  <p style="font-size:0.92rem;color:var(--muted)">Five read-only tools: <code>recommend</code> (the best node and model for a task, priced and explained — the prompt is analysed on your machine and only its features are sent), <code>search_offerings</code>, <code>get_offering</code>, <code>get_node</code> (who runs it, how it has behaved) and <code>estimate</code> (price a multi-step chain before running it).</p>
+  <h3>MCP — Cursor, Claude Desktop, Claude Code, VS Code, any agent</h3>
+  <p class="small muted">Five read-only tools: <code>recommend</code> picks the best node and model for a task, priced and explained (the prompt is analysed on your machine; only its features are sent), plus <code>search_offerings</code>, <code>get_offering</code>, <code>get_node</code> and <code>estimate</code>.</p>
   <pre><code>npx @opennodes/cli mcp --print-config        # paste into your MCP host's config
 # no install: point a remote-MCP host at https://registry.opennodes.io/mcp</code></pre>
-  <h3 style="font-size:1.05rem">Any OpenAI-compatible app</h3>
-  <p style="font-size:0.92rem;color:var(--muted)">A local gateway with <code>onp/auto</code> models that route each request to a node you can actually call: free registered nodes, plus catalogs you hold a key for (<code>OPENROUTER_API_KEY</code>, <code>HF_TOKEN</code>, …). Prices are pinned, receipts verified.</p>
+  <h3>Any OpenAI-compatible app</h3>
+  <p class="small muted">A local gateway whose <code>onp/auto</code> models route each request to a node you can call: free registered nodes, plus catalogs you hold a key for. Prices are pinned, receipts verified, and it fails over to the next node.</p>
   <pre><code>npx @opennodes/cli gateway --port 4141       # OpenAI base URL: http://127.0.0.1:4141/v1</code></pre>
-  <p style="font-size:0.92rem;color:var(--muted)">Per-app setup for Cursor, Claude, VS Code, Windsurf, Open WebUI, Continue, Zed, the OpenAI SDK, LangChain, LiteLLM and agents: <a href="/integrations">Integrations</a>.</p>
+  <p class="small muted">Step-by-step setup for Cursor, Claude, VS Code, Windsurf, Open WebUI, Continue, Zed, the OpenAI SDK, LangChain and LiteLLM: <a href="/integrations">Integrations</a>.</p>
 </div></section>
 
 <section id="operators"><div class="wrap">
-  <p class="eyebrow">For operators</p>
   <h2>List your endpoint — and prove it</h2>
   <div class="grid2">
     <div class="card"><h3>Already run an OpenAI-compatible API?</h3><p>Publish a signed Node Card as a static file on your API host and give the registry a low-quota key for its checks. Nothing in your stack changes, and your verified listing replaces the imported one.</p></div>
     <div class="card"><h3>Serving with vLLM, Ollama or TGI?</h3><p>The Node Kit runs a small proxy in front of your engine: it serves the card, pins prices, signs usage receipts, and registers the node. Your engine stays untouched.</p></div>
   </div>
   <pre><code>pipx install onp-node
-onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.ai --public-url https://ai.example.org
-# proxy mode: run the kit in front of your engine, then register
-onp-node serve
-onp-node register https://registry.opennodes.io
-# card-only mode: sign static files for the API you already run, host them, register
-onp-node card --api-base https://api.example.org/v1 --out well-known
-onp-node register https://registry.opennodes.io --card-url https://api.example.org/.well-known/open-node.json --probe-key-env ONP_PROBE_KEY</code></pre>
-  <p style="font-size:0.92rem;color:var(--muted)">Listing is free and open to anyone who controls their domain. Step-by-step guide in the <a href="https://github.com/opennodes-io/opennodes/tree/main/node-kit">Node Kit README</a>; questions, claims or removal of an imported listing: <a href="mailto:operators@opennodes.io">operators@opennodes.io</a>.</p>
+onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.ai --public-url https://ai.example.org</code></pre>
+  <p class="small muted">Listing is free and open to anyone who controls their domain. Both modes step by step: the <a href="https://github.com/opennodes-io/opennodes/tree/main/node-kit">Node Kit guide</a>. Claims, questions or removal of an imported listing: <a href="mailto:operators@opennodes.io">operators@opennodes.io</a>.</p>
 </div></section>
 
 <section><div class="wrap">
-  <p class="eyebrow">Why a protocol</p>
   <h2>The discovery layer for AI inference</h2>
-  <p>MCP standardized how AI reaches <em>tools</em>. The OpenAI API shape standardized <em>invocation</em>. <strong>Nothing standardizes how a client finds an inference endpoint it doesn't already know</strong> — what model it serves, on what hardware, at what price, and whether it's honest. ONP fills exactly that gap and composes the rest from existing standards.</p>
+  <p>MCP standardized how AI reaches <em>tools</em>. The OpenAI API shape standardized <em>invocation</em>. <strong>Nothing standardizes how a client finds an inference endpoint it doesn't already know</strong> — what model it serves, on what hardware, at what price, and whether it's honest. ONP fills that gap and composes the rest from existing standards.</p>
   <div class="steps">
     <div class="step"><span class="k">NODE CARD</span><span class="d">Any provider self-describes at <code>/.well-known/open-node.json</code>: models, hardware, benchmarks, per-token price — signed, revisioned.</span></div>
-    <div class="step"><span class="k">REGISTRY</span><span class="d">Open registration with DNS/HTTP namespace proof; searchable across registered nodes and imported catalogs (OpenRouter, Hugging Face, models.dev).</span></div>
-    <div class="step"><span class="k">VERIFY</span><span class="d">Admission probes earn trust tiers: identity fingerprinting (serve what you claim), context verification with capping, capacity ramps, continuous blind probes.</span></div>
-    <div class="step"><span class="k">ESTIMATE</span><span class="d">Pre-price a whole multi-model chain; estimates pin card revisions, so the quoted price is enforceable at invocation — never a surprise on the bill.</span></div>
-    <div class="step"><span class="k">RECEIPT</span><span class="d">Every response carries a signed usage receipt: amount = usage × pinned price. The audit trail for settlement and disputes.</span></div>
+    <div class="step"><span class="k">REGISTRY</span><span class="d">Open registration with DNS/HTTP namespace proof; searchable across registered nodes and imported catalogs.</span></div>
+    <div class="step"><span class="k">VERIFY</span><span class="d">Admission checks earn trust tiers: identity fingerprinting, context verification with capping, capacity ramps, continuous blind probes.</span></div>
+    <div class="step"><span class="k">ESTIMATE</span><span class="d">Pre-price a whole multi-model chain; estimates pin card revisions, so the quoted price holds at invocation.</span></div>
+    <div class="step"><span class="k">RECEIPT</span><span class="d">Every response carries a signed usage receipt: amount = usage × pinned price.</span></div>
   </div>
-  <div class="grid2" style="margin-top:1.6rem">
-    <div class="card"><h3>Anyone can list. No one is trusted blindly.</h3><p>A university cluster, a sovereign EU cloud, your own Ollama box — the same automated admission gate for everyone. Claiming a model you don't serve gets the node marked <code>disputed</code> and dropped from search.</p></div>
-    <div class="card"><h3>Transparent ranking, by rule.</h3><p>Every search result carries its rank explanation — component weights and values. Undisclosed ranking inputs are non-conformant. Claimed, measured, and attested values are never blended.</p></div>
-    <div class="card"><h3>Out of the data path.</h3><p>Discovery is metadata; invocation goes direct from client to node. Your prompts don't transit anyone's middlebox — which is why data-residency deployments can actually use it.</p></div>
-    <div class="card"><h3>Federated by construction.</h3><p>The registry is a protocol, not a place: an OpenAPI anyone can implement, plus a signed, mirrorable export feed. Node Cards live at the node's origin — no registry owns the data. Run your own with <code>npx @opennodes/registry</code>.</p></div>
-  </div>
-</div></section>
-
-<section><div class="wrap">
-  <p class="eyebrow">Specification</p>
-  <h2>Six short documents</h2>
-  <ul class="spec">
-    <li><span class="mono">ONP-1</span><a href="https://github.com/opennodes-io/opennodes/blob/main/spec/ONP-1-overview.md">Overview, terminology, architecture, conformance</a></li>
-    <li><span class="mono">ONP-2</span><a href="https://github.com/opennodes-io/opennodes/blob/main/spec/ONP-2-node-card.md">The Node Card</a> — self-description at a well-known URI</li>
-    <li><span class="mono">ONP-3</span><a href="https://github.com/opennodes-io/opennodes/blob/main/spec/ONP-3-registry.md">Registry &amp; Discovery API</a> — admission, search, ranking, federation</li>
-    <li><span class="mono">ONP-4</span><a href="https://github.com/opennodes-io/opennodes/blob/main/spec/ONP-4-invocation.md">Invocation profiles</a> — OpenAI-compatible bindings + three headers</li>
-    <li><span class="mono">ONP-5</span><a href="https://github.com/opennodes-io/opennodes/blob/main/spec/ONP-5-settlement.md">Settlement</a> — price advertisement, payment schemes, signed receipts</li>
-    <li><span class="mono">ONP-6</span><a href="https://github.com/opennodes-io/opennodes/blob/main/spec/ONP-6-bridging.md">Bridging</a> — MCP, WebMCP, agent-driven composition, scenarios</li>
-    <li><span class="mono">ERRATA</span><a href="https://github.com/opennodes-io/opennodes/blob/main/spec/KNOWN-ISSUES.md">Known issues → Draft 0.2</a> — what reviewers raised, what is fixed, planned, or not adopted</li>
+  <ul class="points small">
+    <li><strong>Anyone can list; no one is trusted blindly.</strong> Claiming a model you don't serve gets the node marked <code>disputed</code> and dropped from search.</li>
+    <li><strong>Ranking by published rule.</strong> Every result carries its rank explanation; claimed, measured and attested values are never blended, and there is no paid placement.</li>
+    <li><strong>Federated.</strong> The registry is an OpenAPI anyone can implement plus a signed, mirrorable export feed. Run your own with <code>npx @opennodes/registry</code>.</li>
   </ul>
+  <p class="small">Read the spec: <a href="https://github.com/opennodes-io/opennodes/tree/main/spec">six short documents, ONP-1 to ONP-6</a>, and the <a href="https://github.com/opennodes-io/opennodes/blob/main/spec/KNOWN-ISSUES.md">known issues for Draft 0.2</a>.</p>
 </div></section>
 
 <section><div class="wrap">
-  <p class="eyebrow">Ecosystem</p>
-  <h2>Clients</h2>
-  <p style="font-size:0.92rem;color:var(--muted)"><strong>Surge</strong> (pre-release: <a href="https://github.com/opennodes-io/surge/releases">Windows installer</a>, <a href="https://github.com/opennodes-io/surge">source</a>) is an optional reference client: a desktop "browser for MCP" whose model picker is fed live from the registry. <strong>Auto</strong> runs the advisor on your machine, every call is pinned to the node's card revision and comes back with a receipt Surge verifies, a spend policy is on from first launch, and private mode keeps everything on your machine and network.</p>
-  <figure style="margin:1rem 0 0">
+  <h2>A client built on it</h2>
+  <p class="small muted"><strong>Surge</strong> is an optional reference client, a desktop "browser for MCP" whose model picker is fed live from the registry. Every call is pinned to the node's card revision and comes back with a receipt Surge verifies; private mode keeps everything on your machine and network. Pre-release: <a href="https://github.com/opennodes-io/surge/releases">Windows installer</a> and <a href="https://github.com/opennodes-io/surge">Surge source code</a>.</p>
+  <figure>
     <picture>
       <source srcset="media/surge-browser-receipt-dark.png" media="(prefers-color-scheme: dark)">
-      <img src="media/surge-browser-receipt-light.png" width="900" height="700" loading="lazy" style="width:100%;height:auto;border:1px solid var(--line);border-radius:6px"
+      <img class="media" src="media/surge-browser-receipt-light.png" width="900" height="700" loading="lazy"
         alt="Surge with opennodes.io open in its browser: a page tool read the site, and the answer came from an OpenNodes node chosen by the advisor, with its verified receipt shown under the reply">
     </picture>
-    <figcaption style="font-size:0.8rem;color:var(--muted)">A page read with an MCP browser tool, answered by a node the advisor picked — tier, measured latency, price, and the verified receipt under the reply.</figcaption>
+    <figcaption>A page read with an MCP browser tool, answered by a node the advisor picked — tier, measured latency, price, and the verified receipt under the reply.</figcaption>
   </figure>
-  <p style="font-size:0.92rem;color:var(--muted)">Building a client? Any client can implement discovery (ONP-3) and invocation (ONP-4) — open a PR to be listed.</p>
 </div></section>
+
+<section><div class="wrap">
+  <h2>Try it</h2>
+  <p class="small">Browse what's out there and what has been checked, or put one Ollama endpoint in front of everything you run. Run your own endpoint? List it and let the registry measure it.</p>
+  <div class="actions">
+    <a class="btn primary" href="https://registry.opennodes.io/">Open the registry</a>
+    <a class="btn secondary" href="#ollama">Run it with Ollama</a>
+    <a class="btn secondary" href="#operators">List your endpoint</a>
+  </div>
+</div></section>
+
+</main>
 
 <footer><div class="wrap">
   OpenNodes Protocol · Draft 0.1 · spec CC-BY-4.0, code Apache-2.0 ·
@@ -248,6 +276,27 @@ if (navigator.clipboard) document.querySelectorAll('pre').forEach((pre) => {
     if (e.isIntersecting) { if (!userPaused) v.play().catch(() => {}); }
     else if (!v.paused) { ours = true; v.pause(); }
   }, { threshold: 0.5 }).observe(v);
+})();
+</script>
+<script>
+// The claimed-vs-measured panel refreshes from the live registry; the snapshot above stays if that fails.
+(async () => {
+  const set = (k, text) => { const el = document.querySelector(`[data-k="${k}"]`); if (el && text) el.textContent = text; };
+  try {
+    const r = await fetch('https://registry.opennodes.io/v0/offerings?q=io.opennodes.helsinki&limit=5');
+    const o = (await r.json()).offerings.find((x) => x.node_id === 'io.opennodes.helsinki');
+    if (!o) return;
+    const obs = o.observed || {}, s = o.serving || {}, loc = o.jurisdiction?.location;
+    const n = (v) => Number(v).toLocaleString('en-US');
+    set('tier', o.tier);
+    if (s.context_window) set('ctx', s.context_capped_from
+      ? `capped to ${n(s.context_window)} tokens: the claimed ${n(s.context_capped_from)} failed the test`
+      : `${n(s.context_window)} tokens held in a real test`);
+    if (loc?.verdict === 'match' && loc.network) set('loc', `in ${new Intl.DisplayNames(['en'], { type: 'region' }).of(loc.server_country)}, ${loc.network.replace(/^[A-Z0-9-]+ /, '').replace(/ (GmbH|Ltd|Oy|AB|S\.A\.?)$/, '')} network`);
+    if (obs.ttft_ms?.p50 && obs.tps) set('speed', `${(obs.ttft_ms.p50 / 1000).toFixed(1)} s to first token · ${obs.tps} tokens/s`);
+    if (obs.probes) set('probes', `${Math.round((obs.probe_success ?? 0) * obs.probes)} of the last ${obs.probes} blind checks passed`);
+    set('stamp', 'Live from registry.opennodes.io.');
+  } catch { /* keep the snapshot */ }
 })();
 </script>
 </body>
