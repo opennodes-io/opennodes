@@ -141,6 +141,7 @@ Content-Type: application/problem+json
   <h2>Gateways and routers</h2>
   <div class="probs">
     <div class="prob" id="no-callable-offerings"><span class="k">no-callable-offerings</span><span class="s">404</span><span class="d">Something matches the auto-routing model, but nothing this gateway can call: free registered nodes need no key, imported catalogs need a provider key.</span></div>
+    <div class="prob" id="policy-refused"><span class="k">policy-refused</span><span class="s">403</span><span class="d">Every candidate was refused by the gateway's own policy, such as <code>--min-tier</code> or a price cap; <code>detail</code> says which rule. Nothing was sent to a node.</span></div>
     <div class="prob" id="all-candidates-failed"><span class="k">all-candidates-failed</span><span class="s">502</span><span class="d">Every candidate offering failed; <code>detail</code> lists each error.</span></div>
     <div class="prob" id="not-implemented"><span class="k">not-implemented</span><span class="s">501</span><span class="d">The gateway does not serve this profile yet.</span></div>
   </div>

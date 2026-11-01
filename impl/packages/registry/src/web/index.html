@@ -91,6 +91,11 @@
     nav .spacer { display: none; }
     nav .cta { margin-top: 0.3rem; }
   }
+  details.claim { margin: 0.2rem 0 0.7rem; }
+  details.claim > summary { display: inline-block; list-style: none; font-size: 0.82rem; padding: 0.45rem 0.9rem; }
+  details.claim > summary::-webkit-details-marker { display: none; }
+  details.claim p { font-size: 0.84rem; color: var(--muted); margin: 0.6rem 0; }
+  details.claim pre { font-size: 0.74rem; overflow-x: auto; }
   .rm { font: inherit; cursor: pointer; color: var(--muted); background: none; border: 0; padding: 0.1rem 0.3rem; min-width: 24px; min-height: 24px; border-radius: 4px; }
   .rm:hover { color: var(--ink); background: var(--line-2); }
   nav .cta:hover { text-decoration: none; opacity: 0.92; }
@@ -988,7 +993,7 @@ async function loadModel(artifact) {
       return `<tr>
         <td><div style="display:flex; flex-direction:column; gap:0.2rem">
           <a href="#/node/${encodeURIComponent(o.node_id)}" style="font-weight:600">${esc(o.node_id)}</a>
-          <span style="display:flex; gap:0.3rem">${tierChip(o.tier)}${o.institutional ? '<span class="chip inst">institutional</span>' : ''}${o.source === 'import' ? '<span class="chip imp">IMPORTED</span>' : ''}</span>
+          <span style="display:flex; gap:0.3rem">${tierChip(o.tier)}${o.institutional ? '<span class="chip inst">institutional</span>' : ''}${o.source === 'import' ? `<span class="chip imp">IMPORTED</span> <a class="prov" href="#/node/${encodeURIComponent(o.node_id)}">claim</a>` : ''}</span>
         </div></td>
         <td><b>${priceStr(o.pricing, o.node_id)}</b></td>
         <td>${hwStr(o) || '<span style="color:var(--faint)" title="Vendor has not disclosed the hardware behind this offering">undisclosed</span>'}</td>
@@ -1936,11 +1941,26 @@ function claimBanner(n, card) {
       ? `Claim it: publish a signed Node Card at <span class="mono">https://${esc(host)}/.well-known/open-node.json</span> with node id <span class="mono">${esc(suggestedId)}</span> (your parent domain works too) and register. Your verified listing replaces this import, the registry measures what you really serve, and nothing in your stack changes.`
       : 'This listing has no known API endpoint. Publish a Node Card for your OpenAI-compatible API to be listed, measured and verified.';
   const mail = `mailto:operators@opennodes.io?subject=${encodeURIComponent('Claim ' + n.id)}`;
+  const api = card.endpoints?.openai;
+  const steps = host && !viaHf ? `<details class="claim">
+      <summary class="btn">Claim this listing</summary>
+      <p>Card-only mode: nothing in your stack changes. The kit signs a card describing your API; you host two files on <span class="mono">${esc(host)}</span> and give the registry a low-quota key for its checks.</p>
+      <pre><code>pipx install onp-node
+onp-node init --engine ${esc(api)} --id ${esc(suggestedId)} --public-url https://${esc(host)}
+# edit onp-node.toml: prices per MTok, schemes = ["prepaid"], data_policy, optional [hardware]
+onp-node card --out well-known
+# host well-known/open-node.json and well-known/jwks.json at https://${esc(host)}/.well-known/
+ONP_PROBE_KEY=&lt;a key with a small quota&gt; onp-node register https://registry.opennodes.io \\
+    --card-url https://${esc(host)}/.well-known/open-node.json --probe-key-env ONP_PROBE_KEY
+# publish the printed challenge at /.well-known/onp-challenge/&lt;token&gt; or as a DNS TXT record</code></pre>
+      <p>The checks then run on their own: model identity, context window, capacity, server location. Passing them earns the verified tier, and your listing replaces this import. The probe key is sent only to your own API and never appears in any registry response.</p>
+    </details>` : '';
   return `<div class="panel pad" style="max-width:56rem; margin:0.4rem 0 0.8rem; border-left:3px solid var(--accent)">
     <p style="margin:0 0 0.35rem; font-weight:600">Do you run ${esc(name)}?</p>
     <p style="margin:0 0 0.6rem; font-size:0.86rem; color:var(--muted); overflow-wrap:anywhere">${body} Free, about 15 minutes with the Node Kit.</p>
+    ${steps}
     <span style="display:inline-flex; gap:0.6rem; flex-wrap:wrap; font-size:0.84rem">
-      <a href="${CLAIM_GUIDE}" target="_blank" rel="noopener">How to claim →</a>
+      <a href="${CLAIM_GUIDE}" target="_blank" rel="noopener">Full guide →</a>
       <a href="#/register">Register a node</a>
       <a href="${mail}">operators@opennodes.io</a>
     </span>

@@ -78,6 +78,9 @@
   ul.spec li { padding: 0.5rem 0; border-bottom: 1px dashed var(--line); font-size: 0.95rem; }
   ul.spec .mono { margin-right: 0.5rem; }
 
+  .card p.install { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.8rem; margin: 0.2rem 0 0.7rem; }
+  .card p.install span { font-size: 0.8rem; }
+  .card p.install .btn { font-size: 0.85rem; padding: 0.45rem 0.9rem; }
   .codebox { position: relative; margin: 1em 0; }
   .codebox > pre { margin: 0; padding-right: 4.6rem; }
   .copy { position: absolute; top: 0.45rem; right: 0.45rem; min-height: 24px; font-family: "Archivo", sans-serif; font-size: 0.72rem; font-weight: 600; padding: 0.25rem 0.6rem; border: 1px solid var(--line); border-radius: 4px; background: var(--panel-2); color: var(--muted); cursor: pointer; }
@@ -137,11 +140,13 @@
 </div>
 <div class="card" id="cursor">
   <h3>Cursor <span class="kind">MCP</span></h3>
-  <p>Add to <code>~/.cursor/mcp.json</code> (or Settings → MCP → Add new server):</p><pre><code>{ "mcpServers": { "opennodes": { "command": "npx", "args": ["-y", "@opennodes/cli", "mcp"] } } }</code></pre>
+  <p class="install"><a class="btn primary" href="cursor://anysphere.cursor-deeplink/mcp/install?name=opennodes&amp;config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBvcGVubm9kZXMvY2xpIiwibWNwIl19">Add to Cursor</a> <span>opens Cursor, which asks you to confirm</span></p>
+  <p>Or add to <code>~/.cursor/mcp.json</code> (or Settings → MCP → Add new server):</p><pre><code>{ "mcpServers": { "opennodes": { "command": "npx", "args": ["-y", "@opennodes/cli", "mcp"] } } }</code></pre>
 </div>
 <div class="card" id="vs-code-copilot-agent-mode">
   <h3>VS Code (Copilot agent mode) <span class="kind">MCP</span></h3>
-  <p>Add to <code>.vscode/mcp.json</code> in the workspace, or the user <code>mcp.json</code>:</p><pre><code>{ "servers": { "opennodes": { "type": "stdio", "command": "npx", "args": ["-y", "@opennodes/cli", "mcp"] } } }</code></pre>
+  <p class="install"><a class="btn primary" href="vscode:mcp/install?%7B%22name%22%3A%22opennodes%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40opennodes%2Fcli%22%2C%22mcp%22%5D%7D">Install in VS Code</a> <span>opens VS Code, which asks you to confirm</span></p>
+  <p>Or add to <code>.vscode/mcp.json</code> in the workspace, or the user <code>mcp.json</code>:</p><pre><code>{ "servers": { "opennodes": { "type": "stdio", "command": "npx", "args": ["-y", "@opennodes/cli", "mcp"] } } }</code></pre>
 </div>
 <div class="card" id="windsurf">
   <h3>Windsurf <span class="kind">MCP</span></h3>
@@ -202,7 +207,7 @@ const r = await client.chat.completions.create({ model: "onp/auto-cheap", messag
 <div class="card" id="spend-and-receipts">
   <h3>Spend and receipts <span class="kind">OpenAI API</span></h3>
   <p>Read the ledger at any time:</p><pre><code>curl http://127.0.0.1:4141/gateway/receipts   # total cost, per-call receipts
-curl http://127.0.0.1:4141/gateway/advice     # why onp/auto picked what it picked</code></pre><p><code>onp/auto</code> only routes to what you can call: free registered nodes, plus imported catalogs you hold a key for. Keys come from <code>--key openrouter.ai=sk-or-…</code> or from variables you already have set (<code>OPENROUTER_API_KEY</code>, <code>HF_TOKEN</code>, <code>OPENAI_API_KEY</code>, …), and each is sent only to its own host.</p>
+curl http://127.0.0.1:4141/gateway/advice     # why onp/auto picked what it picked</code></pre><p><code>onp/auto</code> only routes to what you can call: free registered nodes, plus imported catalogs you hold a key for. Keys come from <code>--key openrouter.ai=sk-or-…</code> or from variables you already have set (<code>OPENROUTER_API_KEY</code>, <code>HF_TOKEN</code>, <code>OPENAI_API_KEY</code>, …), and each is sent only to its own host. Registered nodes join the pool from the <em>community</em> tier up; imported listings are unverified, so they rank lower on trust. <code>--min-tier verified</code> keeps every request, named models included, on verified nodes; <code>--min-tier unverified</code> also admits registered nodes that haven't passed their checks yet.</p>
 </div></div></div></section><section><div class="wrap"><h2>In the browser, on the desktop, and for operators</h2><div class="grid2">
 <div class="card" id="the-registry-web-app">
   <h3>The registry web app <span class="kind">Browser</span></h3>

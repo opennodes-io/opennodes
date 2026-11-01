@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // onp CLI (REQ-002 subset): search | estimate | invoke | card | health
 import { OnpClient } from './src/client.js';
-import { startGateway } from './src/gateway.js';
+import { startGateway, TIERS } from './src/gateway.js';
 import { createStdioMcp } from './src/mcpserver.js';
 
 const [cmd, ...args] = process.argv.slice(2);
@@ -89,6 +89,8 @@ try {
           keys[args[i].slice(0, eq)] = args[i].slice(eq + 1);
         }
       }
+      const minTier = flag('min-tier');
+      if (minTier && !TIERS.includes(minTier)) throw new Error(`--min-tier must be one of ${TIERS.join(', ')}`);
       const gw = await startGateway({
         registry,
         port: Number(flag('port', 4141)),
@@ -96,6 +98,7 @@ try {
         aliases,
         virtuals,
         keys,
+        policy: minTier ? { min_tier: minTier } : {},
         ledgerPath: flag('ledger', null),
         env: args.includes('--no-env-keys') ? {} : process.env,
       });
@@ -120,7 +123,7 @@ usage:
   onp estimate --offering <node_id>/<offering_id> [--in 1000] [--out 500]
   onp invoke --offering <node_id>/<offering_id> [--prompt "..."]
   onp card <node-origin-url>
-  onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--no-env-keys] [--ledger receipts.jsonl]
+  onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--no-env-keys] [--min-tier unverified|community|verified] [--ledger receipts.jsonl]
   onp mcp [--print-config]    # stdio MCP server for Cursor / VS Code / Claude Desktop
   onp health
 env: ONP_REGISTRY (default https://registry.opennodes.io; a local registry runs at http://127.0.0.1:4300)`);

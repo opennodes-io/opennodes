@@ -8,6 +8,8 @@ import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, ke
 import { OnpClient } from './client.js';
 
 const CACHE_TTL_MS = 30_000;
+export const TIERS = ['unverified', 'community', 'verified', 'attested'];
+const atLeast = (tier, floor) => (TIERS.indexOf(tier) >= TIERS.indexOf(floor) ? tier : floor);
 // Advisor-routed virtual models (the ONP answer to openrouter/auto). Routing runs
 // locally on the gateway's cached catalog: the prompt never leaves the machine.
 // onp/auto, onp/auto-cheap|fast|quality|private, and onp/auto-<where> (eu, or a country code such as
@@ -70,12 +72,16 @@ export async function startGateway({
   let cache = { at: 0, byId: new Map() };
   let lastAdvice = null;
 
-  // The routing pool: what this machine can actually call. Registered nodes at community
-  // tier and above, plus the listings of every host we hold a key for.
+  // The routing pool: what this machine can actually call. Registered nodes at the minimum tier
+  // (community unless --min-tier says otherwise), plus the listings of every host we hold a key for;
+  // those imports are unverified, so they rank lower on trust and drop out under a higher min tier.
+  const minTier = policy.min_tier ?? 'community';
   async function refresh() {
     if (Date.now() - cache.at < CACHE_TTL_MS && cache.byId.size) return;
     const lists = await Promise.all([
-      client.search({ tier: 'community', limit: 200 }),
+      client.search({ tier: minTier === 'unverified' ? 'community' : minTier, limit: 200 }),
+      // registered nodes that haven't passed their checks yet: free ones need no key
+      ...(minTier === 'unverified' ? [client.search({ tier: 'unverified', scheme: 'free', limit: 200 })] : []),
       ...Object.keys(creds).map((h) => client.search({ q: searchHint(h), limit: 200 })
         .then((os) => os.filter((o) => hostOf(o) === h)).catch(() => [])),
     ]);
@@ -107,7 +113,7 @@ export async function startGateway({
       const { preset } = auto;
       const result = recommend([...cache.byId.values()], features, {
         preset, limit: 5,
-        min_tier: preset === 'private' ? 'community' : policy.min_tier,
+        min_tier: preset === 'private' ? atLeast(minTier, 'community') : policy.min_tier,   // private never goes below community
         max_input_per_mtok: policy.max_input_per_mtok,
         jurisdiction: auto.jurisdiction ?? policy.jurisdiction,
         prefer_local: preset === 'private',
@@ -293,6 +299,8 @@ export async function startGateway({
         }
         if (res.headersSent) return res.end();   // a stream started and broke: nothing more we can send
       }
+      // refused by this gateway's own policy (--min-tier, price caps), not a node failure
+      if (errors.every((e) => e.includes(': policy: '))) return problem(res, 403, 'policy-refused', errors.join(' | '));
       problem(res, 502, 'all-candidates-failed', errors.join(' | '));
     }],
 
