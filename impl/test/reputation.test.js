@@ -15,6 +15,7 @@ test('reputation: too few calls say nothing; a failing streak benches; registry 
   rep.record('n/o', { ok: true, ms: 900, first_ms: 300 });
   rep.record('n/o', { ok: true, ms: 1100, first_ms: 500 });
   assert.equal(rep.summary('n/o'), null, 'two calls are not evidence');
+  assert.deepEqual(rep.report(), [{ offering: 'n/o', calls: 2, note: 'too few calls to count yet (3 needed)' }], 'but they are shown');
 
   rep.record('n/o', { ok: true, ms: 1000, first_ms: 400 });
   const [filled] = rep.apply([o]);

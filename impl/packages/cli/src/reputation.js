@@ -87,8 +87,12 @@ export class Reputation {
   }
 
   /** Everything, for /gateway/reputation. */
-  report() {
-    return Object.keys(this.calls).map((id) => ({ offering: id, ...this.summary(id) })).filter((r) => r.calls)
-      .sort((a, b) => b.calls - a.calls);
+  report(now = Date.now()) {
+    return Object.keys(this.calls).map((id) => {
+      const s = this.summary(id, now);
+      if (s) return { offering: id, ...s };
+      const calls = this.calls[id].filter((c) => now - c.at < MAX_AGE_MS).length;
+      return { offering: id, calls, note: `too few calls to count yet (${MIN_CALLS} needed)` };
+    }).filter((r) => r.calls).sort((a, b) => b.calls - a.calls);
   }
 }
