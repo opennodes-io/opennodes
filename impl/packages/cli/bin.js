@@ -3,6 +3,7 @@
 import { OnpClient } from './src/client.js';
 import { startGateway, TIERS, credentialsFrom } from './src/gateway.js';
 import { checkOffering, saveCheck, DEFAULT_CHECKS_PATH } from './src/check.js';
+import { DEFAULT_REPUTATION_PATH } from './src/reputation.js';
 import { createStdioMcp } from './src/mcpserver.js';
 
 const [cmd, ...args] = process.argv.slice(2);
@@ -100,6 +101,7 @@ try {
         virtuals,
         keys,
         policy: minTier ? { min_tier: minTier } : {},
+        reputationPath: args.includes('--no-reputation') ? null : flag('reputation', DEFAULT_REPUTATION_PATH),
         ledgerPath: flag('ledger', null),
         env: args.includes('--no-env-keys') ? {} : process.env,
       });
@@ -157,7 +159,7 @@ usage:
   onp estimate --offering <node_id>/<offering_id> [--in 1000] [--out 500]
   onp invoke --offering <node_id>/<offering_id> [--prompt "..."]
   onp card <node-origin-url>
-  onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--no-env-keys] [--min-tier unverified|community|verified] [--ledger receipts.jsonl]
+  onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--no-env-keys] [--min-tier unverified|community|verified] [--no-reputation] [--ledger receipts.jsonl]
   onp check <node_id>/<offering_id> [--key host=KEY] [--max-usd 0.02] [--context 8192|full] [--json] [--no-save]
   onp check --url https://api.example.com/v1 --model <id>    # any OpenAI-compatible endpoint
   onp mcp [--print-config]    # stdio MCP server for Cursor / VS Code / Claude Desktop

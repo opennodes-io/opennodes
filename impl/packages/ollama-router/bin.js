@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // onp-ollama: OpenNodes for Ollama — one Ollama-compatible endpoint across local, LAN, and verified public models.
 import { startOllamaRouter } from './src/router.js';
+import { DEFAULT_REPUTATION_PATH } from '@opennodes/cli/src/reputation.js';
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : fallback; };
@@ -12,7 +13,7 @@ if (has('help') || args[0] === '-h') {
 
   onp-ollama [--port 11435] [--ollama http://127.0.0.1:11434] [--peer <origin>]...
              [--registry <url>] [--min-tier community] [--max-request-usd 0.05] [--region eu]
-             [--key host=token]... [--ledger receipts.jsonl] [--no-mdns] [--public-bind]
+             [--key host=token]... [--ledger receipts.jsonl] [--no-reputation] [--no-mdns] [--public-bind]
 
 Then point any Ollama app at it:   OLLAMA_HOST=127.0.0.1:11435
 Models:  <your local models>  lan/<peer>/<model>  onp/<node>/<offering>
@@ -40,6 +41,7 @@ const router = await startOllamaRouter({
   },
   keys,
   ledgerPath: flag('ledger', null),
+  reputationPath: has('no-reputation') ? null : flag('reputation', DEFAULT_REPUTATION_PATH),
   mdns: !has('no-mdns'),
 });
 

@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend, parseAutoModel, AUTO_MODEL_NAMES, responseBudgetMs, fetchWithin } from '@opennodes/core';
 import { OnpClient } from './client.js';
 import { loadChecks, DEFAULT_CHECKS_PATH } from './check.js';
+import { Reputation } from './reputation.js';
 
 const CACHE_TTL_MS = 30_000;
 const CHECK_TTL_MS = 7 * 24 * 3600_000;   // a user's own check counts for a week
@@ -64,6 +65,7 @@ export async function startGateway({
   keys = {},   // BYOK upstream credentials by hostname, e.g. {"openrouter.ai": "sk-or-...", "router.huggingface.co": "hf_..."}
   env = process.env,   // where standard provider key variables are read from; pass {} to disable
   checksPath = DEFAULT_CHECKS_PATH,   // results of `onp check`; null to ignore them
+  reputationPath = null,   // where passive reputation persists (the CLI uses ~/.opennodes); null = this run only
 } = {}) {
   if (!['127.0.0.1', 'localhost', '::1'].includes(host) && !token) {
     throw new Error('refusing non-loopback bind without --token (TC-NFR-03)');
@@ -74,6 +76,7 @@ export async function startGateway({
   const receipts = [];
   let cache = { at: 0, byId: new Map() };
   let lastAdvice = null;
+  const reputation = new Reputation(reputationPath);
 
   // The routing pool: what this machine can actually call. Registered nodes at the minimum tier
   // (community unless --min-tier says otherwise), plus the listings of every host we hold a key for;
@@ -139,7 +142,7 @@ export async function startGateway({
         request: body ? { tools: body.tools, json: ['json_object', 'json_schema'].includes(body.response_format?.type) } : null,
       });
       const { preset } = auto;
-      const result = recommend(withLocalChecks([...cache.byId.values()]), features, {
+      const result = recommend(reputation.apply(withLocalChecks([...cache.byId.values()])), features, {
         preset, limit: 5,
         min_tier: preset === 'private' ? atLeast(minTier, 'community') : policy.min_tier,   // private never goes below community
         max_input_per_mtok: policy.max_input_per_mtok,
@@ -148,7 +151,8 @@ export async function startGateway({
       });
       lastAdvice = { model: modelId, features, recommendations: result.recommendations.map((r) => {
         const mine = cache.byId.get(r.offering) && withLocalChecks([cache.byId.get(r.offering)])[0]?.checked_by_you;
-        return { offering: r.offering, score: r.score, reasons: mine ? [...r.reasons, `checked by you: ${mine}`] : r.reasons };
+        const seen = reputation.describe(r.offering);
+        return { offering: r.offering, score: r.score, reasons: [...r.reasons, ...(mine ? [`checked by you: ${mine}`] : []), ...(seen ? [seen] : [])] };
       }) };
       return result.recommendations.map((r) => cache.byId.get(r.offering)).filter(Boolean);
     }
@@ -231,6 +235,7 @@ export async function startGateway({
       body: requestBytes,
     }, budgetMs);
 
+    const firstMs = Math.round(performance.now() - t0);   // headers: for a stream, the first token is on its way
     if (upstream.status === 409) return { retryPricing: true };
     if (!upstream.ok) return { failed: `upstream ${upstream.status}` };
 
@@ -269,7 +274,7 @@ export async function startGateway({
       sendJson(res, 200, { ...completion, model: requestedModel });
     }
     logRequest(entry);
-    return { done: true };
+    return { done: true, ms: Math.round(performance.now() - t0), ...(body.stream ? { first_ms: firstMs } : {}) };
   }
 
   async function repin(offering) {
@@ -316,6 +321,8 @@ export async function startGateway({
       const errors = [];
       for (let i = 0; i < candidates.length; i++) {
         let offering = candidates[i];
+        const id = `${candidates[i].node_id}/${candidates[i].offering_id}`;
+        const t0 = performance.now();
         try {
           let result = await attempt(offering, body, res, body.model);
           if (result.retryPricing) {
@@ -323,10 +330,12 @@ export async function startGateway({
             if (offering) result = await attempt(offering, body, res, body.model);
             else result = { failed: 'offering gone after reprice' };
           }
-          if (result.done) return;
-          errors.push(`${candidates[i].node_id}/${candidates[i].offering_id}: ${result.failed}`);
+          if (result.done) { reputation.record(id, { ok: true, ms: result.ms, first_ms: result.first_ms }); return; }
+          reputation.record(id, { ok: false, ms: Math.round(performance.now() - t0), why: result.failed });
+          errors.push(`${id}: ${result.failed}`);
         } catch (err) {
-          errors.push(`${candidates[i].node_id}/${candidates[i].offering_id}: ${err.message}`);
+          if (!err.message.startsWith('policy: ')) reputation.record(id, { ok: false, ms: Math.round(performance.now() - t0), why: err.message });
+          errors.push(`${id}: ${err.message}`);
         }
         if (res.headersSent) return res.end();   // a stream started and broke: nothing more we can send
       }
@@ -337,6 +346,11 @@ export async function startGateway({
 
     ['POST', '/v1/embeddings', (req, res) => {
       problem(res, 501, 'not-implemented', 'embeddings profile lands with a fixture that serves it');
+    }],
+
+    ['GET', '/gateway/reputation', (req, res) => {
+      if (!authed(req, res)) return;
+      sendJson(res, 200, { note: 'outcome and timing of your own calls through this gateway; no prompts or answers are kept', offerings: reputation.report() });
     }],
 
     ['GET', '/gateway/advice', (req, res) => {
@@ -357,6 +371,7 @@ export async function startGateway({
     origin: `http://${host}:${actualPort}`,
     keyHosts: Object.keys(creds),
     receipts,
-    close: () => closeApp(app),
+    close: () => { reputation.flush(); return closeApp(app); },
+    reputation,
   };
 }
