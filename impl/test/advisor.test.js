@@ -249,3 +249,51 @@ test('auto-private: simple requests stay on this machine, demanding ones go to t
   const quality = recommend([local('qwen3:8b', 8.2), h100], extractFeatures('hi there', { request: {} }), { preset: 'quality', prefer_local: true });
   assert.equal(quality.recommendations[0].offering, 'org.lab.h100/qwen3-235b');
 });
+
+test('RAG: recognised from the task, answered with an embedder and a generator', () => {
+  const f = extractFeatures('Build a RAG app that answers questions over about 2,000 internal documents');
+  assert.equal(f.task_class, 'rag');
+  assert.equal(f.needs.retrieval, true);
+  assert.deepEqual(f.corpus, { documents: 2000, private: true });
+  assert.equal(f.est_input_tokens, 6000, 'one answer reads the question plus retrieved passages');
+  assert.equal(extractFeatures('Build a RAG app over 2,000 documents', { request: {} }).est_input_tokens < 100, true, 'a real call counts its own size');
+  assert.equal(extractFeatures('chat with our 15k support tickets').corpus.documents, 15000);
+  assert.equal(extractFeatures('Write a python function that chunks PDFs for RAG').task_class, 'code');
+  assert.equal(extractFeatures('What is the capital of France?').needs.retrieval, false);
+
+  const O = (node, id, extra = {}) => ({ node_id: node, offering_id: id, tier: 'unverified', source: 'import', modality: 'text',
+    model: { name: id }, binding: { model_id: id }, pricing: { currency: 'USD', input_per_mtok: 0.3, output_per_mtok: 1.2 },
+    serving: { context_window: 131072, supports: ['streaming'] }, observed: {}, endpoints: { openai: `https://${node}.example/v1` }, ...extra });
+  const pool = [
+    O('import.hf.together', 'DeepSeek-V4.1-Flash', { model: { name: 'DeepSeek-V4.1-Flash', params_b: 284 } }),
+    O('import.hf.together', 'DeepSeek-V4.1-Flash-1017', { model: { name: 'DeepSeek-V4.1-Flash-1017', params_b: 284 } }),
+    O('import.hf.together', 'GLM-5.2', { model: { name: 'GLM-5.2', params_b: 355 } }),
+    O('import.openrouter.catalog', 'cohere/command-r', { pricing: { currency: 'USD', input_per_mtok: 0.15, output_per_mtok: 0.6 },
+      model: { name: 'Command R', description: 'Optimized for retrieval-augmented generation and tool use' } }),
+    O('import.modelsdev.regolo-ai', 'qwen3-embedding-8b', { pricing: { currency: 'USD', input_per_mtok: 0.1, output_per_mtok: 0.1 } }),
+    O('import.ollama.library', 'bge-m3', { modality: 'embedding', local: { run: 'ollama pull bge-m3' }, pricing: { currency: 'USD', input_per_mtok: 0, output_per_mtok: 0 } }),
+  ];
+  const r = recommend(pool, f, { limit: 3 });
+  assert.equal(r.recommendations[0].offering, 'import.openrouter.catalog/cohere/command-r', 'the RAG-tuned generator leads');
+  assert.ok(r.recommendations[0].reasons.some((x) => /built for answering from retrieved documents/.test(x)));
+  assert.ok(!r.recommendations.some((x) => /embedding/.test(x.offering)), 'embedding models never answer a chat');
+  assert.equal(r.rejected.embedding_model, 1, 'the one listed as "text" is caught by its name');
+  assert.equal(r.recommendations.filter((x) => /DeepSeek/.test(x.offering)).length, 1, 'one model, one place');
+
+  assert.equal(r.roles.generate, 'recommendations');
+  assert.equal(r.roles.embed[0].offering, 'import.ollama.library/bge-m3', 'a private collection: the local embedder first');
+  assert.deepEqual(r.roles.embed[0].indexing_estimate, { usd: 0, basis: 'your own hardware' });
+  const hosted = r.roles.embed.find((x) => x.node_id === 'import.modelsdev.regolo-ai');
+  assert.equal(hosted.indexing_estimate.usd, 0.2, '2,000 documents × ~1,000 tokens × $0.10/MTok');
+  assert.equal(recommend(pool, extractFeatures('hello'), {}).roles, undefined, 'no roles outside RAG');
+});
+
+test('diversity: the shortlist offers different models and providers before repeats', () => {
+  const O = (node, name, params) => ({ node_id: node, offering_id: name, tier: 'unverified', source: 'import', modality: 'text',
+    model: { name, params_b: params }, binding: { model_id: name }, pricing: { currency: 'USD', input_per_mtok: 0.2, output_per_mtok: 0.8 },
+    serving: { context_window: 65536 }, observed: {} });
+  const pool = [O('a', 'Big-1', 400), O('a', 'Big-1:latest', 400), O('a', 'Big-2', 390), O('a', 'Big-3', 380), O('b', 'Mid', 70)];
+  const ids = recommend(pool, extractFeatures('hello', { request: {} }), { limit: 3 }).recommendations.map((x) => x.offering);
+  assert.deepEqual(ids, ['a/Big-1', 'a/Big-2', 'b/Mid'], 'no duplicate model, at most two per node, then the rest');
+  assert.equal(recommend(pool, extractFeatures('hello', { request: {} }), { limit: 5 }).recommendations.length, 5, 'repeats still fill a longer list');
+});

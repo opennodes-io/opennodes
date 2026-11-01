@@ -22,7 +22,7 @@ export const MCP_TOOLS = [
   {
     name: 'recommend',
     title: 'Recommend a node and model',
-    description: "Recommend the best AI node + model for a task, with an enforceable cost estimate and human-readable reasons. Use this first when you know the task but not the model. Features (task class, size, language, needs) are extracted LOCALLY from `task` and only those features are sent to the registry — the prompt never leaves this machine. Returns ranked candidates with score components, a cost estimate pinned to the node's card revision, an optional cheaper two-step scenario, and MCP tool categories the task likely needs. To browse instead, use search_offerings; to price a specific chain, use estimate.",
+    description: "Recommend the best AI node + model for a task, with an enforceable cost estimate and human-readable reasons. Use this first when you know the task but not the model. Features (task class, size, language, needs) are extracted LOCALLY from `task` and only those features are sent to the registry — the prompt never leaves this machine. Returns ranked candidates with score components, a cost estimate pinned to the node's card revision, an optional cheaper two-step scenario, and MCP tool categories the task likely needs. For RAG or document Q&A tasks (\"answer questions over 2,000 internal documents\") it also returns roles.embed: embedding models to index the collection, with an indexing cost estimate; private collections favour models that run on the user's own machine. To browse instead, use search_offerings; to price a specific chain, use estimate.",
     inputSchema: {
       type: 'object', required: ['task'], additionalProperties: false,
       properties: {

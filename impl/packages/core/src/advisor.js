@@ -36,6 +36,11 @@ export function detectLanguage(text) {
   return best;
 }
 
+/** One RAG answer reads the question plus retrieved passages: about this many input tokens. */
+const RAG_CALL_INPUT_TOKENS = 6000;
+/** Assumed size of one document when estimating the cost of indexing a collection. */
+const TOKENS_PER_DOCUMENT = 1000;
+
 const CUES = {
   image_generation: /\b(generate|create|draw|paint|render|make)\b[^.]{0,40}\b(image|picture|photo|illustration|logo|icon|artwork|wallpaper)\b|\btext[- ]to[- ]image\b/i,
   audio: /\b(transcribe|speech to text|text to speech|tts|voice ?over|podcast audio)\b/i,
@@ -46,6 +51,10 @@ const CUES = {
   classification: /\b(classify|categori[sz]e|label|sentiment|is this .* or|yes or no|which category|tag this|spam)\b/i,
   translation: /\b(translate|translation|into (english|german|french|spanish|polish|ukrainian|italian|portuguese|japanese|chinese))\b/i,
   summarization: /\b(summari[sz]e|summary|tl;?dr|key points|brief me|condense|abstract of)\b/i,
+  // answering from a document collection: an embedding model to index it, a generator to answer
+  rag: /\b(rag|retrieval[- ]augmented|knowledge ?base|vector (store|db|database|index|search)|semantic search|embeddings?|(chat with|talk to|ask) (my|our|your|the) (\d[\d,.]*k? )?([a-z-]+ ){0,2}(documents|docs|pdfs|files|data|wiki|tickets|notes|manuals|contracts|records)|(questions?|q&a|answers?|search) (over|across|about|from|on|in) (about |around |roughly |~)?(my|our|the|these|\d[\d,.]*k?|thousands of|hundreds of) ([a-z-]+ ){0,2}(documents|docs|pdfs|files|pages|manuals|contracts|notes|articles|records|tickets))\b/i,
+  corpus: /(\d[\d,.]*\s*k?|thousands of|hundreds of|millions of)\s+(?:[a-z-]+\s+){0,2}(documents|docs|pdfs|files|pages|manuals|contracts|notes|articles|records|tickets)\b/i,
+  private_corpus: /\b(internal|private|confidential|proprietary|company|our|my|in-house|customers?)\b/i,   // their own documents: private by default
   writing_long: /\b(essay|article|blog post|report|white ?paper|documentation|chapter|story|long[- ]form|detailed (guide|explanation)|cover letter|proposal)\b/i,
   short_output: /\b(one word|yes or no|single (word|number|line)|just the (answer|number)|briefly|in one sentence)\b/i,
   agentic: /\b(browse|open the (website|page|url)|click|fill (in|out) the form|book|order|schedule|send (an )?email|run (it|the (tests|script|command))|execute|deploy|install)\b/i,
@@ -81,6 +90,7 @@ export function extractFeatures(task, { attachments = [], est_output_tokens = nu
   if (modality === 'image') taskClass = 'image_generation';
   else if (CUES.agentic.test(text)) taskClass = 'agentic';
   else if (CUES.code.test(text)) taskClass = 'code';
+  else if (CUES.rag.test(text)) taskClass = 'rag';
   else if (CUES.extraction.test(text)) taskClass = 'extraction';
   else if (CUES.classification.test(text)) taskClass = 'classification';
   else if (CUES.translation.test(text)) taskClass = 'translation';
@@ -101,6 +111,22 @@ export function extractFeatures(task, { attachments = [], est_output_tokens = nu
     else estOutput = 512;
   }
 
+  // RAG: one answer reads the question plus retrieved passages, not just the short task text
+  const retrieval = CUES.rag.test(text);
+  let corpus = null;
+  if (retrieval) {
+    const m = text.match(CUES.corpus);
+    let documents = null;
+    if (m) {
+      const n = m[1].toLowerCase().replace(/[\s,]/g, '');
+      documents = n.startsWith('thousands') ? 1000 : n.startsWith('hundreds') ? 100 : n.startsWith('millions') ? 1_000_000
+        : Math.round(parseFloat(n) * (n.endsWith('k') ? 1000 : 1));
+    }
+    corpus = { documents: Number.isFinite(documents) ? documents : null, private: CUES.private_corpus.test(text) };
+  }
+  // (a real call routed by the gateway already carries its passages: its own size counts)
+  const callInput = taskClass === 'rag' && !request ? Math.max(estInput, RAG_CALL_INPUT_TOKENS) : estInput;
+
   const tools = [];
   if (CUES.tools_search.test(text)) tools.push('web_search');
   if (CUES.tools_code_exec.test(text)) tools.push('code_execution');
@@ -112,7 +138,7 @@ export function extractFeatures(task, { attachments = [], est_output_tokens = nu
     modality,
     task_class: taskClass,
     language: detectLanguage(text),
-    est_input_tokens: estInput,
+    est_input_tokens: callInput,
     est_output_tokens: estOutput,
     needs: {
       tools: request ? (request.tools?.length ?? 0) > 0 : tools.length > 0 || taskClass === 'agentic',
@@ -121,7 +147,9 @@ export function extractFeatures(task, { attachments = [], est_output_tokens = nu
       vision: hasImages,
       long_context: estInput > 16_000,
       reasoning,
+      retrieval,
     },
+    corpus,
     latency: CUES.batch.test(text) ? 'batch' : 'interactive',
     privacy: CUES.sensitive.test(text) ? 'sensitive' : 'normal',
   };
@@ -144,7 +172,41 @@ const BENCH_FOR_CLASS = {
   translation: /flores|wmt|bleu|comet/i,
   summarization: /rouge|summ|arena/i,
   agentic: /swe-?bench|tau-?bench|bfcl|tool|agent/i,
+  rag: /rag|squad|hotpot|natural ?questions|ruler|longbench|ifeval/i,
 };
+
+/**
+ * Embedding and reranking models: catalogs often list them as plain "text", so the name decides too.
+ * They index and re-order documents; they never answer a chat.
+ */
+const EMBED_NAME = /embed|\be5\b|e5-(large|base|small|mistral)|\bbge\b|bge-(m3|large|base|small)|\bgte\b|gte-|minilm|nomic-embed|jina-embed|snowflake-arctic-embed|text-embedding/i;
+const RERANK_NAME = /rerank/i;
+const nameOf = (o) => `${o.model?.name ?? ''} ${o.binding?.model_id ?? ''} ${o.offering_id ?? ''}`;
+export const isEmbedder = (o) => o.modality === 'embedding' || (o.modality !== 'image' && EMBED_NAME.test(nameOf(o)) && !RERANK_NAME.test(nameOf(o)));
+const isRetrievalModel = (o) => isEmbedder(o) || RERANK_NAME.test(nameOf(o));
+
+/** Generators described or named as built for answering from retrieved passages. */
+const RAG_TUNED = /\b(rag|retrieval[- ]augmented|grounded generation|citations?)\b|chatqa|command[- ]?r\b|command-r/i;
+const ragTuned = (o) => RAG_TUNED.test(`${nameOf(o)} ${o.model?.description ?? ''}`);
+const MULTILINGUAL_EMBED = /m3|multilingual|\be5\b|e5-|qwen3-embedding|granite-embedding|jina|gte-multilingual|embeddinggemma|labse/i;
+
+/**
+ * The same model under several names or hosts takes one place in the first pass, and no node takes
+ * more than two, so the shortlist offers real alternatives (and failover reaches another provider).
+ */
+const modelKey = (o) => String(o.model?.name ?? o.binding?.model_id ?? '').toLowerCase()
+  .replace(/:latest$/, '').replace(/[-_ ]?(\d{4,8}|\(free\)|free)$/, '').replace(/[^a-z0-9.]/g, '');
+function diversify(scored, limit) {
+  const picked = [], models = new Set(), perNode = new Map();
+  for (const c of scored) {
+    if (picked.length >= limit) break;
+    const k = modelKey(c.offering), n = c.offering.node_id;
+    if (models.has(k) || (perNode.get(n) ?? 0) >= 2) continue;
+    picked.push(c); models.add(k); perNode.set(n, (perNode.get(n) ?? 0) + 1);
+  }
+  for (const c of scored) { if (picked.length >= limit) break; if (!picked.includes(c)) picked.push(c); }
+  return picked;
+}
 
 /** Quality prior of a ~8B model: enough for light work (see isLight). */
 const LIGHT_ENOUGH = 0.33;
@@ -161,6 +223,7 @@ export function weightsFor(features, preset = null) {
   const tc = features.task_class;
   if (tc === 'reasoning' || tc === 'code' || tc === 'agentic') w = { quality: 0.5, price: 0.15, trust: 0.2, perf: 0.15 };
   if (tc === 'classification' || tc === 'extraction' || tc === 'translation') w = { quality: 0.25, price: 0.4, trust: 0.15, perf: 0.2 };
+  if (tc === 'rag') w = { quality: 0.35, price: 0.3, trust: 0.15, perf: 0.2 };   // many answers, each from a few passages
   if (features.latency === 'batch') w = { ...w, perf: 0.05, price: w.price + w.perf - 0.05 };
   if (preset === 'cheap') w = { quality: 0.15, price: 0.55, trust: 0.15, perf: 0.15 };
   if (preset === 'fast') w = { quality: 0.2, price: 0.15, trust: 0.15, perf: 0.5 };
@@ -327,6 +390,7 @@ export function recommend(offerings, features, policy = {}) {
   const reject = (why) => { rejected[why] = (rejected[why] ?? 0) + 1; return false; };
   const candidates = offerings.filter((o) => {
     if (o.modality !== features.modality && !(features.modality === 'text' && o.modality === 'multimodal')) return reject('modality');
+    if (features.modality !== 'embedding' && isRetrievalModel(o)) return reject('embedding_model');
     if (tierRank(o.tier) < minTier) return reject('tier');
     if ((o.pricing?.input_per_mtok ?? 0) > (policy.max_input_per_mtok ?? Infinity)) return reject('price');
     const ctx = o.serving?.context_window;
@@ -352,8 +416,9 @@ export function recommend(offerings, features, policy = {}) {
   const maxPrice = Math.max(...candidates.map((o) => o.pricing?.input_per_mtok ?? 0), 0.000001);
   const scored = candidates.map((o) => {
     const prior = qualityPrior(o, features);
+    const tuned = features.task_class === 'rag' && ragTuned(o);
     const components = {
-      quality: round2(Math.min(qualityCap, prior.q * languageFit(o, features.language))),
+      quality: round2(Math.min(qualityCap, Math.min(1, prior.q + (tuned ? 0.1 : 0)) * languageFit(o, features.language))),
       price: round2(1 - (o.pricing?.input_per_mtok ?? maxPrice) / maxPrice),
       trust: round2(0.7 * (TIER_SCORE[o.tier] ?? 0) + 0.3 * (o.observed?.probe_success ?? 0)),
       perf: round2(perfScore(o, features)),
@@ -361,7 +426,7 @@ export function recommend(offerings, features, policy = {}) {
     let score = Object.entries(w).reduce((s, [k, wk]) => s + wk * components[k], 0);
     if (policy.prefer_local && o.local && (policy.preset !== 'private' || isLight(features))) score += 0.1;
     const bounds = estimateBounds(o.pricing ?? {}, features.est_input_tokens, features.est_output_tokens);
-    return { offering: o, score: round2(score), components, basis: prior.basis, estimate: { currency: o.pricing?.currency ?? 'USD', ...bounds } };
+    return { offering: o, score: round2(score), components, basis: prior.basis, rag_tuned: tuned, estimate: { currency: o.pricing?.currency ?? 'USD', ...bounds } };
   }).filter((c) => c.estimate.max <= (policy.max_total_usd ?? Infinity));
 
   // Deterministic order: score, then cheaper estimate, then larger model, then id.
@@ -370,7 +435,7 @@ export function recommend(offerings, features, policy = {}) {
     || ((b.offering.model?.params_b ?? 0) - (a.offering.model?.params_b ?? 0))
     || `${a.offering.node_id}/${a.offering.offering_id}`.localeCompare(`${b.offering.node_id}/${b.offering.offering_id}`));
   const limit = policy.limit ?? 3;
-  const top = scored.slice(0, limit).map((c) => ({
+  const top = diversify(scored, limit).map((c) => ({
     offering: `${c.offering.node_id}/${c.offering.offering_id}`,
     model: c.offering.model?.name,
     artifact: c.offering.model?.artifact ?? null,
@@ -401,7 +466,45 @@ export function recommend(offerings, features, policy = {}) {
     recommendations: top,
     scenario: suggestScenario(scored, features, policy),
     tools: suggestTools(features),
+    ...(features.needs?.retrieval ? { roles: { embed: rankEmbedders(offerings, features, policy, minTier), generate: 'recommendations' } } : {}),
   };
+}
+
+/**
+ * RAG needs an embedding model as well as a generator: rank embedders for indexing the collection.
+ * Fit favours multilingual models for non-English text and the user's own machine for a private
+ * collection; the indexing estimate assumes ~1,000 tokens per document (stated in the output).
+ */
+function rankEmbedders(offerings, features, policy, minTier) {
+  const docs = features.corpus?.documents ?? null;
+  const tokens = docs ? docs * TOKENS_PER_DOCUMENT : null;
+  const pool = offerings.filter((o) => isEmbedder(o)
+    && tierRank(o.tier) >= minTier
+    && (o.pricing?.input_per_mtok ?? 0) <= (policy.max_input_per_mtok ?? Infinity)
+    && (!policy.jurisdiction || o.local || inJurisdiction(o, policy.jurisdiction)));
+  const maxPrice = Math.max(...pool.map((o) => o.pricing?.input_per_mtok ?? 0), 0.000001);
+  const multilingual = features.language !== 'en';
+  const ranked = pool.map((o) => {
+    const local = Boolean(o.local);
+    const fit = 0.5 + (multilingual && MULTILINGUAL_EMBED.test(nameOf(o)) ? 0.3 : 0) + (features.corpus?.private && local ? 0.2 : 0);
+    const components = {
+      fit: round2(Math.min(1, fit)),
+      price: round2(1 - (o.pricing?.input_per_mtok ?? maxPrice) / maxPrice),
+      trust: round2(0.7 * (TIER_SCORE[local ? 'local' : o.tier] ?? 0) + 0.3 * (o.observed?.probe_success ?? 0)),
+    };
+    const score = round2(0.45 * components.fit + 0.35 * components.price + 0.2 * components.trust);
+    const reasons = [];
+    if (local) reasons.push(`runs on your machine${o.local.run ? ` (${o.local.run})` : ''}${o.local.sizes ? `, ${o.local.sizes.join(' / ')}` : ''} — documents never leave it`);
+    else reasons.push(`hosted by ${o.node_id}${o.jurisdiction?.country ? ` (${o.jurisdiction.country})` : ''}`);
+    if (multilingual && MULTILINGUAL_EMBED.test(nameOf(o))) reasons.push(`multilingual model, for ${features.language} text`);
+    if (o.source === 'import') reasons.push('imported catalog listing — unprobed');
+    const indexing = local ? { usd: 0, basis: 'your own hardware' }
+      : tokens && o.pricing?.input_per_mtok != null ? { usd: round6(tokens * o.pricing.input_per_mtok / 1e6), basis: `${docs.toLocaleString('en-US')} documents × ~${TOKENS_PER_DOCUMENT} tokens at the listed price` }
+      : o.pricing?.input_per_mtok == null ? { usd: null, basis: 'price not published' } : null;
+    return { offering: `${o.node_id}/${o.offering_id}`, model: o.model?.name, node_id: o.node_id, tier: o.tier, model_id: o.binding?.model_id ?? null,
+      endpoint: o.endpoints?.openai ?? null, score, components, reasons, ...(indexing ? { indexing_estimate: indexing } : {}) };
+  }).sort((a, b) => b.score - a.score || a.offering.localeCompare(b.offering));
+  return ranked.slice(0, 3);
 }
 
 function explain(c, features, w) {
@@ -421,6 +524,7 @@ function explain(c, features, w) {
     const tags = [EEA_COUNTRIES.includes(String(o.jurisdiction.country).toUpperCase()) ? 'EEA' : null, o.jurisdiction.basis === 'inferred' ? 'inferred' : null].filter(Boolean);
     r.push(`operator in ${o.jurisdiction.country}${tags.length ? ` (${tags.join(', ')})` : ''}`);
   }
+  if (c.rag_tuned) r.push('described as built for answering from retrieved documents (RAG)');
   if (o.source === 'import') r.push('imported catalog listing — unprobed');
   return r;
 }
