@@ -6,8 +6,10 @@ import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
 import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend, parseAutoModel, AUTO_MODEL_NAMES, responseBudgetMs, fetchWithin } from '@opennodes/core';
 import { OnpClient } from './client.js';
+import { loadChecks, DEFAULT_CHECKS_PATH } from './check.js';
 
 const CACHE_TTL_MS = 30_000;
+const CHECK_TTL_MS = 7 * 24 * 3600_000;   // a user's own check counts for a week
 export const TIERS = ['unverified', 'community', 'verified', 'attested'];
 const atLeast = (tier, floor) => (TIERS.indexOf(tier) >= TIERS.indexOf(floor) ? tier : floor);
 // Advisor-routed virtual models (the ONP answer to openrouter/auto). Routing runs
@@ -61,6 +63,7 @@ export async function startGateway({
   aliases = {}, virtuals = {}, policy = {}, ledgerPath = null,
   keys = {},   // BYOK upstream credentials by hostname, e.g. {"openrouter.ai": "sk-or-...", "router.huggingface.co": "hf_..."}
   env = process.env,   // where standard provider key variables are read from; pass {} to disable
+  checksPath = DEFAULT_CHECKS_PATH,   // results of `onp check`; null to ignore them
 } = {}) {
   if (!['127.0.0.1', 'localhost', '::1'].includes(host) && !token) {
     throw new Error('refusing non-loopback bind without --token (TC-NFR-03)');
@@ -89,6 +92,31 @@ export async function startGateway({
     cache = { at: Date.now(), byId: new Map(offerings.map((o) => [`${o.node_id}/${o.offering_id}`, o])) };
   }
 
+  /**
+   * The user's own `onp check` results (last 7 days) adjust the pool: an offering that didn't answer is
+   * left out; one that did gets the user's measured speed where the registry has none, loses declared
+   * JSON/tool support that failed, and is capped below a context size that lost the fact.
+   */
+  function withLocalChecks(offerings) {
+    const local = checksPath ? loadChecks(checksPath) : {};
+    return offerings.flatMap((o) => {
+      const c = local[`${o.node_id}/${o.offering_id}`];
+      if (!c || Date.now() - Date.parse(c.at) > CHECK_TTL_MS) return [o];
+      if (!c.usable) return [];
+      const observed = { ...o.observed };
+      if (observed.ttft_ms?.p50 == null && c.ttft_ms) observed.ttft_ms = { p50: c.ttft_ms };
+      if (!(observed.tps > 0) && c.tps) observed.tps = c.tps;
+      if (observed.probe_success == null) observed.probe_success = c.ok ? 1 : 0.5;
+      const serving = { ...o.serving };
+      const lost = { 'json mode': 'json_mode', 'tool calls': 'tool_calls' };
+      serving.supports = (serving.supports ?? []).filter((s) => !c.failed.some((f) => lost[f] === s));
+      const ctx = c.checks?.find((x) => x.name === 'context' && x.status === 'fail');
+      const size = Number(ctx?.detail?.match(/^(\d+) tokens/)?.[1]);
+      if (size) serving.context_window = Math.min(serving.context_window ?? Infinity, Math.floor(size / 2));
+      return [{ ...o, observed, serving, checked_by_you: c.ok ? 'passed' : `issues: ${c.failed.join(', ')}` }];
+    });
+  }
+
   /** An explicitly named offering outside the routing pool: look it up directly. */
   async function lookup(id) {
     const [nodeId, offeringId] = id.split('/');
@@ -111,14 +139,17 @@ export async function startGateway({
         request: body ? { tools: body.tools, json: ['json_object', 'json_schema'].includes(body.response_format?.type) } : null,
       });
       const { preset } = auto;
-      const result = recommend([...cache.byId.values()], features, {
+      const result = recommend(withLocalChecks([...cache.byId.values()]), features, {
         preset, limit: 5,
         min_tier: preset === 'private' ? atLeast(minTier, 'community') : policy.min_tier,   // private never goes below community
         max_input_per_mtok: policy.max_input_per_mtok,
         jurisdiction: auto.jurisdiction ?? policy.jurisdiction,
         prefer_local: preset === 'private',
       });
-      lastAdvice = { model: modelId, features, recommendations: result.recommendations.map((r) => ({ offering: r.offering, score: r.score, reasons: r.reasons })) };
+      lastAdvice = { model: modelId, features, recommendations: result.recommendations.map((r) => {
+        const mine = cache.byId.get(r.offering) && withLocalChecks([cache.byId.get(r.offering)])[0]?.checked_by_you;
+        return { offering: r.offering, score: r.score, reasons: mine ? [...r.reasons, `checked by you: ${mine}`] : r.reasons };
+      }) };
       return result.recommendations.map((r) => cache.byId.get(r.offering)).filter(Boolean);
     }
     if (virtuals[modelId]) {
