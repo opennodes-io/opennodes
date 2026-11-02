@@ -3,6 +3,7 @@
 // One copy, so directories that inspect either server see the same documented tools.
 
 const TIER = { type: 'string', enum: ['unverified', 'community', 'verified', 'attested'] };
+const LOCATION_BASIS = { type: 'string', enum: ['claimed', 'documented', 'measured', 'attested'] };
 
 // Filters shared by search_offerings and an estimate step's `select`.
 const FILTERS = {
@@ -14,6 +15,9 @@ const FILTERS = {
   scheme: { type: 'string', enum: ['free', 'prepaid', 'x402'], description: 'Payment scheme the offering must accept. "free" finds no-cost offerings.' },
   tier: { ...TIER, description: 'Minimum trust tier. unverified < community (passed automated checks) < verified (identity and context verified) < attested.' },
   lang: { type: 'string', description: 'Language with minimum grade, "<iso-code>[:basic|strong|native]", e.g. "pl:strong" or "de".' },
+  region: { type: 'string', description: 'Data residency: every pinned region and every live serving site must lie inside this ISO 3166 code, e.g. "CA" (also matches "CA-QC") or "EU".' },
+  location_basis: { ...LOCATION_BASIS, description: 'Minimum evidence for the serving locations: claimed < documented (the provider\'s own dated page) < measured (registry probes) < attested. Offerings without known locations are excluded.' },
+  exclude_lineage: { type: 'string', description: 'Comma-separated ISO country codes; drops offerings whose declared model lineage includes any of them, e.g. "CN". Offerings that declare no lineage are kept.' },
   q: { type: 'string', description: 'Free-text match against the model metadata, offering id, and node id, e.g. "bielik" or "coder".' },
 };
 
@@ -35,7 +39,7 @@ export const MCP_TOOLS = [
             min_tier: { ...TIER, description: 'Exclude offerings below this trust tier.' },
             max_input_per_mtok: { type: 'number', minimum: 0, description: 'Maximum input price in USD per million tokens.' },
             max_total_usd: { type: 'number', minimum: 0, description: 'Maximum estimated total cost of the call in USD.' },
-            region: { type: 'string', description: 'Required data region, e.g. "eu". Offerings pinned to other regions are excluded.' },
+            region: { type: 'string', description: 'Required data region, e.g. "CA" or "EU". Offerings pinned to, or served from, other regions are excluded.' },
             prefer_local: { type: 'boolean', description: 'Give a bonus to nodes on this machine or LAN.' },
             limit: { type: 'integer', minimum: 1, maximum: 20, default: 3, description: 'Number of candidates to return.' },
           },
@@ -108,9 +112,25 @@ export const MCP_TOOLS = [
     },
     annotations: { title: 'Estimate the cost of a chain', readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   },
+  {
+    name: 'find_locations',
+    title: 'Find where models run',
+    description: "Where AI models are served, by country: every known serving site (provider, region, city or facility, live or planned) with its evidence basis (claimed, documented, measured, attested), its source page, and the models it serves. Sites whose provider publishes no model list are included with a note. Built from node cards, imported catalogs and curated location seeds. Use it to answer \"which providers serve which models in Canada\" or to check a residency requirement before choosing an offering; then search_offerings with `region` to pick one.",
+    inputSchema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        country: { type: 'string', description: 'ISO 3166 code; a country also matches its subdivisions, e.g. "CA" matches "CA-QC". Omit for every country.' },
+        basis: { ...LOCATION_BASIS, description: 'Minimum evidence for a site: claimed < documented < measured < attested.' },
+        status: { type: 'string', enum: ['live', 'planned'], description: 'Only live or only planned sites. Omit for both.' },
+        model: { type: 'string', description: 'Substring of a model name or artifact, e.g. "gpt-oss" or "command". Keeps only sites serving a match.' },
+        exclude_lineage: { type: 'string', description: 'Comma-separated ISO country codes; drops models whose declared lineage includes any of them, e.g. "CN".' },
+      },
+    },
+    annotations: { title: 'Find where models run', readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+  },
 ];
 
-export const MCP_INSTRUCTIONS = "OpenNodes finds and prices AI inference endpoints across registered nodes and imported catalogs (OpenRouter, Hugging Face, models.dev, local). Start with recommend when you know the task; use search_offerings to browse with filters, get_offering for one offering's full detail, get_node to vet who runs a node and how it has behaved, and estimate to price a multi-step chain before running it. All tools are read-only: nothing is invoked or charged.";
+export const MCP_INSTRUCTIONS = "OpenNodes finds and prices AI inference endpoints across registered nodes and imported catalogs (OpenRouter, Hugging Face, models.dev, local). Start with recommend when you know the task; use search_offerings to browse with filters, get_offering for one offering's full detail, get_node to vet who runs a node and how it has behaved, estimate to price a multi-step chain before running it, and find_locations to see which providers serve which models in a country, with the evidence for each site. All tools are read-only: nothing is invoked or charged.";
 
 // Registry node detail → what an agent needs to vet a provider. Drops signatures and
 // raw cards (imported catalogs carry hundreds of offerings).

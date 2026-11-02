@@ -15,3 +15,31 @@ export function regionWithin(code, required) {
 export function residencyWithin(codes, required) {
   return codes.length > 0 && codes.every((c) => regionWithin(c, required));
 }
+
+/** The country part of a region code: "CA-QC" -> "CA", "eu-central" -> "EU". */
+export const countryOf = (code) => String(code).split('-')[0].toUpperCase();
+
+// Location evidence (ONP-2 §3a), weakest first. Unknown values count as claimed.
+export const LOCATION_BASES = ['claimed', 'documented', 'measured', 'attested'];
+export const basisRank = (basis) => Math.max(0, LOCATION_BASES.indexOf(basis));
+
+/**
+ * Where an offering is served (ONP-2 §3a): its own `locations` when the property is present
+ * (an empty list means "unknown" and overrides the node), else the node's. Only live sites
+ * count; a missing status is live, an unknown one is treated as planned.
+ */
+export function servingLocations(offering, card) {
+  const list = Array.isArray(offering?.locations) ? offering.locations : (card?.node?.locations ?? []);
+  return list.filter((l) => (l.status ?? 'live') === 'live');
+}
+
+/**
+ * Region codes a residency check must cover: every pinned region and every live serving
+ * location, falling back to the node's declared `regions` when neither is given.
+ */
+export function residencyCodes(offering, card) {
+  const pins = offering?.data_policy?.region_pinning ?? [];
+  const sites = servingLocations(offering, card).map((l) => l.region);
+  const codes = [...pins, ...sites];
+  return codes.length ? codes : (card?.node?.regions ?? []);
+}

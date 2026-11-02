@@ -27,7 +27,8 @@
           }
         },
         "did": { "type": "string", "pattern": "^did:[a-z0-9]+:.+$" },
-        "regions": { "$ref": "#/$defs/regions" }
+        "regions": { "$ref": "#/$defs/regions" },
+        "locations": { "$ref": "#/$defs/locations", "description": "Sites where the node serves, each with its evidence basis (ONP-2 §3a). Offerings inherit them unless they declare their own." }
       }
     },
     "endpoints": {
@@ -105,6 +106,28 @@
       "items": { "type": "string" },
       "description": "Region codes. SHOULD be ISO 3166-1 alpha-2 (\"CA\"), ISO 3166-2 (\"CA-QC\") or the reserved code \"EU\"; matching is case-insensitive and a code contains its own subdivisions (\"CA\" contains \"CA-QC\"). See ONP-2 §3."
     },
+    "location": {
+      "type": "object",
+      "required": ["region", "basis"],
+      "properties": {
+        "region": { "type": "string", "description": "Where serving happens, as a region code (ONP-2 §3): ISO 3166-1 alpha-2 (\"CA\") or ISO 3166-2 (\"CA-QC\")." },
+        "site": { "type": "string", "maxLength": 200, "description": "City or facility, e.g. \"Rimouski\" or \"Montréal (ca-central-1)\"." },
+        "facility_operator": { "type": "string", "maxLength": 200, "description": "Who runs the facility or the serving hardware, when not the node operator." },
+        "status": { "$ref": "#/$defs/token", "description": "Core values: live, planned. A missing status means live; clients treat an unknown value as planned." },
+        "basis": { "$ref": "#/$defs/token", "description": "Core values, weakest first: claimed, documented, measured, attested (ONP-2 §3a). Cards state claimed, documented or attested; measured is set only by a registry. Unknown values count as claimed." },
+        "source": { "type": "string", "format": "uri", "description": "Page or document that supports the location. REQUIRED when basis is documented." },
+        "checked": { "type": "string", "format": "date", "description": "Date the source was last checked. REQUIRED when basis is documented." },
+        "note": { "type": "string", "maxLength": 500 }
+      },
+      "allOf": [
+        { "if": { "properties": { "basis": { "const": "documented" } }, "required": ["basis"] },
+          "then": { "required": ["source", "checked"] } }
+      ]
+    },
+    "locations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/location" }
+    },
     "hardware": {
       "type": "object",
       "properties": {
@@ -160,9 +183,15 @@
             "params_b": { "type": "number", "minimum": 0 },
             "quantization": { "type": "string" },
             "license": { "type": "string" },
-            "revision_pin": { "type": "string" }
+            "revision_pin": { "type": "string" },
+            "lineage_origins": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^[A-Z]{2}$" },
+              "description": "Origin country (ISO 3166-1 alpha-2) of every developer in the model's derivation chain: base models, merge sources, distillation teachers. Claimed unless a profile attests it (ONP-7 provenance)."
+            }
           }
         },
+        "locations": { "$ref": "#/$defs/locations", "description": "Where this offering is served, overriding node.locations; an empty list means unknown (ONP-2 §3a)." },
         "serving": {
           "type": "object",
           "properties": {

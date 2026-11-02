@@ -23,8 +23,10 @@ import { collapseFlaps } from './feed.js';
 import {
   importModelsDev, importHuggingFace, importOpenRouter,
   importOllamaLibrary, parseOllamaLibrary,
-  HF_ROUTER_URL, HF_HUB_URL, OPENROUTER_URL, OLLAMA_LIBRARY_URL,
+  importOpenRouterProviders, fetchOpenRouterEndpoints, importLocationSeed,
+  HF_ROUTER_URL, HF_HUB_URL, OPENROUTER_URL, OPENROUTER_PROVIDERS_URL, OLLAMA_LIBRARY_URL,
 } from './importers.js';
+import { locationRoutes, loadLocationSeeds } from './locations.js';
 
 export async function startRegistry({
   port = 0, host = '127.0.0.1', dbPath = ':memory:',
@@ -39,9 +41,15 @@ export async function startRegistry({
   registerPerHour = 0,                  // per-client cap on register/verify calls (0 = unlimited; set in production)
   admitCooldownMs = 0,                  // minimum gap between Stage B runs per node (0 = none; set in production)
   trustProxy = false,                   // read the client address from X-Forwarded-For (behind Caddy / a CDN)
+  locationSeeds = false,                // import the bundled curated location seeds (src/data/locations-*.json) at start
 } = {}) {
   const store = await createStore(dbPath); // sqlite path/:memory: or postgres:// URL
   const safeFetch = makeSafeFetch({ allowPrivate: allowPrivateTargets });
+  const seeds = locationSeeds ? loadLocationSeeds() : [];
+  for (const seed of seeds) {
+    const result = await importLocationSeed(store, seed);
+    if (result.skipped.length) console.warn(`location seed ${seed.seed}: skipped ${result.skipped.join('; ')}`);
+  }
   const webApp = readFileSync(fileURLToPath(new URL('./web/index.html', import.meta.url)), 'utf8');
   let registryKeys;
   if (keyPath && existsSync(keyPath)) {
@@ -312,6 +320,7 @@ export async function startRegistry({
           operator: card?.node?.operator?.name ?? null,
           country: card?.node?.operator?.country ?? null,
           regions: card?.node?.regions ?? [],
+          locations: card?.node?.locations ?? [],
           offerings: card?.offerings?.length ?? 0,
           availability,
         });
@@ -471,6 +480,32 @@ export async function startRegistry({
       sendJson(res, 200, await importOpenRouter(store, catalog));
     }],
 
+    // OpenRouter per-provider importer with declared locations (admin): inline
+    // {providers, models, endpoints: {modelId: [...]}}, or fetch the live APIs (one call per model).
+    ['POST', '/v0/import/openrouter-providers', async (req, res) => {
+      if (!adminOk(req, res)) return;
+      const body = await readJson(req, 100_000_000);
+      const json = async (url) => (await safeFetch(url, {}, 60_000)).json();
+      const providers = body.providers ?? (await json(OPENROUTER_PROVIDERS_URL)).data;
+      const models = body.models ?? (await json(OPENROUTER_URL)).data;
+      const endpoints = body.endpoints ? new Map(Object.entries(body.endpoints)) : await fetchOpenRouterEndpoints(json, models);
+      sendJson(res, 200, await importOpenRouterProviders(store, providers, models, endpoints));
+    }],
+
+    // Curated location seed (admin): inline {seed}, or re-import the bundled seeds.
+    ['POST', '/v0/import/locations', async (req, res) => {
+      if (!adminOk(req, res)) return;
+      const body = await readJson(req, 10_000_000);
+      const list = body.seed ? [body.seed] : loadLocationSeeds();
+      const results = {};
+      for (const seed of list) {
+        results[seed.seed] = await importLocationSeed(store, seed);
+        const i = seeds.findIndex((s) => s.seed === seed.seed); // /v0/locations reads site-only entries from here
+        if (i < 0) seeds.push(seed); else seeds[i] = seed;
+      }
+      sendJson(res, 200, results);
+    }],
+
     ['GET', '/v0/health', (req, res) => {
       sendJson(res, 200, {
         service: 'opennodes-registry',
@@ -481,6 +516,7 @@ export async function startRegistry({
         mcp: '/mcp',
         webmcp: true, // the web app at / registers in-page tools via navigator.modelContext where supported
         export: '/v0/export',
+        locations: '/v0/locations',
         signing_key: { ...registryKeys.publicJwk, kid: 'registry-1' },
         stage_c: Boolean(stageC),
       });
@@ -492,8 +528,9 @@ export async function startRegistry({
       res.end(webApp);
     }],
 
-    ...mcpRoutes(store),
+    ...mcpRoutes(store, seeds),
     ...exportRoutes(store, registryKeys),
+    ...locationRoutes(store, seeds),
   ], { cors: true }); // public read API: third-party web clients may call it directly
 
   const stageCHandle = stageC ? startStageC(store, { safeFetch, fetchFor: authFetch, refreshCard, ...stageC }) : null;

@@ -89,6 +89,11 @@
   .chip.inst { color: var(--accent); border-color: var(--accent); }
   .chip.imp { background: var(--panel-2); font-weight: 400; }
   .chip.loc { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .chip.b-documented { color: var(--accent); border-color: var(--accent); }
+  .chip.b-measured, .chip.b-attested { color: var(--good); border-color: var(--good); }
+  .chip.s-planned { color: var(--warn); border-color: var(--warn); }
+  .wmodels { display: flex; flex-wrap: wrap; gap: 0.25rem 0.6rem; font-size: 0.8rem; }
+  .wmodels .lin { font-family: "IBM Plex Mono", monospace; font-size: 0.6rem; color: var(--warn); }
   .micro { font-family: "IBM Plex Mono", monospace; font-size: 0.58rem; font-weight: 600; letter-spacing: 0.04em; }
   .m-measured { color: var(--good); } .m-claimed { color: var(--faint); font-weight: 400; } .m-warn { color: var(--warn); }
   .prov { font-family: "IBM Plex Mono", monospace; font-size: 0.64rem; color: var(--faint); }
@@ -198,6 +203,7 @@
   <a class="tab" data-view="models" href="#/">Models</a>
   <a class="tab" data-view="rankings" href="#/rankings">Rankings</a>
   <a class="tab" data-view="nodes" href="#/nodes">Nodes</a>
+  <a class="tab" data-view="where" href="#/where">Where models run</a>
   <a class="tab" data-view="feed" href="#/new">New</a>
   <a class="tab" data-view="build" href="#/build">Build</a>
   <a class="tab" data-view="chat" href="#/chat">Chat</a>
@@ -312,6 +318,21 @@
   <div style="display:flex; align-items:baseline; gap:0.9rem"><h1>Nodes</h1><span class="counts" id="n-counts"></span></div>
   <p class="sub">The supply side, first-class: every provider serving through OpenNodes, with the trust tier it has earned. <b>Verified</b> means identity-fingerprinted, context-verified, capacity-measured, and continuously probed — <a href="#/qualification">the qualification procedure</a> is automated and the same for everyone.</p>
   <div class="panel tablewrap" id="n-table"></div>
+</div>
+
+<!-- ================= WHERE MODELS RUN ================= -->
+<div id="view-where" hidden>
+  <div style="display:flex; align-items:baseline; gap:0.9rem; flex-wrap:wrap"><h1>Where models run</h1><span class="counts" id="w-counts"></span></div>
+  <p class="sub">Every known serving site by country, with the models it serves and how far each location can be trusted: <b>claimed</b> (the provider or a news report says so), <b>documented</b> (the provider's own dated page), <b>measured</b> (registry probes), <b>attested</b> (a signed card backed by an audit). Built from node cards, imported catalogs and curated seeds; <a href="https://github.com/opennodes-io/opennodes/tree/main/impl/packages/registry/src/data" target="_blank" rel="noopener">corrections welcome</a>. Also as <a id="w-json" href="/v0/locations">JSON</a> and <a id="w-csv" href="/v0/locations?format=csv">CSV</a>.</p>
+  <div class="toolbar">
+    <select id="w-country"><option value="">every country</option></select>
+    <select id="w-basis"><option value="">any evidence</option><option value="documented">documented or better</option><option value="measured">measured or better</option><option value="attested">attested</option></select>
+    <select id="w-status"><option value="">live and planned</option><option value="live">live only</option><option value="planned">planned only</option></select>
+    <input type="text" id="w-model" placeholder="Filter by model, e.g. gpt-oss or command">
+    <input type="text" id="w-lineage" placeholder="exclude lineage, e.g. CN" style="max-width:12rem">
+  </div>
+  <div class="panel pad" id="w-summary" style="margin-bottom:0.8rem"></div>
+  <div class="panel tablewrap" id="w-table"></div>
 </div>
 
 <!-- ================= NEW (feed) ================= -->
@@ -519,18 +540,23 @@ const ago = (iso) => {
 };
 const tierChip = (t) => `<span class="chip t-${esc(t)}">${esc(String(t).toUpperCase())}</span>`;
 const priceStr = (p) => {
+  if (p.input_per_mtok == null && p.output_per_mtok == null) return 'price not published';
   const i = p.input_per_mtok ?? 0, o = p.output_per_mtok ?? 0;
   return (i === 0 && o === 0) ? 'free' : `$${fmt(i)} / $${fmt(o)} per MTok`;
 };
+const basisChip = (b) => `<span class="chip b-${esc(b)}">${esc(String(b).toUpperCase())}</span>`;
+/** "CA-QC Montréal (documented)" for each live serving site of an offering. */
+const locStr = (locs) => (locs || []).map((l) => `${esc(l.region)}${l.site ? ' ' + esc(l.site) : ''} ${basisChip(l.basis)}`).join(' · ');
 
 /* ---------- routing ---------- */
-const views = ['models', 'model', 'rankings', 'nodes', 'feed', 'build', 'chat', 'node', 'register', 'qualification'];
+const views = ['models', 'model', 'rankings', 'nodes', 'where', 'feed', 'build', 'chat', 'node', 'register', 'qualification'];
 function route() {
   const hash = location.hash || '#/';
   let view = 'models', arg = null;
   if (hash.startsWith('#/model/')) { view = 'model'; arg = decodeURIComponent(hash.slice(8)); }
   else if (hash.startsWith('#/rankings')) view = 'rankings';
   else if (hash.startsWith('#/nodes')) view = 'nodes';
+  else if (hash.startsWith('#/where')) view = 'where';
   else if (hash.startsWith('#/new')) view = 'feed';
   else if (hash.startsWith('#/build')) view = 'build';
   else if (hash.startsWith('#/chat')) view = 'chat';
@@ -545,6 +571,7 @@ function route() {
   if (view === 'chat') loadChatTargets();
   if (view === 'rankings') loadRankings();
   if (view === 'nodes') loadNodes();
+  if (view === 'where') loadWhere();
   if (view === 'feed') loadFeed();
   if (view === 'node' && arg) loadNode(arg);
 }
@@ -720,6 +747,8 @@ window.toggleRow = async function (el, idx) {
         ${o.serving?.max_output_tokens ? `<dt>max output</dt><dd class="num">${fmtInt(o.serving.max_output_tokens)}</dd>` : ''}
         ${hwStr(o) ? `<dt>hardware</dt><dd>${hwStr(o)}</dd>` : ''}
         <dt>schemes</dt><dd>${esc((o.pricing.schemes || []).join(', '))}</dd>
+        <dt>served from</dt><dd>${o.locations?.length ? locStr(o.locations) : '<span style="color:var(--faint)">location not declared</span>'}</dd>
+        ${o.model.lineage_origins ? `<dt>lineage</dt><dd>${esc(o.model.lineage_origins.join(', '))} <span class="prov" style="display:inline">· declared</span></dd>` : ''}
         ${o.local ? `<dt>run locally</dt><dd><code style="background:var(--panel-2); padding:0.1em 0.4em; border-radius:3px" class="mono">${esc(o.local.run)}</code>${o.local.pulls ? ` <span class="prov" style="display:inline">· ${esc(o.local.pulls)} pulls</span>` : ''}${o.local.sizes ? ` <span class="prov" style="display:inline">· sizes: ${esc(o.local.sizes.join(' '))}</span>` : ''}</dd>` : ''}
       </dl>
     </div>
@@ -1722,13 +1751,59 @@ async function loadNodes() {
       <td><a href="#/node/${encodeURIComponent(n.id)}" style="font-weight:600">${esc(n.id)}</a></td>
       <td><span style="display:inline-flex; gap:0.3rem">${tierChip(n.tier)}${n.institutional ? '<span class="chip inst">institutional</span>' : ''}${n.source === 'import' ? '<span class="chip imp">IMPORTED</span>' : ''}</span></td>
       <td>${esc(n.operator ?? '—')}${n.country ? ' <span style="color:var(--muted)">(' + esc(n.country) + ')</span>' : ''}</td>
-      <td style="color:var(--muted)">${esc((n.regions || []).join(', ') || '—')}</td>
+      <td style="color:var(--muted)">${esc([...new Set([...(n.regions || []), ...(n.locations || []).map((l) => l.region)])].join(', ') || '—')}</td>
       <td>${n.offerings}</td>
       <td>${n.availability?.ratio != null ? Math.round(n.availability.ratio * 100) + '%' : '—'}</td>
       <td><span class="prov">${ago(n.updated_at)}</span></td>
     </tr>`).join('') + '</tbody></table>';
   } catch (e) { $('#n-table').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
 }
+
+/* ---------- where models run ---------- */
+let whereCountriesLoaded = false;
+async function loadWhere() {
+  const qs = new URLSearchParams();
+  const set = (k, id) => { const v = $(id).value.trim(); if (v) qs.set(k, v); };
+  set('country', '#w-country'); set('basis', '#w-basis'); set('status', '#w-status');
+  set('model', '#w-model'); set('exclude_lineage', '#w-lineage');
+  const q = qs.toString() ? '?' + qs : '';
+  $('#w-json').href = '/v0/locations' + q;
+  $('#w-csv').href = '/v0/locations' + (q ? q + '&' : '?') + 'format=csv';
+  try {
+    const r = await api('/v0/locations' + q);
+    if (!whereCountriesLoaded && !q) {
+      whereCountriesLoaded = true;
+      $('#w-country').innerHTML = '<option value="">every country</option>'
+        + r.countries.map((c) => `<option value="${esc(c.country)}">${esc(c.country)} · ${c.sites} sites</option>`).join('');
+    }
+    const s = r.summary;
+    $('#w-counts').textContent = `${s.sites} sites · ${s.countries} countries`;
+    $('#w-summary').innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:0.4rem 1.2rem; font-size:0.84rem">`
+      + r.countries.map((c) => `<span><b>${esc(c.country)}</b> ${c.providers} providers · ${c.sites} sites (${c.live_sites} live) · ${c.models} models</span>`).join('')
+      + `</div><p class="prov" style="margin:0.5rem 0 0">${fmtInt(s.located_offerings)} offerings in the registry declare where they run; ${fmtInt(s.unlocated_offerings)} do not. That gap is what this page exists to close.</p>`;
+    const models = (x) => x.models.length
+      ? `<div class="wmodels">${x.models.slice(0, 12).map((m) => `<span>${esc(m.name)}${m.lineage_origins ? ` <span class="lin">${esc(m.lineage_origins.join('/'))}</span>` : ''}</span>`).join('')}${x.models.length > 12 ? `<span class="prov">+${x.models.length - 12} more</span>` : ''}</div>`
+      : `<span style="color:var(--muted); font-size:0.8rem">${esc(x.models_note ?? '—')}</span>`;
+    const provider = (x) => (x.source === 'seed'
+      ? `<b>${esc(x.provider)}</b>`
+      : `<a href="#/node/${encodeURIComponent(x.node_id)}" style="font-weight:600">${esc(x.provider)}</a>`)
+      + (x.operator_country ? ` <span style="color:var(--muted)">(${esc(x.operator_country)})</span>` : '')
+      + (x.source !== 'registration' ? ' <span class="chip imp">' + (x.source === 'seed' ? 'SEED' : 'IMPORTED') + '</span>' : '');
+    $('#w-table').innerHTML = r.sites.length ? `<table class="grid"><thead><tr>
+      <th>REGION</th><th>SITE</th><th>PROVIDER</th><th>STATUS</th><th>EVIDENCE</th><th>MODELS SERVED</th>
+    </tr></thead><tbody>` + r.sites.map((x) => `<tr>
+      <td class="mono" style="font-size:0.78rem">${esc(x.region)}</td>
+      <td>${esc(x.site ?? '—')}${x.facility_operator ? `<span class="prov">run by ${esc(x.facility_operator)}</span>` : ''}${x.note ? `<span class="prov">${esc(x.note)}</span>` : ''}</td>
+      <td>${provider(x)}</td>
+      <td><span class="chip s-${esc(x.status)}">${esc(String(x.status).toUpperCase())}</span></td>
+      <td>${basisChip(x.basis)}${x.source_url ? `<span class="prov"><a href="${esc(x.source_url)}" target="_blank" rel="noopener">source</a>${x.checked ? ' · checked ' + esc(x.checked) : ''}</span>` : ''}</td>
+      <td>${models(x)}</td>
+    </tr>`).join('') + '</tbody></table>' : '<p class="sub" style="padding:0.9rem 1rem; margin:0">No sites match these filters.</p>';
+  } catch (e) { $('#w-table').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
+}
+for (const id of ['w-country', 'w-basis', 'w-status']) $('#' + id).addEventListener('change', loadWhere);
+let whereDebounce;
+for (const id of ['w-model', 'w-lineage']) $('#' + id).addEventListener('input', () => { clearTimeout(whereDebounce); whereDebounce = setTimeout(loadWhere, 250); });
 
 /* ---------- feed ---------- */
 async function loadFeed() {

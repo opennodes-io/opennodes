@@ -24,6 +24,7 @@ A registry is any service implementing this API. The architecture copies what wo
 | `GET /v0/offerings` | **Search** (§5) |
 | `POST /v0/estimate` | Cost/latency estimate for a planned invocation or chain (§5a) |
 | `GET /v0/offerings/{node_id}/{offering_id}` | Offering detail incl. observations, attestations, rank explanation |
+| `GET /v0/locations` | **Where models run**: serving sites by country, with evidence and the models each serves (§5c) |
 | `GET /v0/attestations?subject=…` | VCs known for a node/offering |
 | `GET /v0/health` | Registry self-description: ONP versions, ranking components (§6), federation peers (§8), fee policy |
 
@@ -79,7 +80,9 @@ Registration alone never grants a trust tier. Tiers above `unverified` are gated
 &supports=tool_calls,json_mode
 &lang=uk:strong               // language + minimum grade (ONP-2 §5)
 &max_input_price=1.00        // USD per MTok
-&region=EU                   // residency: region_pinning (else node regions) entirely within this code
+&region=EU                   // residency: pinned regions and live serving sites (else node regions) entirely within this code
+&location_basis=documented   // minimum evidence for every serving site (ONP-2 §3a)
+&exclude_lineage=CN          // drop offerings whose declared model lineage includes these countries
 &scheme=x402                 // payment scheme
 &tier=verified               // minimum trust tier
 &basis=attested              // only attested performance/benchmarks
@@ -90,10 +93,12 @@ Registration alone never grants a trust tier. Tiers above `unverified` are gated
 ```
 
 Matching rules:
-- `region=X` matches an offering when its `data_policy.region_pinning` — or, if that is empty, the node's `regions` — is non-empty and **every** listed code lies within `X` under the containment rule of ONP-2 §3. A residency requirement is only met when no listed location falls outside it.
+- `region=X` matches an offering when its residency codes are non-empty and **every** one lies within `X` under the containment rule of ONP-2 §3. The residency codes are all `data_policy.region_pinning` codes plus the regions of all live serving locations (ONP-2 §3a); when an offering has neither, the node's `regions`. A residency requirement is only met when no listed location falls outside it, so an offering served from Canada *and* the US does not match `region=CA`, and one whose `locations` is an empty list (unknown) matches no region.
+- `location_basis=B` matches an offering that has at least one live serving location and whose every live location has a basis at least as strong as `B` (`claimed` < `documented` < `measured` < `attested`).
+- `exclude_lineage=C1,C2` drops an offering when its `model.lineage_origins` contains any listed country. Offerings that declare no lineage are kept and MUST be shown as unknown, not as compliant.
 - `lang=fr` matches the tag `fr` and its subtags (`fr-CA`); `lang=fr-CA` matches only `fr-CA`.
 
-Responses return offering summaries: the card excerpt, trust tier, the **effective hardware allocation** (the offering-level `hardware` override if present, else the node-level declaration — see ONP-2 §6), registry **observations** (measured uptime, TTFT/TPS percentiles from probes, price history), and `rank` with `rank_explanation` (§6). Results MUST distinguish card-claimed vs. registry-observed vs. attested values; performance sorts (`ttft`, `tps`) MUST prefer observed values over claims.
+Responses return offering summaries: the card excerpt, trust tier, the effective serving `locations` (live only) and `residency` codes, the **effective hardware allocation** (the offering-level `hardware` override if present, else the node-level declaration — see ONP-2 §6), registry **observations** (measured uptime, TTFT/TPS percentiles from probes, price history), and `rank` with `rank_explanation` (§6). Results MUST distinguish card-claimed vs. registry-observed vs. attested values; performance sorts (`ttft`, `tps`) MUST prefer observed values over claims.
 
 ## 5a. Estimation
 
@@ -122,6 +127,35 @@ Steps may name a concrete offering or embed a §5 `select` query (the registry r
 The response lists recommendations each with `offering`, pinned `card_revision`, `estimate` (§5a bounds), `score`, its `components` (quality prior, price, trust, measured performance) with the `weights` used, and human-readable `reasons`; the equivalent §5 search `query`; counts of considered/eligible offerings with per-filter rejection reasons; optionally a two-step ONP-6 scenario (cheap triage/draft → strong expert/refine) when it would plausibly save money; and MCP tool categories the task likely needs. Hard requirements (capabilities, context, data policy, tier, price) are filters, never score inputs. Quality priors MUST be labeled by basis (size heuristic, claimed benchmark, attested benchmark, or registry-measured task probes once available) and measured performance MUST outweigh claimed performance — the same discipline as §6.
 
 The advisor is deliberately deterministic and reproducible: same catalog, same features, same policy → same answer, so an agent can audit a recommendation and a registry cannot hide a sponsored placement inside it (sponsorship, if any, is a labeled field per §6, never a score component).
+
+
+## 5c. Where models run
+
+`GET /v0/locations` answers "which providers serve which models in this country, and who says so": every known serving site, with its evidence and the models it serves. Registries that hold location data SHOULD offer it.
+
+```
+?country=CA          // or region=CA-QC; containment as in ONP-2 §3
+&basis=documented    // minimum evidence for a site
+&status=live         // live | planned; omit for both
+&model=gpt-oss       // substring of a model name or artifact; keeps only sites serving a match
+&exclude_lineage=CN  // drops models whose declared lineage includes these countries
+&format=csv          // one row per site and model
+```
+
+```json
+{"summary": {"countries": 1, "sites": 24, "located_offerings": 41, "unlocated_offerings": 9970},
+ "countries": [{"country": "CA", "providers": 14, "sites": 24, "live_sites": 20, "models": 37}],
+ "sites": [{"node_id": "…", "provider": "…", "operator_country": "US", "tier": "unverified", "source": "import",
+            "country": "CA", "region": "CA-QC", "site": "Montréal (ca-central-1)", "status": "live",
+            "basis": "documented", "source_url": "https://…", "checked": "2026-11-02",
+            "models": [{"offering_id": "…", "name": "…", "artifact": "…", "lineage_origins": ["US"]}],
+            "models_note": null}]}
+```
+
+- A site is one (node, region, site) triple. It lists the models of every offering whose effective locations include it, live or planned, so planned capacity is visible without counting as serving in §5 search.
+- Sources are node cards (registered and imported) and **curated seeds**: dated, source-linked datasets maintained with the registry, for providers that publish sites but not machine-readable cards. A seed provider that publishes sites but no model list appears with `models: []` and a `models_note`.
+- `summary.unlocated_offerings` counts offerings with no known location. Registries SHOULD publish it: it is the size of the gap.
+- `measured` is the only basis a registry may assign (ONP-2 §3a). It requires probe points inside the region under test, and the registry MUST record which probe points produced it.
 
 ## 6. Verification, observations, and ranking
 

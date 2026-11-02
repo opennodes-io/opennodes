@@ -1,5 +1,28 @@
 # ONP specification changes
 
+## Draft 0.1, revision 3 — 2026-11-02: where models run
+
+No public catalogue says which models run in which country's datacentres, or how anyone knows. Revision 3 adds that layer. It is additive: every revision 2 card stays valid and keeps its meaning, except that residency now also checks the serving locations a card declares.
+
+| # | Where | Change |
+|---|---|---|
+| L1 | ONP-2 §3a, schema | New optional `node.locations` and per-offering `locations`: region, site, facility operator, `live`/`planned` status, and an evidence `basis` (`claimed` < `documented` < `measured` < `attested`). `documented` requires `source` and `checked`; only registries assign `measured`; an empty offering list means unknown |
+| L2 | ONP-2 §5, schema | New optional `model.lineage_origins`: origin countries of every developer in the derivation chain, so clients can apply origin policies |
+| L3 | ONP-3 §5 | Residency (`region=`) covers pinned regions **and** live serving locations; new `location_basis=` and `exclude_lineage=` filters; offering summaries carry `locations` and `residency` |
+| L4 | ONP-3 §5c, §2 | New `GET /v0/locations`: serving sites by country with evidence and models, from cards and curated seeds, with JSON and CSV output and an `unlocated_offerings` count |
+
+### Reference implementation changes
+
+- `@opennodes/core`: schema copy synced; `countryOf`, `LOCATION_BASES`, `basisRank`, `servingLocations`, `residencyCodes`; the advisor's region policy also rejects offerings served outside the required region; MCP filters `region`, `location_basis`, `exclude_lineage` and a new `find_locations` tool.
+- `@opennodes/registry`:
+  - `GET /v0/locations` (`?format=csv`) and the "Where models run" page in the web app;
+  - curated seed `src/data/locations-ca.json` (14 Canadian providers, checked 2026-11-02), imported at start unless `ONP_LOCATION_SEEDS=0`;
+  - per-provider OpenRouter importer (`openrouter-providers` re-import source, `POST /v0/import/openrouter-providers`) that keeps the headquarters, datacentres and region tags providers declare to OpenRouter, as `claimed`;
+  - `POST /v0/import/locations`; `/v0/nodes` lists node locations; the MCP endpoint serves `find_locations`.
+- `@opennodes/cli`: the stdio MCP server proxies `find_locations`.
+- Not built yet: the `measured` basis. It needs probe points inside each region under test; the hosted registry probes from the EU.
+- Tests: `impl/test/locations.test.js` (6 tests).
+
 ## Draft 0.1, revision 2 — 2026-10-31
 
 Compatibility and editorial fixes found while profiling ONP for a sovereign, closed-catalogue deployment. Cards written for revision 1 stay valid. The only exception is an `ephemeral` retention without a bound, and no published card uses that.

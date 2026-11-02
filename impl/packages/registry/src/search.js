@@ -1,5 +1,5 @@
 // Offering search + transparent ranking (ONP-3 §5–6).
-import { residencyWithin } from '@opennodes/core';
+import { residencyWithin, residencyCodes, servingLocations, basisRank } from '@opennodes/core';
 
 /** BCP 47 prefix match (ONP-3 §5): `fr` matches `fr` and `fr-CA`; `fr-CA` matches only itself. */
 export const langMatches = (tag, wanted) => {
@@ -48,6 +48,11 @@ export async function collectOfferings(store) {
         pricing: offering.pricing,
         data_policy: offering.data_policy ?? null,
         node_regions: card.node?.regions ?? [],
+        // Live serving sites with their evidence basis (ONP-2 §3a), and the codes a
+        // residency check must cover (pins + sites, else node regions).
+        locations: servingLocations(offering, card),
+        residency: residencyCodes(offering, card),
+        operator_country: card.node?.operator?.country ?? null,
         // Allocated hardware for THIS offering (offering-level override wins over the
         // node-level description) — same artifact on different vendors runs on different
         // silicon, and clients deserve to see which. Always basis-labeled, never measured.
@@ -86,11 +91,18 @@ export async function searchOfferingsPaged(store, query) {
   if (q('max_input_price')) items = items.filter((o) => (o.pricing.input_per_mtok ?? Infinity) <= Number(q('max_input_price')));
   if (q('scheme')) items = items.filter((o) => o.pricing.schemes.includes(q('scheme')));
   if (q('region')) {
-    // Residency: the offering's pinning, else the node's regions, must lie entirely inside.
-    items = items.filter((o) => {
-      const pins = o.data_policy?.region_pinning ?? [];
-      return residencyWithin(pins.length ? pins : o.node_regions, q('region'));
-    });
+    // Residency: every pinned region and live serving site (else the node's regions) inside.
+    items = items.filter((o) => residencyWithin(o.residency, q('region')));
+  }
+  if (q('location_basis')) {
+    // Evidence: the offering has serving sites and every one is at least this well supported.
+    const min = basisRank(q('location_basis'));
+    items = items.filter((o) => o.locations.length && o.locations.every((l) => basisRank(l.basis) >= min));
+  }
+  if (q('exclude_lineage')) {
+    // Origin policy on declared lineage; offerings that declare none are kept (unknown).
+    const banned = q('exclude_lineage').toUpperCase().split(',');
+    items = items.filter((o) => !(o.model.lineage_origins ?? []).some((c) => banned.includes(c)));
   }
   if (q('tier')) {
     const order = ['unverified', 'community', 'verified', 'attested'];

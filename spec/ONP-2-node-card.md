@@ -54,6 +54,39 @@ The Node Card is the self-description document of an AI Node. It is the unit reg
 - `did` — OPTIONAL W3C DID; `did:web` RECOMMENDED so the DID resolves through the same origin that hosts the card.
 - `regions` (and `data_policy.region_pinning`, §5) — region codes SHOULD be ISO 3166-1 alpha-2 (`CA`, `DE`), ISO 3166-2 subdivisions (`CA-QC`), or the ISO-reserved `EU`. Matching is case-insensitive, and a code **contains** its subdivisions: a requirement of `CA` is met by `CA-QC`, but a requirement of `CA-QC` is not met by `CA`. Free-form legacy values (`eu-central`) are tolerated and follow the same rule (`eu` contains `eu-central`), but new cards SHOULD use ISO codes.
 
+## 3a. `locations` — where serving happens, and how we know
+
+`regions` says where a node operates. `locations` (OPTIONAL) says **where requests are actually processed**, one entry per site, each with the evidence behind it. It answers the question buyers ask first ("which models run in Canada, and who says so?"), which no other public catalogue answers today.
+
+```json
+"node": {
+  "id": "ca.example-cloud.inference",
+  "locations": [
+    {"region": "CA-QC", "site": "Montréal (MTL-2)", "status": "live", "basis": "documented",
+     "source": "https://example-cloud.ca/datacentres", "checked": "2026-11-02"},
+    {"region": "CA-BC", "site": "Kamloops", "status": "planned", "basis": "claimed",
+     "facility_operator": "Example Colo Inc."}
+  ]
+}
+```
+
+- `region` — REQUIRED; a region code under the rules of §3, as specific as the operator can state (`CA-QC` rather than `CA`).
+- `site` — city or facility. `facility_operator` — who runs the facility or the serving hardware, when that is not the node operator (a colocation or inference partner).
+- `status` — core values `live` | `planned`. A missing status means `live`. Clients treat an unknown value as `planned`, so it never counts as serving.
+- `basis` — REQUIRED; how far the location can be trusted, weakest first:
+
+  | Value | Meaning | Set by |
+  |---|---|---|
+  | `claimed` | The operator (or a third party) says so | Card, importer |
+  | `documented` | The operator's own dated public page says so; `source` and `checked` are REQUIRED | Card, importer, curator |
+  | `measured` | Registry probes are consistent with the claim (for example round-trip times from probe points in that region) | **Registries only** |
+  | `attested` | A signed statement backed by an audit or a contract, such as an ONP-7 sovereignty block | Card, with its attestation |
+
+  A card MUST NOT state `measured`; registries treat it as `claimed`. Unknown values count as `claimed`. As with performance claims (§5), registries and clients MUST NOT present a weaker basis as a stronger one.
+- `source`, `checked` (`YYYY-MM-DD`), `note` — the evidence, when it was last looked at, and a short remark.
+- **Offering override.** An offering MAY carry its own `locations`, which replaces the node's for that offering (one model may run only at one site). An **empty list means "unknown"**: the offering does not inherit the node's sites, and no residency requirement is met by it.
+- **Residency** combines both declarations: a request's region requirement is met only when every `data_policy.region_pinning` code **and** every live serving location lie inside it (ONP-3 §5). A node that declares neither falls back to its `regions`.
+
 ## 4. `endpoints`
 
 ```json
@@ -140,6 +173,8 @@ Field rules:
 
   A node MUST NOT declare a capability it does not implement. Stage B spot-checks declared capabilities (ONP-3 §4a).
 - `model.artifact` — a URI linking the served weights to a public artifact record where one exists: `hf:{org}/{repo}` (Hugging Face model card) or `urn:proprietary:{vendor}:{model}` for closed models (e.g. `urn:proprietary:openai:gpt-5`). This is the endpoint↔artifact join.
+- `model.lineage_origins` (OPTIONAL) — the origin country (ISO 3166-1 alpha-2) of **every** developer in the model's derivation chain: base models, merge sources, distillation teachers. A fine-tune of a Chinese base model lists `CN` even if the fine-tuner is elsewhere. It is a claim unless a profile attests it (ONP-7 provenance carries the verified version). Clients apply origin policies to every entry; an offering that declares no lineage is *unknown*, not clean.
+- `locations` (OPTIONAL) — where this offering is served, overriding the node's (§3a).
 - Every performance or quality number carries `basis`: **`claimed`** (self-reported) or **`attested`** (backed by a linked Verifiable Credential from an attester). Registries and clients MUST NOT present claimed values as verified.
 - `serving.languages` — declared language coverage with coarse grades (`native` | `strong` | `basic`); per-language eval attestations upgrade a grade to `attested`. `lang` is a BCP 47 tag (`en`, `fr`, `fr-CA`, `pt-BR`); a search for `fr` also matches `fr-CA`. This powers the `lang=` search filter (ONP-3 §5) — language-optimal routing is a first-class selection criterion, not an afterthought.
 - `serving.expected_ttft_ms` / `serving.expected_tps` — what **one stream** experiences: time to first token, and decode rate in output tokens per second for a single request.

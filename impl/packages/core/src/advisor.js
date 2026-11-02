@@ -239,10 +239,10 @@ export function recommend(offerings, features, policy = {}) {
       if (!dp || dp.training_on_inputs === true || (dp.retention && dp.retention !== 'none')) return reject('data_policy');
     }
     if (policy.region) {
-      // Unpinned offerings (e.g. local/LAN models) pass; pinned ones must lie entirely
-      // inside the required region (ONP-2 §3 containment).
-      const pins = o.data_policy?.region_pinning ?? [];
-      if (pins.length && !residencyWithin(pins, policy.region)) return reject('region');
+      // Offerings with neither pinning nor known locations (e.g. local/LAN models) pass;
+      // the others must lie entirely inside the required region (ONP-2 §3 containment).
+      const codes = [...(o.data_policy?.region_pinning ?? []), ...(o.locations ?? []).map((l) => l.region)];
+      if (codes.length && !residencyWithin(codes, policy.region)) return reject('region');
     }
     return true;
   });
