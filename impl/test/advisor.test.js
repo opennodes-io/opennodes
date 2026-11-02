@@ -123,6 +123,8 @@ test('jurisdiction: EEA filter in the advisor and in registry search; local alwa
   assert.equal(jurisdictionCountries('eu').has('NO'), true, 'eu is an alias for the EEA');
   assert.equal(jurisdictionCountries('eea').has('GB'), false);
   assert.deepEqual([...jurisdictionCountries('de, fi')], ['DE', 'FI']);
+  assert.deepEqual([...jurisdictionCountries('uk')], ['GB'], 'UK is the common name for GB');
+  assert.equal(inJurisdiction({ jurisdiction: { country: 'UK' } }, 'GB'), true, 'a card declaring UK counts as GB');
   assert.equal(inJurisdiction({ jurisdiction: { country: 'pl' } }, 'eea'), true);
   assert.equal(inJurisdiction({ jurisdiction: { country: null } }, 'eea'), false, 'undeclared counts as outside');
   assert.equal(inJurisdiction({}, null), true, 'no filter, no restriction');
@@ -178,6 +180,7 @@ test('auto model names: presets, EU/EEA and any country code', async (t) => {
   assert.deepEqual(parseAutoModel('auto-eu'), { preset: null, jurisdiction: 'eea' });
   assert.deepEqual(parseAutoModel('auto-CA'), { preset: null, jurisdiction: 'CA' });
   assert.deepEqual(parseAutoModel('onp/auto-ca', 'onp/'), { preset: null, jurisdiction: 'CA' });
+  assert.deepEqual(parseAutoModel('auto-uk'), { preset: null, jurisdiction: 'GB' });
   assert.equal(parseAutoModel('auto-canada'), null);
   assert.equal(parseAutoModel('autopilot'), null);
   assert.equal(parseAutoModel('llama3.2:1b'), null);

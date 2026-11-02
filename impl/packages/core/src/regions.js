@@ -1,10 +1,15 @@
 // Region containment (ONP-2 §3): case-insensitive codes where a code contains its own
 // subdivisions, so "CA" contains "CA-QC" and legacy "eu" contains "eu-central".
 
+/** ISO 3166-1 alpha-2 for a country code; "UK" is the common name for GB (ISO reserves UK). */
+export const isoCountry = (c) => { const u = String(c).trim().toUpperCase(); return u === 'UK' ? 'GB' : u; };
+/** A region code with its country part in ISO form: "uk-lnd" -> "gb-lnd". */
+const isoRegion = (code) => String(code).trim().toLowerCase().replace(/^uk(?=-|$)/, 'gb');
+
 /** Is region `code` inside `required`? */
 export function regionWithin(code, required) {
-  const c = String(code).toLowerCase();
-  const r = String(required).toLowerCase();
+  const c = isoRegion(code);
+  const r = isoRegion(required);
   return c === r || c.startsWith(`${r}-`);
 }
 
@@ -17,7 +22,7 @@ export function residencyWithin(codes, required) {
 }
 
 /** The country part of a region code: "CA-QC" -> "CA", "eu-central" -> "EU". */
-export const countryOf = (code) => String(code).split('-')[0].toUpperCase();
+export const countryOf = (code) => isoCountry(String(code).split('-')[0]);
 
 // Location evidence (ONP-2 §3a), weakest first. Unknown values count as claimed.
 export const LOCATION_BASES = ['claimed', 'documented', 'measured', 'attested'];

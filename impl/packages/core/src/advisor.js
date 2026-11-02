@@ -3,7 +3,7 @@
 // client-side (gateway, stdio MCP, SDK) as well as in the registry; a client can send
 // only the extracted *features* to a registry and never the prompt (privacy by design).
 import { estimateBounds, round6 } from './pricing.js';
-import { residencyWithin } from './regions.js';
+import { residencyWithin, isoCountry } from './regions.js';
 
 /* ------------------------------------------------------------------ features */
 
@@ -386,7 +386,7 @@ export const EEA_COUNTRIES = Object.freeze([
 /** Expand a jurisdiction filter: 'eea' (alias 'eu') or a comma list of country codes. */
 export function jurisdictionCountries(spec) {
   if (!spec) return null;
-  const parts = String(spec).split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
+  const parts = String(spec).split(',').map(isoCountry).filter(Boolean);
   return new Set(parts.flatMap((p) => (p === 'EEA' || p === 'EU' ? EEA_COUNTRIES : [p])));
 }
 
@@ -400,9 +400,9 @@ export function inJurisdiction(offering, spec) {
   const allowed = jurisdictionCountries(spec);
   if (!allowed) return true;
   const country = offering.jurisdiction?.country;
-  if (!country || !allowed.has(String(country).toUpperCase())) return false;
+  if (!country || !allowed.has(isoCountry(country))) return false;
   const loc = offering.jurisdiction?.location;
-  if (loc?.server_country && !loc.cdn && loc.verdict !== 'inconsistent' && !allowed.has(String(loc.server_country).toUpperCase())) return false;
+  if (loc?.server_country && !loc.cdn && loc.verdict !== 'inconsistent' && !allowed.has(isoCountry(loc.server_country))) return false;
   return true;
 }
 
@@ -453,7 +453,7 @@ export function parseAutoModel(name, prefix = '') {
   const tag = rest.slice(1).toLowerCase();
   if (tag in AUTO_PRESETS) return { preset: AUTO_PRESETS[tag], jurisdiction: null };
   if (tag === 'eu' || tag === 'eea') return { preset: null, jurisdiction: 'eea' };
-  if (/^[a-z]{2}$/.test(tag)) return { preset: null, jurisdiction: tag.toUpperCase() };
+  if (/^[a-z]{2}$/.test(tag)) return { preset: null, jurisdiction: isoCountry(tag) };
   return null;
 }
 

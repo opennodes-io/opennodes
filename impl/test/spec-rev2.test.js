@@ -52,6 +52,9 @@ test('region containment: a code contains its subdivisions, case-insensitively (
   assert.equal(regionWithin('ca-qc', 'CA'), true);
   assert.equal(regionWithin('CA', 'CA-QC'), false);
   assert.equal(regionWithin('eu-central', 'EU'), true);
+  assert.equal(regionWithin('GB-LND', 'UK'), true, 'UK is the common name for GB');
+  assert.equal(regionWithin('uk-lnd', 'GB'), true);
+  assert.equal(regionWithin('UKR', 'UK'), false, 'only the country part is renamed');
   assert.equal(regionWithin('CAN', 'CA'), false);
   assert.equal(residencyWithin(['CA-QC', 'CA-ON'], 'CA'), true);
   assert.equal(residencyWithin(['CA-QC', 'US'], 'CA'), false, 'one location outside breaks residency');
