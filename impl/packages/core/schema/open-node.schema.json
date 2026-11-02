@@ -117,7 +117,17 @@
         "basis": { "$ref": "#/$defs/token", "description": "Core values, weakest first: claimed, documented, measured, attested (ONP-2 §3a). Cards state claimed, documented or attested; measured is set only by a registry. Unknown values count as claimed." },
         "source": { "type": "string", "format": "uri", "description": "Page or document that supports the location. REQUIRED when basis is documented." },
         "checked": { "type": "string", "format": "date", "description": "Date the source was last checked. REQUIRED when basis is documented." },
-        "note": { "type": "string", "maxLength": 500 }
+        "note": { "type": "string", "maxLength": 500 },
+        "geo": {
+          "type": "object",
+          "required": ["lat", "lon", "precision"],
+          "description": "A WGS 84 point for maps and distance queries (ONP-2 §3a). It SHOULD NOT be more precise than the city unless the operator publishes the facility address.",
+          "properties": {
+            "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+            "lon": { "type": "number", "minimum": -180, "maximum": 180 },
+            "precision": { "$ref": "#/$defs/token", "description": "Core values, finest first: facility, city, region, country. Unknown values count as country." }
+          }
+        }
       },
       "allOf": [
         { "if": { "properties": { "basis": { "const": "documented" } }, "required": ["basis"] },

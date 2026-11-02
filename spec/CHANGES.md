@@ -10,6 +10,7 @@ No public catalogue says which models run in which country's datacentres, or how
 | L2 | ONP-2 §5, schema | New optional `model.lineage_origins`: origin countries of every developer in the derivation chain, so clients can apply origin policies |
 | L3 | ONP-3 §5 | Residency (`region=`) covers pinned regions **and** live serving locations; new `location_basis=` and `exclude_lineage=` filters; offering summaries carry `locations` and `residency` |
 | L4 | ONP-3 §5c, §2 | New `GET /v0/locations`: serving sites by country with evidence and models, from cards and curated seeds, with JSON and CSV output and an `unlocated_offerings` count |
+| L5 | ONP-2 §3a, ONP-3 §5c, schema | GIS: optional location `geo` point (`lat`, `lon`, `precision` facility/city/region/country; no finer than the city unless the address is public); registries mark derived region or country points; `/v0/locations` adds `near=` / `within_km=` distance queries and `format=geojson` (RFC 7946) |
 
 ### Reference implementation changes
 
@@ -18,10 +19,12 @@ No public catalogue says which models run in which country's datacentres, or how
   - `GET /v0/locations` (`?format=csv`) and the "Where models run" page in the web app;
   - curated seed `src/data/locations-ca.json` (14 Canadian providers, checked 2026-11-02), imported at start unless `ONP_LOCATION_SEEDS=0`;
   - per-provider OpenRouter importer (`openrouter-providers` re-import source, `POST /v0/import/openrouter-providers`) that keeps the headquarters, datacentres and region tags providers declare to OpenRouter, as `claimed`;
-  - `POST /v0/import/locations`; `/v0/nodes` lists node locations; the MCP endpoint serves `find_locations`.
+  - `POST /v0/import/locations`; `/v0/nodes` lists node locations; the MCP endpoint serves `find_locations`;
+  - GIS: points on every site (city points for the 18 named Canadian seed sites, derived points otherwise), `near=` / `within_km=`, `format=geojson`, and an interactive map on the "Where models run" page (Leaflet 1.9.4 from cdnjs with subresource integrity, loaded only on that page; basemap from `/v0/health` `map`, OpenStreetMap by default, `ONP_MAP_TILES` to change or `off` to disable).
+- `@opennodes/core`: `geo.js` with `pointFor`, `distanceKm`, `parsePoint`, `REGION_POINTS`, `GEO_PRECISIONS`; `find_locations` takes `near` and `within_km`.
 - `@opennodes/cli`: the stdio MCP server proxies `find_locations`.
-- Not built yet: the `measured` basis. It needs probe points inside each region under test; the hosted registry probes from the EU.
-- Tests: `impl/test/locations.test.js` (6 tests).
+- Not built yet: the `measured` basis. It needs probe points inside each region under test; the hosted registry probes from the EU. With `geo` in place, a probe's round-trip time can now be checked against the distance to the claimed site.
+- Tests: `impl/test/locations.test.js` (8 tests).
 
 ## Draft 0.1, revision 2 — 2026-10-31
 

@@ -1,9 +1,11 @@
 // Where models run (ONP-2 §3a, ONP-3 §5c): location fields with an evidence basis, the curated
 // seed, the per-provider OpenRouter importer, residency search over serving sites, and the
-// /v0/locations report (JSON, CSV, MCP).
+// /v0/locations report (JSON, CSV, GeoJSON, MCP), map points and distance queries.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateCard, servingLocations, residencyCodes, basisRank } from '@opennodes/core';
+import {
+  validateCard, servingLocations, residencyCodes, basisRank, pointFor, distanceKm, parsePoint,
+} from '@opennodes/core';
 import { startRegistry } from '@opennodes/registry';
 
 const card = (over = {}, offeringOver = {}) => ({
@@ -168,4 +170,57 @@ test('MCP find_locations serves the same report', async (t) => {
   // Documented Cohere models in Canada: Embed and Rerank on Bedrock in Montréal, not Command.
   assert.deepEqual([...new Set(report.sites.map((s) => s.node_id))], ['import.seed.ca.aws-bedrock']);
   assert.ok(report.sites.every((s) => s.country === 'CA' && s.models.every((m) => /cohere/i.test(m.name))));
+});
+
+const MONTREAL = { lat: 45.5019, lon: -73.5674 };
+
+test('geo: declared points win, region and country points are derived; distance and parsing', () => {
+  assert.deepEqual(pointFor({ region: 'CA-QC', geo: { ...MONTREAL, precision: 'city' } }), { ...MONTREAL, precision: 'city', derived: false });
+  assert.deepEqual(pointFor({ region: 'CA-QC' }), { lat: 52.94, lon: -73.55, precision: 'region', derived: true });
+  assert.equal(pointFor({ region: 'CA-XX' }).precision, 'country');     // unknown subdivision: its country
+  assert.equal(pointFor({ region: 'ZZ' }), null);
+  assert.equal(pointFor({ region: 'CA', geo: { ...MONTREAL, precision: 'street' } }).precision, 'country');
+  const toronto = { lat: 43.6532, lon: -79.3832 };
+  assert.ok(Math.abs(distanceKm(MONTREAL, toronto) - 504) < 5);
+  assert.deepEqual(parsePoint('45.5,-73.57'), { lat: 45.5, lon: -73.57 });
+  assert.equal(parsePoint('91,0'), null);
+  assert.equal(parsePoint('montreal'), null);
+  assert.deepEqual(validateCard(card({ node: { ...card().node, locations: [site({ geo: { ...MONTREAL, precision: 'city' } })] } })), []);
+  assert.ok(validateCard(card({ node: { ...card().node, locations: [site({ geo: { lat: 120, lon: 0, precision: 'city' } })] } })).length > 0);
+});
+
+test('/v0/locations: near + within_km, GeoJSON (RFC 7946 order), and the map setting', async (t) => {
+  const registry = await startRegistry({ locationSeeds: true });
+  t.after(() => registry.close());
+
+  const near = await get(registry.origin, '/v0/locations?near=45.5019,-73.5674&within_km=300');
+  const regions = near.sites.map((s) => s.region);
+  assert.ok(near.sites.length >= 6 && regions.every((r) => r === 'CA-QC'));   // Montréal, Saint-Jérôme, Beauharnois, Québec City, Lévis
+  assert.ok(near.sites[0].distance_km <= 1);
+  assert.ok(near.sites.every((s, i) => i === 0 || near.sites[i - 1].distance_km <= s.distance_km));
+  assert.ok(!near.sites.some((s) => s.geo.precision === 'country'));          // ThinkOn's "CA" is not 0 km away
+  const sorted = await get(registry.origin, '/v0/locations?country=CA&near=49.28,-123.12');
+  assert.equal(sorted.sites[0].site, 'Vancouver');
+  assert.equal((await fetch(`${registry.origin}/v0/locations?near=north`)).status, 400);
+  assert.equal((await fetch(`${registry.origin}/v0/locations?within_km=50`)).status, 400);
+
+  const res = await fetch(`${registry.origin}/v0/locations?country=CA&format=geojson`);
+  assert.match(res.headers.get('content-type'), /^application\/geo\+json/);
+  const fc = await res.json();
+  assert.equal(fc.type, 'FeatureCollection');
+  assert.equal(fc.unmapped, 0);
+  const mtl = fc.features.find((f) => f.properties.provider.startsWith('Amazon Bedrock') && f.properties.region === 'CA-QC');
+  assert.deepEqual(mtl.geometry, { type: 'Point', coordinates: [-73.5674, 45.5019] });   // [lon, lat]
+  assert.equal(mtl.properties.precision, 'city');
+  assert.match(mtl.properties.models, /Claude 3 Haiku; /);
+  const thinkon = fc.features.find((f) => f.properties.provider === 'ThinkOn');
+  assert.deepEqual([thinkon.properties.precision, thinkon.properties.derived], ['country', true]);
+
+  const csv = await (await fetch(`${registry.origin}/v0/locations?country=CA&format=csv`)).text();
+  assert.match(csv.split('\n')[0], /,lat,lon,precision,derived,distance_km$/);
+
+  assert.match((await get(registry.origin, '/v0/health')).map.tiles, /openstreetmap/);
+  const noMap = await startRegistry({ mapTiles: null });
+  t.after(() => noMap.close());
+  assert.equal((await get(noMap.origin, '/v0/health')).map, null);
 });

@@ -94,6 +94,11 @@
   .chip.s-planned { color: var(--warn); border-color: var(--warn); }
   .wmodels { display: flex; flex-wrap: wrap; gap: 0.25rem 0.6rem; font-size: 0.8rem; }
   .wmodels .lin { font-family: "IBM Plex Mono", monospace; font-size: 0.6rem; color: var(--warn); }
+  #w-map { height: 440px; margin-bottom: 0.4rem; overflow: hidden; }
+  #w-map .leaflet-popup-content { font-family: "Archivo", "Helvetica Neue", Arial, sans-serif; font-size: 0.8rem; line-height: 1.4; margin: 0.6rem 0.8rem; }
+  #w-map .leaflet-popup-content .site + .site { border-top: 1px solid #D6DEE3; margin-top: 0.45rem; padding-top: 0.45rem; }
+  .wlegend { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; font-size: 0.74rem; color: var(--muted); margin: 0 0 0.8rem; }
+  .wlegend .dot { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 50%; border: 2px solid currentColor; vertical-align: -0.1rem; margin-right: 0.3rem; }
   .micro { font-family: "IBM Plex Mono", monospace; font-size: 0.58rem; font-weight: 600; letter-spacing: 0.04em; }
   .m-measured { color: var(--good); } .m-claimed { color: var(--faint); font-weight: 400; } .m-warn { color: var(--warn); }
   .prov { font-family: "IBM Plex Mono", monospace; font-size: 0.64rem; color: var(--faint); }
@@ -323,7 +328,7 @@
 <!-- ================= WHERE MODELS RUN ================= -->
 <div id="view-where" hidden>
   <div style="display:flex; align-items:baseline; gap:0.9rem; flex-wrap:wrap"><h1>Where models run</h1><span class="counts" id="w-counts"></span></div>
-  <p class="sub">Every known serving site by country, with the models it serves and how far each location can be trusted: <b>claimed</b> (the provider or a news report says so), <b>documented</b> (the provider's own dated page), <b>measured</b> (registry probes), <b>attested</b> (a signed card backed by an audit). Built from node cards, imported catalogs and curated seeds; <a href="https://github.com/opennodes-io/opennodes/tree/main/impl/packages/registry/src/data" target="_blank" rel="noopener">corrections welcome</a>. Also as <a id="w-json" href="/v0/locations">JSON</a> and <a id="w-csv" href="/v0/locations?format=csv">CSV</a>.</p>
+  <p class="sub">Every known serving site by country, with the models it serves and how far each location can be trusted: <b>claimed</b> (the provider or a news report says so), <b>documented</b> (the provider's own dated page), <b>measured</b> (registry probes), <b>attested</b> (a signed card backed by an audit). Built from node cards, imported catalogs and curated seeds; <a href="https://github.com/opennodes-io/opennodes/tree/main/impl/packages/registry/src/data" target="_blank" rel="noopener">corrections welcome</a>. Also as <a id="w-json" href="/v0/locations">JSON</a>, <a id="w-csv" href="/v0/locations?format=csv">CSV</a> and <a id="w-geojson" href="/v0/locations?format=geojson">GeoJSON</a> for QGIS, ArcGIS or any web map.</p>
   <div class="toolbar">
     <select id="w-country"><option value="">every country</option></select>
     <select id="w-basis"><option value="">any evidence</option><option value="documented">documented or better</option><option value="measured">measured or better</option><option value="attested">attested</option></select>
@@ -332,6 +337,15 @@
     <input type="text" id="w-lineage" placeholder="exclude lineage, e.g. CN" style="max-width:12rem">
   </div>
   <div class="panel pad" id="w-summary" style="margin-bottom:0.8rem"></div>
+  <div class="panel" id="w-map" hidden></div>
+  <div class="wlegend" id="w-legend" hidden>
+    <span><span class="dot" style="color:var(--good); background:var(--good)"></span>measured or attested</span>
+    <span><span class="dot" style="color:var(--accent); background:var(--accent)"></span>documented</span>
+    <span><span class="dot" style="color:var(--faint); background:var(--faint)"></span>claimed</span>
+    <span><span class="dot" style="color:var(--muted)"></span>hollow: approximate point, only the region or country is known</span>
+    <span><span class="dot" style="color:var(--warn); border-style:dashed"></span>dashed: planned</span>
+    <span>Size: models served. Several sites in one city share a marker.</span>
+  </div>
   <div class="panel tablewrap" id="w-table"></div>
 </div>
 
@@ -1769,8 +1783,10 @@ async function loadWhere() {
   const q = qs.toString() ? '?' + qs : '';
   $('#w-json').href = '/v0/locations' + q;
   $('#w-csv').href = '/v0/locations' + (q ? q + '&' : '?') + 'format=csv';
+  $('#w-geojson').href = '/v0/locations' + (q ? q + '&' : '?') + 'format=geojson';
   try {
     const r = await api('/v0/locations' + q);
+    renderWhereMap(r.sites).catch((e) => { $('#w-map').hidden = true; $('#w-legend').hidden = true; console.warn('map:', e.message); });
     if (!whereCountriesLoaded && !q) {
       whereCountriesLoaded = true;
       $('#w-country').innerHTML = '<option value="">every country</option>'
@@ -1801,6 +1817,75 @@ async function loadWhere() {
     </tr>`).join('') + '</tbody></table>' : '<p class="sub" style="padding:0.9rem 1rem; margin:0">No sites match these filters.</p>';
   } catch (e) { $('#w-table').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
 }
+/* Map: Leaflet is fetched only when this page opens (no CDN or tile requests elsewhere in the
+   app), pinned by version and integrity. Tiles come from the registry's /v0/health `map`
+   setting; when it is null the map stays hidden and the table carries everything. */
+const LEAFLET = {
+  css: ['https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css', 'sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw=='],
+  js: ['https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js', 'sha512-puJW3E/qXDqYp9IfhAI54BJEaWIfloJ7JWs7OeD5i6ruC9JZL1gERT1wjtwXFlh7CjE7ZJ+/vcRZRkIYIb6p4g=='],
+};
+let leafletReady = null, whereMap = null, whereLayer = null, mapConfig;
+function loadLeaflet() {
+  leafletReady ??= new Promise((resolve, reject) => {
+    const css = Object.assign(document.createElement('link'), { rel: 'stylesheet', href: LEAFLET.css[0], integrity: LEAFLET.css[1], crossOrigin: 'anonymous', referrerPolicy: 'no-referrer' });
+    const js = Object.assign(document.createElement('script'), { src: LEAFLET.js[0], integrity: LEAFLET.js[1], crossOrigin: 'anonymous', referrerPolicy: 'no-referrer' });
+    js.onload = () => resolve(window.L);
+    js.onerror = () => { leafletReady = null; reject(new Error('map library did not load')); };
+    document.head.append(css, js);
+  });
+  return leafletReady;
+}
+const BASIS_ORDER = ['claimed', 'documented', 'measured', 'attested'];
+async function renderWhereMap(sites) {
+  if (mapConfig === undefined) mapConfig = (await api('/v0/health')).map ?? null;
+  if (!mapConfig) return;
+  const L = await loadLeaflet();
+  $('#w-map').hidden = false; $('#w-legend').hidden = false;
+  const css = getComputedStyle(document.documentElement);
+  const color = { claimed: css.getPropertyValue('--faint').trim(), documented: css.getPropertyValue('--accent').trim(),
+    measured: css.getPropertyValue('--good').trim(), attested: css.getPropertyValue('--good').trim(), planned: css.getPropertyValue('--warn').trim() };
+  if (!whereMap) {
+    whereMap = L.map('w-map', { worldCopyJump: true, scrollWheelZoom: false }).setView([50, -95], 3);
+    L.tileLayer(mapConfig.tiles, { attribution: mapConfig.attribution, maxZoom: mapConfig.max_zoom ?? 19 }).addTo(whereMap);
+    whereLayer = L.layerGroup().addTo(whereMap);
+  }
+  // The container was hidden until now: let layout give it a size before fitting bounds.
+  await new Promise((r) => requestAnimationFrame(() => r()));
+  whereMap.invalidateSize();
+  whereLayer.clearLayers();
+  // One marker per point: sites in the same city (Montréal: AWS, Google, Oracle) share it.
+  const groups = new Map();
+  for (const s of sites.filter((x) => x.geo)) {
+    const key = s.geo.lat.toFixed(3) + ',' + s.geo.lon.toFixed(3);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
+  }
+  const bounds = [];
+  for (const group of groups.values()) {
+    const { lat, lon } = group[0].geo;
+    const best = group.map((s) => s.basis).sort((a, b) => BASIS_ORDER.indexOf(b) - BASIS_ORDER.indexOf(a))[0];
+    const derived = group.every((s) => s.geo.derived);
+    const planned = group.every((s) => s.status === 'planned');
+    const models = group.reduce((n, s) => n + s.models.length, 0);
+    const c = planned ? color.planned : (color[best] || color.claimed);
+    const marker = L.circleMarker([lat, lon], {
+      radius: Math.min(22, 6 + Math.sqrt(models) * 2.2), color: c, weight: 2,
+      fillColor: c, fillOpacity: derived ? 0 : 0.55, dashArray: planned ? '4 3' : null,
+    });
+    marker.bindPopup(group.map((s) => `<div class="site">
+      <b>${esc(s.provider)}</b>${s.operator_country ? ` (${esc(s.operator_country)})` : ''}<br>
+      ${esc(s.site ?? 'site not named')} · <span class="mono">${esc(s.region)}</span> · ${esc(s.status)} · ${basisChip(s.basis)}
+      ${s.geo.derived ? `<br><i style="color:#5C6E7E">Approximate: only the ${esc(s.geo.precision)} is known</i>` : ''}
+      <br>${s.models.length ? esc(s.models.slice(0, 8).map((m) => m.name).join(', ')) + (s.models.length > 8 ? ` +${s.models.length - 8} more` : '') : `<span style="color:#5C6E7E">${esc(s.models_note ?? 'no models listed')}</span>`}
+      ${s.source === 'seed' ? '' : `<br><a href="#/node/${encodeURIComponent(s.node_id)}">node card</a>`}${s.source_url ? ` · <a href="${esc(s.source_url)}" target="_blank" rel="noopener">source</a>` : ''}
+    </div>`).join(''), { maxWidth: 320, maxHeight: 320 });
+    marker.bindTooltip(`${group.length} site${group.length > 1 ? 's' : ''} · ${models} models`);
+    marker.addTo(whereLayer);
+    bounds.push([lat, lon]);
+  }
+  if (bounds.length) whereMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 6 });
+}
+
 for (const id of ['w-country', 'w-basis', 'w-status']) $('#' + id).addEventListener('change', loadWhere);
 let whereDebounce;
 for (const id of ['w-model', 'w-lineage']) $('#' + id).addEventListener('input', () => { clearTimeout(whereDebounce); whereDebounce = setTimeout(loadWhere, 250); });

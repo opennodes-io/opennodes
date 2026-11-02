@@ -63,7 +63,8 @@ The Node Card is the self-description document of an AI Node. It is the unit reg
   "id": "ca.example-cloud.inference",
   "locations": [
     {"region": "CA-QC", "site": "Montréal (MTL-2)", "status": "live", "basis": "documented",
-     "source": "https://example-cloud.ca/datacentres", "checked": "2026-11-02"},
+     "source": "https://example-cloud.ca/datacentres", "checked": "2026-11-02",
+     "geo": {"lat": 45.5019, "lon": -73.5674, "precision": "city"}},
     {"region": "CA-BC", "site": "Kamloops", "status": "planned", "basis": "claimed",
      "facility_operator": "Example Colo Inc."}
   ]
@@ -84,6 +85,7 @@ The Node Card is the self-description document of an AI Node. It is the unit reg
 
   A card MUST NOT state `measured`; registries treat it as `claimed`. Unknown values count as `claimed`. As with performance claims (§5), registries and clients MUST NOT present a weaker basis as a stronger one.
 - `source`, `checked` (`YYYY-MM-DD`), `note` — the evidence, when it was last looked at, and a short remark.
+- `geo` (OPTIONAL) — a WGS 84 point for maps and distance queries: `lat`, `lon` (decimal degrees) and `precision`, with core values, finest first, `facility` | `city` | `region` | `country` (unknown values count as `country`). Operators SHOULD NOT publish a point finer than the city unless they already publish the facility address: datacentre locations can be security-sensitive. The point is a claim with the same `basis` as the location. When a location has no `geo`, a registry MAY show an approximate point for its region or country, and MUST mark it as derived with that coarser precision.
 - **Offering override.** An offering MAY carry its own `locations`, which replaces the node's for that offering (one model may run only at one site). An **empty list means "unknown"**: the offering does not inherit the node's sites, and no residency requirement is met by it.
 - **Residency** combines both declarations: a request's region requirement is met only when every `data_policy.region_pinning` code **and** every live serving location lie inside it (ONP-3 §5). A node that declares neither falls back to its `regions`.
 

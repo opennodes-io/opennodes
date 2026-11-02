@@ -139,7 +139,9 @@ The advisor is deliberately deterministic and reproducible: same catalog, same f
 &status=live         // live | planned; omit for both
 &model=gpt-oss       // substring of a model name or artifact; keeps only sites serving a match
 &exclude_lineage=CN  // drops models whose declared lineage includes these countries
-&format=csv          // one row per site and model
+&near=45.50,-73.57   // a WGS 84 point: adds distance_km to each site, nearest first
+&within_km=300       // with near: great-circle radius; country-level points never match
+&format=csv          // one row per site and model; or format=geojson (RFC 7946)
 ```
 
 ```json
@@ -148,6 +150,7 @@ The advisor is deliberately deterministic and reproducible: same catalog, same f
  "sites": [{"node_id": "…", "provider": "…", "operator_country": "US", "tier": "unverified", "source": "import",
             "country": "CA", "region": "CA-QC", "site": "Montréal (ca-central-1)", "status": "live",
             "basis": "documented", "source_url": "https://…", "checked": "2026-11-02",
+            "geo": {"lat": 45.5019, "lon": -73.5674, "precision": "city", "derived": false},
             "models": [{"offering_id": "…", "name": "…", "artifact": "…", "lineage_origins": ["US"]}],
             "models_note": null}]}
 ```
@@ -155,6 +158,8 @@ The advisor is deliberately deterministic and reproducible: same catalog, same f
 - A site is one (node, region, site) triple. It lists the models of every offering whose effective locations include it, live or planned, so planned capacity is visible without counting as serving in §5 search.
 - Sources are node cards (registered and imported) and **curated seeds**: dated, source-linked datasets maintained with the registry, for providers that publish sites but not machine-readable cards. A seed provider that publishes sites but no model list appears with `models: []` and a `models_note`.
 - `summary.unlocated_offerings` counts offerings with no known location. Registries SHOULD publish it: it is the size of the gap.
+- **Points.** Each site carries `geo`: the location's own point (`derived: false`), or an approximate label point for its region or country (`derived: true`, `precision` `region` or `country`), or `null`. A `within_km` radius matches only points placed at least to the region, because a country-level placeholder says nothing about distance.
+- **GeoJSON.** `format=geojson` returns an RFC 7946 FeatureCollection (`application/geo+json`) with one Point feature per site that has a point, coordinates in `[lon, lat]` order. Properties are flat, with lists joined by `"; "`, so desktop GIS tools read them as columns. The foreign member `unmapped` counts sites without a point.
 - `measured` is the only basis a registry may assign (ONP-2 §3a). It requires probe points inside the region under test, and the registry MUST record which probe points produced it.
 
 ## 6. Verification, observations, and ranking

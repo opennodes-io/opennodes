@@ -28,6 +28,13 @@ import {
 } from './importers.js';
 import { locationRoutes, loadLocationSeeds } from './locations.js';
 
+/** Default basemap. OSM's tile policy asks for attribution and light use; busy registries set their own. */
+export const OSM_TILES = {
+  tiles: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  max_zoom: 19,
+};
+
 export async function startRegistry({
   port = 0, host = '127.0.0.1', dbPath = ':memory:',
   allowPrivateTargets = false,          // SSRF guard off only for dev/e2e
@@ -42,6 +49,7 @@ export async function startRegistry({
   admitCooldownMs = 0,                  // minimum gap between Stage B runs per node (0 = none; set in production)
   trustProxy = false,                   // read the client address from X-Forwarded-For (behind Caddy / a CDN)
   locationSeeds = false,                // import the bundled curated location seeds (src/data/locations-*.json) at start
+  mapTiles = OSM_TILES,                 // basemap for the "Where models run" map: { tiles, attribution, max_zoom }, or null for no map
 } = {}) {
   const store = await createStore(dbPath); // sqlite path/:memory: or postgres:// URL
   const safeFetch = makeSafeFetch({ allowPrivate: allowPrivateTargets });
@@ -517,6 +525,7 @@ export async function startRegistry({
         webmcp: true, // the web app at / registers in-page tools via navigator.modelContext where supported
         export: '/v0/export',
         locations: '/v0/locations',
+        map: mapTiles,
         signing_key: { ...registryKeys.publicJwk, kid: 'registry-1' },
         stage_c: Boolean(stageC),
       });
