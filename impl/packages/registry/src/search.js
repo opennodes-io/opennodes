@@ -164,6 +164,12 @@ export async function searchOfferingsPaged(store, query) {
   const counts = { hosted: items.filter((o) => !o.local).length, local: items.filter((o) => o.local).length };
   if (q('local') === 'true') items = items.filter((o) => o.local);
   if (q('local') === 'false') items = items.filter((o) => !o.local);
+  // `ids`: offering or model ids, comma-separated (the registry UI sends the models installed in the
+  // visitor's own Ollama, which the browser read from it directly)
+  if (q('ids') != null) {
+    const ids = new Set(q('ids').split(',').map((s) => s.trim()).filter(Boolean));
+    items = items.filter((o) => ids.has(o.offering_id) || ids.has(o.binding?.model_id));
+  }
 
   // Rank depends on the filtered set: annotate copies, never the shared cached offerings.
   items = items.map((o) => ({ ...o }));

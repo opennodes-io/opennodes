@@ -146,6 +146,12 @@
   .kindtabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .kindtabs .counts { font-weight: 400; margin-left: 0.25rem; }
   .runrow code { font-size: 0.78rem; }
+  .olbox { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; font-size: 0.82rem; margin: 0 0 0.7rem; }
+  .olbox input { font: inherit; font-size: 0.78rem; width: 12.5rem; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 0.3rem 0.5rem; }
+  .olbox .ok { color: var(--accent); font-weight: 600; }
+  .olhelp { font-size: 0.8rem; margin: 0 0 0.8rem; }
+  .olhelp pre { font-size: 0.74rem; overflow-x: auto; margin: 0.3rem 0 0.6rem; }
+  .chip.inst { color: var(--on-accent, #fff); background: var(--accent); border-color: var(--accent); }
   .switch { width: 30px; height: 17px; border-radius: 999px; background: var(--line); position: relative; transition: background 0.15s; flex: none; }
   .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--panel); transition: left 0.15s; }
   .switchrow.on .switch { background: var(--accent); } .switchrow.on .switch::after { left: 15px; }
@@ -261,6 +267,13 @@
   </div>
   <p class="sub hostedonly">Search across registered AI nodes and imported catalogs — pick a model on the left, its full card is on the right. Claimed values are never blended with measured ones.</p>
   <p class="sub localonly" hidden>Models you download and run yourself with Ollama: no server, no account, and your data stays on your machine. There is nothing to verify remotely, so they are ranked by popularity (Ollama pulls); memory needs are 4-bit estimates.</p>
+  <div class="olbox localonly" id="ol-box" hidden>
+    <button class="btn sec" id="ol-check" type="button">Check my Ollama</button>
+    <input id="ol-base" aria-label="Your Ollama address" spellcheck="false">
+    <span id="ol-status" class="sub">Asks the Ollama on your own computer which models you have. The answer stays in your browser; nothing is sent to this registry.</span>
+    <span class="switchrow" id="f-installed" hidden><span class="switch"></span><b style="font-size:0.78rem">Installed only</b></span>
+  </div>
+  <div class="olhelp localonly" id="ol-help" hidden></div>
   <div class="toolbar">
     <input type="text" id="f-q" placeholder="Search models, families, nodes…">
     <span class="switchrow hostedonly" id="f-verified" title="identity-fingerprinted · context-verified · continuously probed"><span class="switch"></span><b style="font-size:0.78rem">Verified only</b></span>
@@ -633,7 +646,108 @@ document.querySelectorAll('#m-kind [data-kind]').forEach((b) => b.addEventListen
   try { localStorage.setItem('onp-list-kind', listKind); } catch { /* storage blocked */ }
   applyKind();
   search();
+  if (listKind === 'local') autoCheckOllama();
 }));
+
+/* ---------- your Ollama: which local models are installed ----------
+   The browser asks the visitor's own Ollama (/api/tags) directly — only after a click, or on later
+   visits once a check has succeeded. The list of models never reaches this registry, except as the
+   ids of an "installed only" search. */
+const OLLAMA_DEFAULT = 'http://127.0.0.1:11434';
+const ollama = { base: OLLAMA_DEFAULT, installed: null, state: 'unknown', count: 0 };
+try { ollama.base = localStorage.getItem('onp-ollama-base') || OLLAMA_DEFAULT; } catch { /* storage blocked */ }
+$('#ol-base').value = ollama.base;
+const olHost = () => { try { return new URL(ollama.base).host; } catch { return ollama.base; } };
+/** Tags of this local model installed in the visitor's Ollama ("3b", "latest"), or null. */
+function installedTags(o) {
+  if (!ollama.installed || !o?.local) return null;
+  return ollama.installed.get(String(o.binding?.model_id ?? o.offering_id).split(':')[0].toLowerCase()) ?? null;
+}
+async function checkOllama() {
+  ollama.base = ($('#ol-base').value.trim() || OLLAMA_DEFAULT).replace(/\/+$/, '');
+  try { localStorage.setItem('onp-ollama-base', ollama.base); } catch { /* storage blocked */ }
+  $('#ol-check').disabled = true;
+  $('#ol-status').textContent = 'asking your Ollama…';
+  try {
+    const r = await fetch(ollama.base + '/api/tags', { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) throw new Error('status ' + r.status);
+    const { models = [] } = await r.json();
+    ollama.installed = new Map();
+    for (const m of models) {
+      const [base, tag = 'latest'] = String(m.name ?? m.model ?? '').toLowerCase().split(':');
+      if (!base) continue;
+      if (!ollama.installed.has(base)) ollama.installed.set(base, []);
+      ollama.installed.get(base).push(tag);
+    }
+    ollama.count = models.length;
+    ollama.state = 'ok';
+    try { localStorage.setItem('onp-ollama-ok', '1'); } catch { /* storage blocked */ }
+  } catch {
+    ollama.installed = null;
+    // A no-cors request still reaches a running server: if it goes through, Ollama is up and only
+    // refuses this page's origin (OLLAMA_ORIGINS); if it fails too, nothing answered.
+    let reachable = false;
+    try { await fetch(ollama.base + '/api/version', { mode: 'no-cors', signal: AbortSignal.timeout(4000) }); reachable = true; } catch { /* not running */ }
+    ollama.state = reachable ? 'blocked' : 'down';
+  } finally { $('#ol-check').disabled = false; }
+  const filtered = $('#f-installed').classList.contains('on');
+  renderOllamaStatus();
+  markInstalled();
+  if (filtered) search();   // re-filter by the new answer, or drop the filter if Ollama no longer answers
+}
+function autoCheckOllama() {
+  let remembered = false;
+  try { remembered = localStorage.getItem('onp-ollama-ok') === '1'; } catch { /* storage blocked */ }
+  if (remembered && ollama.state === 'unknown') checkOllama();
+}
+function renderOllamaStatus() {
+  const status = $('#ol-status'), help = $('#ol-help');
+  $('#f-installed').hidden = ollama.state !== 'ok';
+  if (ollama.state !== 'ok') $('#f-installed').classList.remove('on');
+  help.hidden = true;
+  if (ollama.state === 'ok') {
+    status.innerHTML = `<span class="ok">✓ Your Ollama at ${esc(olHost())}</span> has ${ollama.count} model${ollama.count === 1 ? '' : 's'} — installed ones are marked.`;
+    return;
+  }
+  const origin = location.origin;
+  if (ollama.state === 'blocked') {
+    status.innerHTML = `<b>Ollama is running at ${esc(olHost())} but does not allow this page.</b> Allow it once, then quit and restart Ollama:`;
+    help.innerHTML = `<b>Windows</b> (PowerShell or cmd)<pre><code>setx OLLAMA_ORIGINS "${esc(origin)}"</code></pre>
+      <b>macOS</b><pre><code>launchctl setenv OLLAMA_ORIGINS "${esc(origin)}"</code></pre>
+      <b>Linux</b> (systemd): <code>sudo systemctl edit ollama</code>, add the two lines below, then <code>sudo systemctl restart ollama</code><pre><code>[Service]
+Environment="OLLAMA_ORIGINS=${esc(origin)}"</code></pre>
+      <span class="sub">This lets this page read which models you have and use the playground; other sites stay blocked. To allow more origins, separate them with commas.</span>`;
+    help.hidden = false;
+    return;
+  }
+  status.innerHTML = `<b>No Ollama answered at ${esc(olHost())}.</b> Start it, or install it from <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com</a>, then check again. If your browser asked whether this page may reach devices on your network, allow it.`;
+}
+/** Mark installed models in the list, on the open card and in the playground note. */
+function markInstalled() {
+  document.querySelectorAll('.mitem').forEach((el) => {
+    const o = lastResults.find((x) => `${x.node_id}/${x.offering_id}` === el.dataset.key);
+    if (!o?.local) return;
+    const tags = installedTags(o);
+    const chip = el.querySelector('.chip.loc, .chip.inst');
+    if (!chip) return;
+    chip.className = tags ? 'chip inst' : 'chip loc';
+    chip.textContent = tags ? 'INSTALLED' : 'LOCAL';
+    chip.title = tags ? 'installed in your Ollama: ' + tags.join(', ') : '';
+  });
+  const inst = $('#md-inst');
+  if (inst) {
+    const o = pgOfferings.find((x) => x.local);
+    const tags = installedTags(o);
+    inst.hidden = ollama.state !== 'ok' || !o;
+    inst.className = tags ? 'chip inst' : 'chip';
+    inst.textContent = tags ? `INSTALLED: ${tags.join(', ')}` : 'NOT INSTALLED';
+  }
+  pgUpdateNote();
+}
+$('#ol-check').addEventListener('click', checkOllama);
+$('#ol-base').addEventListener('keydown', (e) => { if (e.key === 'Enter') checkOllama(); });
+$('#f-installed').addEventListener('click', () => { $('#f-installed').classList.toggle('on'); search(); });
+if (listKind === 'local') autoCheckOllama();
 const sup = new Set();
 document.querySelectorAll('.toggle').forEach((b) => b.addEventListener('click', () => {
   b.classList.toggle('on'); b.classList.contains('on') ? sup.add(b.dataset.sup) : sup.delete(b.dataset.sup); search();
@@ -750,7 +864,10 @@ async function search() {
     if ($('#f-eea').classList.contains('on')) p.set('jurisdiction', 'eea');
     if ($('#f-price').value) p.set('max_input_price', $('#f-price').value);
     if (sup.size) p.set('supports', [...sup].join(','));
-  } else if ($('#f-mem').value) p.set('memory_gb', $('#f-mem').value);
+  } else {
+    if ($('#f-mem').value) p.set('memory_gb', $('#f-mem').value);
+    if ($('#f-installed').classList.contains('on') && ollama.installed) p.set('ids', [...ollama.installed.keys()].join(','));
+  }
   p.set('sort', $('#f-sort').value);
   listQuery = p.toString();
   try {
@@ -831,11 +948,12 @@ function sizesBit(o) {
   return (sz.length > 1 ? `${sz[0].tag}–${sz.at(-1).tag}` : sz[0].tag) + ` · from ~${sz[0].memory_gb} GB`;
 }
 function renderLocalItem(o) {
+  const tags = installedTags(o);
   return `<div class="mitem" data-artifact="${esc(o.model.artifact)}" data-key="${esc(o.node_id + '/' + o.offering_id)}">
     <div class="t">
       <span class="nm">${esc(o.model.name)}</span>
       ${o.specialty ? `<span class="chip">${esc(o.specialty)}</span>` : ''}
-      <span class="chip loc">LOCAL</span>
+      ${tags ? `<span class="chip inst" title="installed in your Ollama: ${esc(tags.join(', '))}">INSTALLED</span>` : '<span class="chip loc">LOCAL</span>'}
     </div>
     <div class="b">
       ${sizesBit(o) ? `<span>${esc(sizesBit(o))}</span>` : ''}
@@ -1022,10 +1140,11 @@ async function loadModel(artifact) {
       `<span class="chip">${esc(first.modality)}</span>`,
       first.model.family ? `<span class="chip">${esc(first.model.family)}</span>` : '',
       isLocal && first.specialty && first.specialty !== first.modality ? `<span class="chip">${esc(first.specialty)}</span>` : '',
-      isLocal ? '<span class="chip loc">LOCAL</span>' : '',
+      isLocal ? '<span class="chip loc">LOCAL</span><span class="chip" id="md-inst" hidden></span>' : '',
       ...extLinks,
     ].join('');
     $('#md-offtitle').textContent = isLocal ? 'Run it' : 'Offerings';
+    if (isLocal) autoCheckOllama();
     $('#md-count').textContent = isLocal ? 'with Ollama, on your own machine' : list.length + ' node' + (list.length === 1 ? '' : 's');
 
     // description (imported catalogs carry one; absent otherwise)
@@ -1068,7 +1187,7 @@ async function loadModel(artifact) {
     $('#pg-customrow').hidden = pgOfferings.length > 0;   // listing-only offerings leave just the custom endpoint
     $('#pg-out').textContent = '';
     $('#pg-meta').textContent = '';
-    pgUpdateNote();
+    markInstalled();
     $('#pg-hosted').innerHTML = '';
     if (pgOfferings.length && pgOfferings.every(runsLocally)) showHostedAlternatives(first, artifact);
     const runName = first.binding?.model_id ?? first.model.name;
@@ -1194,6 +1313,15 @@ function pgUpdateNote() {
   note.innerHTML = `This listing has no server behind it: Send goes to ${app} on <b>your own computer</b> (${esc(localHost(o))}), `
     + `and answers only if ${app} is running with this model installed${o.local?.run ? ` (<code class="mono">${esc(o.local.run)}</code>)` : ''}. `
     + 'It tests your machine, not a node.';
+  if (o.local && ollama.state === 'ok') {
+    const tags = installedTags(o);
+    const id = o.binding?.model_id ?? o.offering_id;
+    note.innerHTML += tags
+      ? ` <b>Installed in your Ollama</b> (${esc(tags.map((t) => id + ':' + t).join(', '))}), so ${embed ? 'Embed' : 'Send'} should answer.`
+      : ` <b>Not installed in your Ollama yet:</b> <code class="mono">ollama pull ${esc(id)}</code> first.`;
+  } else if (o.local && ollama.state === 'blocked') {
+    note.innerHTML += ' <b>Your Ollama does not allow this page yet</b> — see "Check my Ollama" on the local models list.';
+  }
 }
 /** On a local-only model page: hosted listings of the same model, so it can be tried without installing anything. */
 async function showHostedAlternatives(first, artifact) {

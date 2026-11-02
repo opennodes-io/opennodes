@@ -294,6 +294,9 @@ test('local models list apart: counts, popularity rank, memory fit, sizes with m
 
   assert.deepEqual((await get('local=true&memory_gb=4')).offerings.map((o) => o.offering_id), ['llama3.2'], 'only models with a size that fits');
   assert.deepEqual((await get('local=true&sort=size')).offerings.map((o) => o.offering_id), ['llama3.2', 'llama3.1', 'codestral'], 'smallest first');
+  const installed = await get('local=true&ids=llama3.2,codestral,not-in-registry');
+  assert.deepEqual(installed.offerings.map((o) => o.offering_id), ['llama3.2', 'codestral'], "ids: the models installed in the visitor's Ollama");
+  assert.equal(installed.counts.local, 3, 'tab counts stay whole under ids');
   const mixed = (await get('')).offerings;
   assert.equal(mixed[0].offering_id, 'llama-3.2-3b', 'in a mixed list hosted comes before local: their scores measure different things');
 });
