@@ -81,7 +81,7 @@ test('curated seed: /v0/locations by country, evidence, status, model and lineag
   assert.ok(qwen(ca).length > 0);
   assert.equal(qwen(await get(registry.origin, '/v0/locations?country=CA&exclude_lineage=CN')).length, 0);
   const gptoss = await get(registry.origin, '/v0/locations?model=gpt-oss');
-  assert.ok(gptoss.sites.length > 0 && gptoss.sites.every((s) => s.models.every((m) => /gpt-oss/.test(m.name))));
+  assert.ok(gptoss.sites.length > 0 && gptoss.sites.every((s) => s.models.every((m) => /gpt-oss/i.test(`${m.name} ${m.artifact}`))));
   assert.equal(ca.countries[0].country, 'CA');
   assert.ok(ca.summary.located_offerings > 0);
 
@@ -90,6 +90,34 @@ test('curated seed: /v0/locations by country, evidence, status, model and lineag
   assert.match(lines[0], /^country,region,site,status,basis,provider/);
   assert.ok(lines.some((l) => l.includes('Claude 3 Haiku')));
   assert.ok(lines.some((l) => l.includes('TELUS') && l.includes('not published')));
+});
+
+test('European seed: EU/EEA, Swiss and UK sites, in-region models only, UK as GB', async (t) => {
+  const registry = await startRegistry({ locationSeeds: true });
+  t.after(() => registry.close());
+
+  const all = await get(registry.origin, '/v0/locations');
+  const eu = all.sites.filter((s) => s.node_id.startsWith('import.seed.eu.'));
+  assert.ok(eu.length >= 60);
+  assert.ok(eu.every((s) => s.geo && ['live', 'planned'].includes(s.status)));
+  assert.ok(!eu.some((s) => ['CA', 'US'].includes(s.country)));
+  const de = await get(registry.origin, '/v0/locations?country=DE');
+  const frankfurt = de.sites.find((s) => s.node_id === 'import.seed.eu.aws-bedrock' && s.region === 'DE-HE');
+  assert.equal(frankfurt.basis, 'documented');
+  assert.ok(frankfurt.models.length > 0);
+  // a region with no in-region model keeps its site and says so
+  const zurich = (await get(registry.origin, '/v0/locations?country=CH')).sites.find((s) => s.node_id === 'import.seed.eu.aws-bedrock');
+  assert.ok(zurich && zurich.note);
+  // "UK" finds the British sites, the same as "GB"
+  const uk = await get(registry.origin, '/v0/locations?country=UK');
+  assert.ok(uk.sites.length > 0);
+  assert.deepEqual(uk.sites.map((s) => s.region), (await get(registry.origin, '/v0/locations?country=GB')).sites.map((s) => s.region));
+  // site-only entries (AI Factories, GPU capacity) carry a note instead of models
+  const factory = eu.find((s) => s.source === 'seed' && s.status === 'planned');
+  assert.ok(factory && factory.models_note);
+  // a listed model without a stated site counts as unlocated, never placed
+  const greenpt = eu.filter((s) => s.node_id === 'import.seed.eu.greenpt');
+  assert.ok(greenpt.every((s) => s.region !== 'FR-IDF' || s.models.length === 0));
 });
 
 test('search: region= covers serving sites; location_basis= and exclude_lineage= filters', async (t) => {

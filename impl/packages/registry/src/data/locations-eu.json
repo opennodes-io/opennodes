@@ -1,0 +1,539 @@
+{
+  "seed": "eu",
+  "title": "Where AI models run in Europe",
+  "checked": "2026-11-02",
+  "note": "Curated by the OpenNodes project from public sources (ONP-2 §3a): the EU/EEA, Switzerland and the UK. documented = the provider's own dated page; claimed = provider statements or news reports. A model is listed at a site only when the provider says it is processed there (no cross-region, Global or Data Zone routing). Corrections by pull request.",
+  "providers": [
+    {
+      "id": "aws-bedrock",
+      "name": "Amazon Bedrock (European regions)",
+      "operator": { "name": "Amazon Web Services", "country": "US", "url": "https://docs.aws.amazon.com/bedrock/latest/userguide/models-region-compatibility.html" },
+      "note": "Only models marked In-Region (bedrock-runtime or bedrock-mantle) in the Bedrock model/Region table are listed; models that reach these regions only through EU Geo or Global cross-region inference (e.g. Claude Sonnet 5.5, Haiku 5.5, Fable 5/5.1, Mythos 5.1, Opus 4.5, Nova 2 Lite, OpenAI GPT-5.x/6, Grok, Kimi K3, GLM 5.3) are not listed. Also excluded: models in Legacy or EOL state on the Bedrock lifecycle page (e.g. Claude 3 Haiku, Gemma 3, Llama 3, Mistral 7B/Mixtral, Voxtral, Devstral 2, MiniMax M2/M2.1, DeepSeek-V3.1, Qwen3 Coder 30B/480B, GLM 4.7, Nemotron Nano v2) and speech-only models (Nova 2 Sonic, Nova 2.5 Sonic in eu-north-1).",
+      "sites": [
+        { "id": "fra", "region": "DE-HE", "site": "Frankfurt (eu-central-1)", "status": "live", "basis": "documented", "source": "https://docs.aws.amazon.com/bedrock/latest/userguide/models-region-compatibility.html", "checked": "2026-11-02", "geo": { "lat": 50.1109, "lon": 8.6821, "precision": "city" } },
+        { "id": "zrh", "region": "CH-ZH", "site": "Zurich (eu-central-2)", "status": "live", "basis": "documented", "source": "https://docs.aws.amazon.com/bedrock/latest/userguide/models-region-compatibility.html", "checked": "2026-11-02", "note": "Only an embedding model (Titan Text Embeddings V2) is processed in-region; chat models reach this region only through EU/Global cross-region inference.", "geo": { "lat": 47.3769, "lon": 8.5417, "precision": "city" } },
+        { "id": "dub", "region": "IE-D", "site": "Ireland (eu-west-1)", "status": "live", "basis": "documented", "source": "https://docs.aws.amazon.com/bedrock/latest/userguide/models-region-compatibility.html", "checked": "2026-11-02", "geo": { "lat": 53.3498, "lon": -6.2603, "precision": "city" } },
+        { "id": "lon", "region": "GB-LND", "site": "London (eu-west-2)", "status": "live", "basis": "documented", "source": "https://docs.aws.amazon.com/bedrock/latest/userguide/models-region-compatibility.html", "checked": "2026-11-02", "geo": { "lat": 51.5074, "lon": -0.1278, "precision": "city" } },
+        { "id": "par", "region": "FR-IDF", "site": "Paris (eu-west-3)", "status": "live", "basis": "documented", "source": "https://docs.aws.amazon.com/bedrock/latest/userguide/models-region-compatibility.html", "checked": "2026-11-02", "geo": { "lat": 48.8566, "lon": 2.3522, "precision": "city" } },
+        { "id": "sto", "region": "SE-AB", "site": "Stockholm (eu-north-1)", "status": "live", "basis": "documented", "source": "https://docs.aws.amazon.com/bedrock/latest/userguide/models-region-compatibility.html", "checked": "2026-11-02", "geo": { "lat": 59.3293, "lon": 18.0686, "precision": "city" } },
+        { "id": "mil", "region": "IT-25", "site": "Milan (eu-south-1)", "status": "live", "basis": "documented", "source": "https://docs.aws.amazon.com/bedrock/latest/userguide/models-region-compatibility.html", "checked": "2026-11-02", "geo": { "lat": 45.4642, "lon": 9.19, "precision": "city" } },
+        { "id": "zaz", "region": "ES-AR", "site": "Spain (eu-south-2)", "status": "live", "basis": "documented", "source": "https://docs.aws.amazon.com/bedrock/latest/userguide/models-region-compatibility.html", "checked": "2026-11-02", "note": "AWS names the region only 'Spain'; its data centres are in Aragon. Only an embedding model (Titan Text Embeddings V2) is processed in-region; chat models reach this region only through EU/Global cross-region inference.", "geo": { "lat": 41.6488, "lon": -0.8891, "precision": "region" } },
+        { "id": "eusc-bb", "region": "DE-BB", "site": "AWS European Sovereign Cloud, Brandenburg (eusc-de-east-1)", "status": "live", "basis": "documented", "source": "https://docs.aws.eu/bedrock/latest/userguide/models-region-compatibility.html", "checked": "2026-11-02", "note": "Separate aws-eusc partition, generally available since 14 January 2026. Nova Pro and Nova Lite are In-Region in the ESC model table; Gemma 4 (31B, 26B-A4B, E2B) is stated by AWS to run entirely within eusc-de-east-1 (AWS Security Blog, 17 September 2026: https://aws.amazon.com/blogs/security/run-open-weight-models-on-aws-bedrock-in-aws-european-sovereign-cloud/). The exact site in Brandenburg is not published; coordinates are the state centre.", "geo": { "lat": 52.3617, "lon": 13.0081, "precision": "region" } }
+      ],
+      "models": [
+        { "name": "Titan Text Embeddings V2", "family": "amazon", "modality": "embedding", "lineage_origins": ["US"], "sites": ["fra", "zrh", "dub", "lon", "par", "sto", "mil", "zaz"] },
+        { "name": "Titan Multimodal Embeddings G1", "family": "amazon", "modality": "embedding", "lineage_origins": ["US"], "sites": ["fra", "dub", "lon", "par"] },
+        { "name": "Titan Embeddings G1 - Text", "family": "amazon", "modality": "embedding", "lineage_origins": ["US"], "sites": ["fra"] },
+        { "name": "Amazon Rerank", "family": "amazon", "modality": "rerank", "lineage_origins": ["US"], "sites": ["fra"] },
+        { "name": "Nova Pro", "family": "amazon", "lineage_origins": ["US"], "sites": ["lon", "eusc-bb"] },
+        { "name": "Nova Lite", "family": "amazon", "lineage_origins": ["US"], "sites": ["sto", "lon", "eusc-bb"] },
+        { "name": "Nova Micro", "family": "amazon", "lineage_origins": ["US"], "sites": ["lon"] },
+        { "name": "Claude Opus 5.5", "family": "anthropic", "lineage_origins": ["US"], "sites": ["lon"] },
+        { "name": "Claude Opus 5", "family": "anthropic", "lineage_origins": ["US"], "sites": ["sto", "dub"] },
+        { "name": "Claude Sonnet 5", "family": "anthropic", "lineage_origins": ["US"], "sites": ["sto", "dub", "lon"] },
+        { "name": "Claude Opus 4.8", "family": "anthropic", "lineage_origins": ["US"], "sites": ["sto", "dub"] },
+        { "name": "Claude Opus 4.7", "family": "anthropic", "lineage_origins": ["US"], "sites": ["sto", "dub"] },
+        { "name": "Claude Opus 4.6", "family": "anthropic", "lineage_origins": ["US"], "sites": ["lon"] },
+        { "name": "Claude Sonnet 4.6", "family": "anthropic", "lineage_origins": ["US"], "sites": ["lon"] },
+        { "name": "Claude Haiku 4.5", "family": "anthropic", "lineage_origins": ["US"], "sites": ["sto", "dub"] },
+        { "name": "Embed v4", "family": "cohere", "modality": "embedding", "lineage_origins": ["CA"], "sites": ["dub"] },
+        { "name": "Embed English", "family": "cohere", "modality": "embedding", "lineage_origins": ["CA"], "sites": ["fra", "dub", "lon", "par"] },
+        { "name": "Embed Multilingual", "family": "cohere", "modality": "embedding", "lineage_origins": ["CA"], "sites": ["fra", "dub", "lon", "par"] },
+        { "name": "Rerank 3.5", "family": "cohere", "modality": "rerank", "lineage_origins": ["CA"], "sites": ["fra"] },
+        { "name": "DeepSeek V3.2", "family": "deepseek", "lineage_origins": ["CN"], "sites": ["sto", "lon"] },
+        { "name": "Gemma 4 31B", "family": "google", "lineage_origins": ["US"], "sites": ["fra", "eusc-bb"] },
+        { "name": "Gemma 4 26B-A4B", "family": "google", "lineage_origins": ["US"], "sites": ["fra", "eusc-bb"] },
+        { "name": "Gemma 4 E2B", "family": "google", "lineage_origins": ["US"], "sites": ["fra", "eusc-bb"] },
+        { "name": "MiniMax M2.5", "family": "minimax", "lineage_origins": ["CN"], "sites": ["fra", "sto", "mil", "dub", "lon"] },
+        { "name": "Mistral Large", "family": "mistral", "lineage_origins": ["FR"], "sites": ["dub", "lon", "par"] },
+        { "name": "Magistral Small 2509", "family": "mistral", "lineage_origins": ["FR"], "sites": ["mil", "dub", "lon"] },
+        { "name": "Ministral 14B 3.0", "family": "mistral", "lineage_origins": ["FR"], "sites": ["mil", "dub", "lon"] },
+        { "name": "Ministral 3 8B", "family": "mistral", "lineage_origins": ["FR"], "sites": ["mil", "dub", "lon"] },
+        { "name": "Ministral 3B", "family": "mistral", "lineage_origins": ["FR"], "sites": ["mil", "dub", "lon"] },
+        { "name": "Kimi K2.5", "family": "moonshot", "lineage_origins": ["CN"], "sites": ["sto", "lon"] },
+        { "name": "NVIDIA Nemotron 3 Super 120B", "family": "nvidia", "lineage_origins": ["US"], "sites": ["fra", "sto", "mil", "dub", "lon"] },
+        { "name": "Nemotron Nano 3 30B", "family": "nvidia", "lineage_origins": ["US"], "sites": ["mil", "dub", "lon"] },
+        { "name": "gpt-oss-120b", "family": "openai", "lineage_origins": ["US"], "sites": ["fra", "sto", "mil", "dub", "lon"] },
+        { "name": "gpt-oss-20b", "family": "openai", "lineage_origins": ["US"], "sites": ["fra", "sto", "mil", "dub", "lon"] },
+        { "name": "GPT OSS Safeguard 120B", "family": "openai", "lineage_origins": ["US"], "sites": ["mil", "dub", "lon"] },
+        { "name": "GPT OSS Safeguard 20B", "family": "openai", "lineage_origins": ["US"], "sites": ["mil", "dub", "lon"] },
+        { "name": "Qwen3 235B A22B 2507", "family": "qwen", "lineage_origins": ["CN"], "sites": ["fra", "sto", "mil", "lon"] },
+        { "name": "Qwen3 32B", "family": "qwen", "lineage_origins": ["CN"], "sites": ["fra", "sto", "mil", "dub", "lon"] },
+        { "name": "Qwen3 Next 80B A3B", "family": "qwen", "lineage_origins": ["CN"], "sites": ["mil", "dub", "lon"] },
+        { "name": "Qwen3 VL 235B A22B", "family": "qwen", "modality": "multimodal", "lineage_origins": ["CN"], "sites": ["mil", "dub", "lon"] },
+        { "name": "Qwen3 Coder Next", "family": "qwen", "lineage_origins": ["CN"], "sites": ["lon"] },
+        { "name": "GLM 5", "family": "zai", "lineage_origins": ["CN"], "sites": ["sto", "lon"] }
+      ]
+    },
+    {
+      "id": "google-vertex-ai",
+      "name": "Google Vertex AI / Gemini Enterprise Agent Platform (European regions)",
+      "operator": { "name": "Google Cloud", "country": "US", "url": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations" },
+      "note": "A model is listed only where Google's data-residency page marks in-country ML processing for that region and the locations page shows a regional endpoint there; models processed only within the 'eu' multi-region or via the global endpoint (most Gemini 3.x models, Gemini Embedding, Claude Opus 4.7+ and all Claude 5.x, all MaaS open models) are excluded, as are Gemini 2.5 Pro/Flash/Flash-Lite (retired 20 October 2026), deprecated Claude 3.x, Mistral Large (24.07) and Codestral (24.05) (no longer in Google's Mistral model list), E5 embeddings (retired 21 October 2026) and speech models (Chirp, TTS).",
+      "sites": [
+        { "id": "stg", "region": "BE-WHT", "site": "Belgium, St. Ghislain (europe-west1)", "status": "live", "basis": "documented", "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/data-residency", "checked": "2026-11-02", "note": "Claude models are listed here per Google's data-residency table (in-country processing in Belgium); the individual Claude model cards (updated 2026-10-30) instead state 'Europe: Multi-region' ML processing, so this listing should be re-checked.", "geo": { "lat": 50.471, "lon": 3.8186, "precision": "city" } },
+        { "id": "lon", "region": "GB-LND", "site": "London (europe-west2)", "status": "live", "basis": "documented", "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/data-residency", "checked": "2026-11-02", "note": "Gemini 4 Argon and Gemini 3.5 Flash are processed in-region through the regional endpoint (Provisioned Throughput); their Standard PayGo is global/multi-region only.", "geo": { "lat": 51.5074, "lon": -0.1278, "precision": "city" } },
+        { "id": "fra", "region": "DE-HE", "site": "Frankfurt (europe-west3)", "status": "live", "basis": "documented", "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/data-residency", "checked": "2026-11-02", "note": "Gemini 3.5 Flash is processed in-region through the regional endpoint (Provisioned Throughput); its Standard PayGo is global/multi-region only.", "geo": { "lat": 50.1109, "lon": 8.6821, "precision": "city" } },
+        { "id": "eem", "region": "NL-GR", "site": "Netherlands, Eemshaven (europe-west4)", "status": "live", "basis": "documented", "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/data-residency", "checked": "2026-11-02", "note": "Mistral models are listed here per Google's data-residency table (in-country processing in the Netherlands); the individual Mistral model cards (updated 2026-10-30) instead state 'Europe: Multi-region' ML processing, so this listing should be re-checked.", "geo": { "lat": 53.4386, "lon": 6.8336, "precision": "city" } },
+        { "id": "zrh", "region": "CH-ZH", "site": "Zurich (europe-west6)", "status": "live", "basis": "documented", "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations", "checked": "2026-11-02", "note": "Only embedding endpoints are offered here and no in-country ML processing is committed for them; no model is listed.", "geo": { "lat": 47.3769, "lon": 8.5417, "precision": "city" } },
+        { "id": "hmn", "region": "FI-09", "site": "Finland, Hamina (europe-north1)", "status": "live", "basis": "documented", "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations", "checked": "2026-11-02", "note": "No model is ML-processed in-region here per Google's data-residency table; the Gemini and partner models served from this endpoint are processed within the EU multi-region (or are retired), so none are listed.", "geo": { "lat": 60.5697, "lon": 27.1981, "precision": "city" } },
+        { "id": "waw", "region": "PL-14", "site": "Warsaw (europe-central2)", "status": "live", "basis": "documented", "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations", "checked": "2026-11-02", "note": "No model is ML-processed in-region here per Google's data-residency table; the Gemini and partner models served from this endpoint are processed within the EU multi-region (or are retired), so none are listed.", "geo": { "lat": 52.2297, "lon": 21.0122, "precision": "city" } },
+        { "id": "mil", "region": "IT-25", "site": "Milan (europe-west8)", "status": "live", "basis": "documented", "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations", "checked": "2026-11-02", "note": "No model is ML-processed in-region here per Google's data-residency table; the Gemini and partner models served from this endpoint are processed within the EU multi-region (or are retired), so none are listed.", "geo": { "lat": 45.4642, "lon": 9.19, "precision": "city" } },
+        { "id": "mad", "region": "ES-MD", "site": "Madrid (europe-southwest1)", "status": "live", "basis": "documented", "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations", "checked": "2026-11-02", "note": "No model is ML-processed in-region here per Google's data-residency table; the Gemini and partner models served from this endpoint are processed within the EU multi-region (or are retired), so none are listed.", "geo": { "lat": 40.4168, "lon": -3.7038, "precision": "city" } },
+        { "id": "par", "region": "FR-IDF", "site": "Paris (europe-west9)", "status": "live", "basis": "documented", "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations", "checked": "2026-11-02", "note": "No current text or embedding model is processed in-region here: Gemini 2.5 Flash (in-country in France) retired on 20 October 2026, and only Chirp 3 speech voices keep France processing.", "geo": { "lat": 48.8566, "lon": 2.3522, "precision": "city" } }
+      ],
+      "models": [
+        { "name": "Gemini 4 Argon", "family": "google", "lineage_origins": ["US"], "sites": ["lon"] },
+        { "name": "Gemini 3.5 Flash", "family": "google", "lineage_origins": ["US"], "sites": ["lon", "fra"] },
+        { "name": "Embeddings for Text (text-multilingual-embedding-002)", "family": "google", "modality": "embedding", "lineage_origins": ["US"], "sites": ["lon"] },
+        { "name": "Embeddings for Text (text-embedding-004)", "family": "google", "modality": "embedding", "lineage_origins": ["US"], "sites": ["lon"] },
+        { "name": "Claude Opus 4.6", "family": "anthropic", "lineage_origins": ["US"], "sites": ["stg"] },
+        { "name": "Claude Sonnet 4.6", "family": "anthropic", "lineage_origins": ["US"], "sites": ["stg"] },
+        { "name": "Claude Opus 4.5", "family": "anthropic", "lineage_origins": ["US"], "sites": ["stg"] },
+        { "name": "Claude Sonnet 4.5", "family": "anthropic", "lineage_origins": ["US"], "sites": ["stg"] },
+        { "name": "Claude Haiku 4.5", "family": "anthropic", "lineage_origins": ["US"], "sites": ["stg"] },
+        { "name": "Mistral Medium 3", "family": "mistral", "lineage_origins": ["FR"], "sites": ["eem"] },
+        { "name": "Mistral Small 3.1 (25.03)", "family": "mistral", "lineage_origins": ["FR"], "sites": ["eem"] },
+        { "name": "Codestral 2", "family": "mistral", "lineage_origins": ["FR"], "sites": ["eem"] },
+        { "name": "Mistral OCR (25.05)", "family": "mistral", "modality": "multimodal", "lineage_origins": ["FR"], "sites": ["eem"] }
+      ]
+    },
+    {
+      "id": "azure-openai",
+      "name": "Azure OpenAI in Foundry (European regions)",
+      "operator": { "name": "Microsoft", "country": "US", "url": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability?pivots=standard" },
+      "note": "Only the Standard/Regional deployment type (processed in the deployment's region) is counted; models offered in Europe only via Global Standard, Data Zone Standard (EU) or provisioned (incl. regional provisioned) deployments are excluded, as are all non-OpenAI Foundry models (no Standard/Regional option in Europe) and audio models (tts, tts-hd, whisper). Physical locations come from the Azure regions list; GPT-4o merges versions 2024-05-13/2024-08-06 (Sweden Central only) and 2024-11-20.",
+      "sites": [
+        { "id": "swc", "region": "SE-X", "site": "Sweden Central (Gävle)", "status": "live", "basis": "documented", "source": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability?pivots=standard", "checked": "2026-11-02", "geo": { "lat": 60.6749, "lon": 17.1413, "precision": "city" } },
+        { "id": "frc", "region": "FR-IDF", "site": "France Central (Paris)", "status": "live", "basis": "documented", "source": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability?pivots=standard", "checked": "2026-11-02", "geo": { "lat": 48.8566, "lon": 2.3522, "precision": "city" } },
+        { "id": "gwc", "region": "DE-HE", "site": "Germany West Central (Frankfurt)", "status": "live", "basis": "documented", "source": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability?pivots=standard", "checked": "2026-11-02", "note": "Only embedding models are offered with Standard (regional) deployment here.", "geo": { "lat": 50.1109, "lon": 8.6821, "precision": "city" } },
+        { "id": "noe", "region": "NO", "site": "Norway East", "status": "live", "basis": "documented", "source": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability?pivots=standard", "checked": "2026-11-02", "note": "Azure gives the physical location only as Norway; coordinates are Oslo.", "geo": { "lat": 59.9139, "lon": 10.7522, "precision": "region" } },
+        { "id": "plc", "region": "PL-14", "site": "Poland Central (Warsaw)", "status": "live", "basis": "documented", "source": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability?pivots=standard", "checked": "2026-11-02", "note": "Only embedding models are offered with Standard (regional) deployment here.", "geo": { "lat": 52.2297, "lon": 21.0122, "precision": "city" } },
+        { "id": "spc", "region": "ES-MD", "site": "Spain Central (Madrid)", "status": "live", "basis": "documented", "source": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability?pivots=standard", "checked": "2026-11-02", "note": "Only embedding models are offered with Standard (regional) deployment here.", "geo": { "lat": 40.4168, "lon": -3.7038, "precision": "city" } },
+        { "id": "chn", "region": "CH-ZH", "site": "Switzerland North (Zurich)", "status": "live", "basis": "documented", "source": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability?pivots=standard", "checked": "2026-11-02", "geo": { "lat": 47.3769, "lon": 8.5417, "precision": "city" } },
+        { "id": "uks", "region": "GB-LND", "site": "UK South (London)", "status": "live", "basis": "documented", "source": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability?pivots=standard", "checked": "2026-11-02", "geo": { "lat": 51.5074, "lon": -0.1278, "precision": "city" } },
+        { "id": "weu", "region": "NL", "site": "West Europe (Netherlands)", "status": "live", "basis": "documented", "source": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability?pivots=standard", "checked": "2026-11-02", "note": "Azure gives the physical location only as Netherlands; coordinates are Amsterdam.", "geo": { "lat": 52.3676, "lon": 4.9041, "precision": "region" } },
+        { "id": "chw", "region": "CH-GE", "site": "Switzerland West (Geneva)", "status": "live", "basis": "documented", "source": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability?pivots=standard", "checked": "2026-11-02", "note": "No model is offered with the Standard (regional) pay-as-you-go deployment type here; only Global Standard and Regional Provisioned Managed (gpt-4o 2024-08-06), which is excluded as provisioned-only.", "geo": { "lat": 46.2044, "lon": 6.1432, "precision": "city" } },
+        { "id": "ukw", "region": "GB-CRF", "site": "UK West (Cardiff)", "status": "live", "basis": "documented", "source": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability?pivots=standard", "checked": "2026-11-02", "note": "Listed only for some non-OpenAI Foundry models via Global Standard; no Standard (regional) deployment, so nothing is processed in-region.", "geo": { "lat": 51.4816, "lon": -3.1791, "precision": "city" } },
+        { "id": "neu", "region": "IE", "site": "North Europe (Ireland)", "status": "live", "basis": "documented", "source": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability?pivots=standard", "checked": "2026-11-02", "note": "Listed for Azure OpenAI Global Standard or Data Zone deployments, but no model is offered with the Standard (regional) deployment type here, so nothing is processed in-region. Azure gives the physical location only as Ireland; coordinates are Dublin.", "geo": { "lat": 53.3498, "lon": -6.2603, "precision": "region" } },
+        { "id": "itn", "region": "IT-25", "site": "Italy North (Milan)", "status": "live", "basis": "documented", "source": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability?pivots=standard", "checked": "2026-11-02", "note": "Listed for Azure OpenAI Global Standard or Data Zone deployments, but no model is offered with the Standard (regional) deployment type here, so nothing is processed in-region.", "geo": { "lat": 45.4642, "lon": 9.19, "precision": "city" } }
+      ],
+      "models": [
+        { "name": "GPT-5.1", "family": "openai", "lineage_origins": ["US"], "sites": ["swc", "chn"] },
+        { "name": "GPT-4.1", "family": "openai", "lineage_origins": ["US"], "sites": ["swc", "chn"] },
+        { "name": "GPT-4.1 mini", "family": "openai", "lineage_origins": ["US"], "sites": ["frc", "swc", "chn", "uks", "weu"] },
+        { "name": "GPT-4o", "family": "openai", "lineage_origins": ["US"], "sites": ["frc", "noe", "swc", "chn", "uks"] },
+        { "name": "GPT-4o mini", "family": "openai", "lineage_origins": ["US"], "sites": ["swc"] },
+        { "name": "o1", "family": "openai", "lineage_origins": ["US"], "sites": ["swc"] },
+        { "name": "o4-mini", "family": "openai", "lineage_origins": ["US"], "sites": ["swc"] },
+        { "name": "text-embedding-3-large", "family": "openai", "modality": "embedding", "lineage_origins": ["US"], "sites": ["frc", "gwc", "noe", "plc", "spc", "swc", "chn", "uks"] },
+        { "name": "text-embedding-3-small", "family": "openai", "modality": "embedding", "lineage_origins": ["US"], "sites": ["chn"] },
+        { "name": "text-embedding-ada-002", "family": "openai", "modality": "embedding", "lineage_origins": ["US"], "sites": ["frc", "noe", "swc", "chn", "uks", "weu"] }
+      ]
+    },
+    {
+      "id": "oci-genai",
+      "name": "Oracle OCI Generative AI (European regions)",
+      "operator": { "name": "Oracle", "country": "US", "url": "https://docs.oracle.com/en-us/iaas/Content/generative-ai/model-endpoint-regions.htm" },
+      "note": "Only models hosted on-demand in the region are listed; dedicated-AI-cluster-only models (e.g. Command A Reasoning, Llama 4 Maverick/Scout in London, Rerank 3.5, gpt-oss in London) are excluded, as are Google Gemini 2.5 models in Frankfurt (hosted externally by Google, requests routed to a Google EU location). Other OCI EU regions (Amsterdam, Paris, Madrid, Stockholm, Zurich, Milan, Marseille, Newport) have no local model processing and route calls to Frankfurt or London, so they are not sites.",
+      "sites": [
+        { "id": "fra", "region": "DE-HE", "site": "Germany Central (Frankfurt), eu-frankfurt-1", "status": "live", "basis": "documented", "source": "https://docs.oracle.com/en-us/iaas/Content/generative-ai/model-endpoint-regions.htm", "checked": "2026-11-02", "geo": { "lat": 50.1109, "lon": 8.6821, "precision": "city" } },
+        { "id": "lhr", "region": "GB-LND", "site": "UK South (London), uk-london-1", "status": "live", "basis": "documented", "source": "https://docs.oracle.com/en-us/iaas/Content/generative-ai/model-endpoint-regions.htm", "checked": "2026-11-02", "geo": { "lat": 51.5074, "lon": -0.1278, "precision": "city" } },
+        { "id": "fra2", "region": "DE", "site": "EU Sovereign Central (Frankfurt), eu-frankfurt-2", "status": "live", "basis": "documented", "source": "https://docs.oracle.com/en-us/iaas/Content/generative-ai/model-endpoint-regions.htm", "checked": "2026-11-02", "note": "EU Sovereign Cloud realm (OC19), restricted to eligible EU customers; only Llama 3.3 70B (Dynamic FP8) is on-demand, other models are dedicated-cluster only.", "geo": { "lat": 50.1109, "lon": 8.6821, "precision": "city" } },
+        { "id": "ltn", "region": "GB", "site": "UK Gov South (London), uk-gov-london-1", "status": "live", "basis": "documented", "source": "https://docs.oracle.com/en-us/iaas/Content/generative-ai/model-endpoint-regions.htm", "checked": "2026-11-02", "note": "UK Government realm (OC4); only Llama 3.3 70B (Dynamic FP8) is on-demand, other models are dedicated-cluster only.", "geo": { "lat": 51.5074, "lon": -0.1278, "precision": "city" } }
+      ],
+      "models": [
+        { "name": "Cohere Command A", "family": "cohere", "lineage_origins": ["CA"], "sites": ["fra", "lhr"] },
+        { "name": "Cohere Command A Vision", "family": "cohere", "modality": "multimodal", "lineage_origins": ["CA"], "sites": ["fra"] },
+        { "name": "Cohere Embed 4", "family": "cohere", "modality": "embedding", "lineage_origins": ["CA"], "sites": ["fra"] },
+        { "name": "Cohere Embed English 3", "family": "cohere", "modality": "embedding", "lineage_origins": ["CA"], "sites": ["fra", "lhr"] },
+        { "name": "Cohere Embed Multilingual 3", "family": "cohere", "modality": "embedding", "lineage_origins": ["CA"], "sites": ["fra", "lhr"] },
+        { "name": "Cohere Rerank 4.0 (Fast)", "family": "cohere", "modality": "rerank", "lineage_origins": ["CA"], "sites": ["fra", "lhr"] },
+        { "name": "Meta Llama 3.3 70B", "family": "meta", "lineage_origins": ["US"], "sites": ["fra", "lhr", "fra2", "ltn"] },
+        { "name": "OpenAI gpt-oss-120b", "family": "openai", "lineage_origins": ["US"], "sites": ["fra"] },
+        { "name": "OpenAI gpt-oss-20b", "family": "openai", "lineage_origins": ["US"], "sites": ["fra"] }
+      ]
+    },
+    {
+      "id": "ibm-watsonx",
+      "name": "IBM watsonx.ai (European regions)",
+      "operator": { "name": "IBM", "country": "US", "url": "https://dataplatform.cloud.ibm.com/docs/content/wsj/getting-started/regional-datactr.html?context=wx" },
+      "note": "Lists the multitenant ready-to-use foundation models and encoder (embedding) models hosted in each region; models marked deprecated, Granite TTM time-series models, and the roughly 70 deploy-on-demand (dedicated) models offered in Frankfurt (none in London) are excluded.",
+      "sites": [
+        { "id": "fra", "region": "DE-HE", "site": "Frankfurt (eu-de)", "status": "live", "basis": "documented", "source": "https://dataplatform.cloud.ibm.com/docs/content/wsj/getting-started/regional-datactr.html?context=wx", "checked": "2026-11-02", "geo": { "lat": 50.1109, "lon": 8.6821, "precision": "city" } },
+        { "id": "lon", "region": "GB-LND", "site": "London (eu-gb)", "status": "live", "basis": "documented", "source": "https://dataplatform.cloud.ibm.com/docs/content/wsj/getting-started/regional-datactr.html?context=wx", "checked": "2026-11-02", "geo": { "lat": 51.5074, "lon": -0.1278, "precision": "city" } }
+      ],
+      "models": [
+        { "name": "granite-4-h-small", "family": "ibm", "lineage_origins": ["US"], "sites": ["fra"] },
+        { "name": "llama-4-maverick-17b-128e-instruct-fp8", "family": "meta", "lineage_origins": ["US"], "sites": ["fra", "lon"] },
+        { "name": "llama-3-3-70b-instruct", "family": "meta", "lineage_origins": ["US"], "sites": ["fra", "lon"] },
+        { "name": "mistral-small-3-1-24b-instruct-2503", "family": "mistral", "lineage_origins": ["FR"], "sites": ["fra", "lon"] },
+        { "name": "granite-embedding-278m-multilingual", "family": "ibm", "modality": "embedding", "lineage_origins": ["US"], "sites": ["fra", "lon"] },
+        { "name": "multilingual-e5-large", "family": "microsoft", "modality": "embedding", "lineage_origins": ["US"], "sites": ["fra", "lon"] }
+      ]
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral AI (La Plateforme API)",
+      "operator": { "name": "Mistral AI", "country": "FR", "url": "https://docs.mistral.ai/inference/regional-inference" },
+      "note": "The EU endpoint (api.eu.mistral.ai) is served from 'multiple data centers in EU and EFTA countries' that Mistral does not name; api.mistral.ai has no committed location and api.us.mistral.ai runs in the US. Only Mistral's own named sites are listed here.",
+      "sites": [
+        { "id": "les-ulis", "region": "FR-IDF", "site": "Les Ulis, Essonne", "status": "planned", "basis": "documented", "source": "https://mistral.ai/news/ai-now-summit-2026/", "checked": "2026-11-02", "note": "10 MW site 'dedicated to inference operations', scheduled to open in Q3 2026; no confirmation found that it has opened.", "geo": { "lat": 48.6819, "lon": 2.1694, "precision": "city" } },
+        { "id": "bruyeres", "region": "FR-IDF", "site": "Bruyères-le-Châtel, Essonne (Eclairion campus)", "status": "live", "basis": "claimed", "source": "https://www.euronews.com/2026/03/30/europe-needs-ai-cloud-infrastructure-mistral-raises-830m-for-data-centre-near-paris", "checked": "2026-11-02", "note": "44 MW, about 13,800 Nvidia GB300, financed by $830M of debt (March 2026). The press calls it a training cluster and reported it operational in June 2026 (techdefused.com, 18 Jun 2026). Mistral's own pages do not name it or say which API traffic it serves.", "geo": { "lat": 48.5886, "lon": 2.1897, "precision": "city" } },
+        { "id": "borlange", "region": "SE-W", "site": "Borlänge (EcoDataCenter)", "status": "planned", "basis": "documented", "source": "https://mistral.ai/cloud/", "checked": "2026-11-02", "note": "Mistral's page lists 'Sweden site (EcoDataCenter) in motion'. The EcoDataCenter release names Borlänge and gives an opening in 2027 for 'development and operation' of Mistral models: https://ecodatacenter.tech/press/mistral-ai-and-ecodatacenter-partner-to-build-ai-focused-data-center-in-sweden-3431886", "geo": { "lat": 60.4858, "lon": 15.4371, "precision": "city" } }
+      ],
+      "models": [],
+      "models_note": "Mistral publishes a model catalogue (including third-party GLM and DeepSeek models) and an EU regional endpoint, but does not say which site serves which model; the named sites are planned or training-focused."
+    },
+    {
+      "id": "scaleway",
+      "name": "Scaleway Generative APIs (Serverless)",
+      "operator": { "name": "Scaleway", "country": "FR", "url": "https://github.com/scaleway/docs-content/blob/main/pages/generative-apis/reference-content/supported-models.mdx" },
+      "note": "Read from Scaleway's docs source (scaleway/docs-content). The docs site refused automated fetches. Only models marked 'Available in Serverless' and not past their end-of-life date are listed. Dedicated Deployments are left out.",
+      "sites": [
+        { "id": "par", "region": "FR-IDF", "site": "Paris (OPCORE data centre)", "status": "live", "basis": "documented", "source": "https://github.com/scaleway/docs-content/blob/main/pages/generative-apis/faq.mdx", "checked": "2026-11-02", "note": "FAQ: 'All Serverless models are currently hosted in a secure data center located in Paris, France, operated by OPCORE'. Scaleway may add other European sites later.", "geo": { "lat": 48.8566, "lon": 2.3522, "precision": "city" } }
+      ],
+      "models": [
+        { "name": "GLM-5.3", "family": "zai", "artifact": "hf:zai-org/GLM-5.3", "lineage_origins": ["CN"], "sites": ["par"] },
+        { "name": "GLM-5.2", "family": "zai", "artifact": "hf:zai-org/GLM-5.2", "lineage_origins": ["CN"], "sites": ["par"] },
+        { "name": "DeepSeek-V4.1-Flash", "family": "deepseek", "modality": "multimodal", "artifact": "hf:deepseek-ai/DeepSeek-V4.1-Flash", "lineage_origins": ["CN"], "sites": ["par"] },
+        { "name": "DeepSeek-V4-Flash-0731", "family": "deepseek", "artifact": "hf:deepseek-ai/DeepSeek-V4-Flash-0731", "lineage_origins": ["CN"], "sites": ["par"] },
+        { "name": "Qwen3.8-27B", "family": "qwen", "modality": "multimodal", "artifact": "hf:Qwen/Qwen3.8-27B", "lineage_origins": ["CN"], "sites": ["par"] },
+        { "name": "Qwen3.6-35B-A3B", "family": "qwen", "modality": "multimodal", "artifact": "hf:Qwen/Qwen3.6-35B-A3B", "lineage_origins": ["CN"], "sites": ["par"] },
+        { "name": "Qwen3.5-397B-A17B", "family": "qwen", "modality": "multimodal", "artifact": "hf:Qwen/Qwen3.5-397B-A17B", "lineage_origins": ["CN"], "sites": ["par"] },
+        { "name": "Qwen3-235B-A22B-Instruct-2507", "family": "qwen", "artifact": "hf:Qwen/Qwen3-235B-A22B-Instruct-2507", "lineage_origins": ["CN"], "sites": ["par"] },
+        { "name": "Qwen3-Embedding-8B", "family": "qwen", "modality": "embedding", "artifact": "hf:Qwen/Qwen3-Embedding-8B", "lineage_origins": ["CN"], "sites": ["par"] },
+        { "name": "Gemma 4 26B A4B IT", "family": "google", "modality": "multimodal", "artifact": "hf:google/gemma-4-26B-A4B-it", "lineage_origins": ["US"], "sites": ["par"] },
+        { "name": "gpt-oss-120b", "family": "openai", "artifact": "hf:openai/gpt-oss-120b", "lineage_origins": ["US"], "sites": ["par"] },
+        { "name": "Whisper Large v3", "family": "openai", "modality": "audio", "artifact": "hf:openai/whisper-large-v3", "lineage_origins": ["US"], "sites": ["par"] },
+        { "name": "LightOnOCR-3 0.8B", "family": "lighton", "modality": "multimodal", "artifact": "hf:lightonai/LightOnOCR-3-0.8B", "lineage_origins": ["FR"], "sites": ["par"] },
+        { "name": "Llama 3.3 70B Instruct", "family": "meta", "artifact": "hf:meta-llama/Llama-3.3-70B-Instruct", "lineage_origins": ["US"], "sites": ["par"] },
+        { "name": "Mistral Medium 3.5 128B", "family": "mistral", "modality": "multimodal", "artifact": "hf:mistralai/Mistral-Medium-3.5-128B", "lineage_origins": ["FR"], "sites": ["par"] },
+        { "name": "Mistral Small 3.2 24B Instruct", "family": "mistral", "modality": "multimodal", "artifact": "hf:mistralai/Mistral-Small-3.2-24B-Instruct-2506", "lineage_origins": ["FR"], "sites": ["par"] },
+        { "name": "BGE Multilingual Gemma2", "family": "baai", "modality": "embedding", "artifact": "hf:BAAI/bge-multilingual-gemma2", "lineage_origins": ["CN"], "sites": ["par"] }
+      ]
+    },
+    {
+      "id": "ovhcloud",
+      "name": "OVHcloud AI Endpoints",
+      "operator": { "name": "OVHcloud", "country": "FR", "url": "https://www.ovhcloud.com/en/public-cloud/ai-endpoints/catalog/" },
+      "note": "The catalogue says it has 22 models, but only 17 could be read from the page. The current product page says only 'hosted and run in the European Union'. Gravelines comes from OVHcloud's launch release.",
+      "sites": [
+        { "id": "gra", "region": "FR-HDF", "site": "Gravelines (GRA)", "status": "live", "basis": "documented", "source": "https://corporate.ovhcloud.com/en/newsroom/news/ai-endpoints/", "checked": "2026-11-02", "note": "OVHcloud release of 29 April 2025: 'deployed from the Gravelines datacenter'.", "geo": { "lat": 50.9867, "lon": 2.1281, "precision": "city" } }
+      ],
+      "models": [
+        { "name": "Qwen3.8-27B", "family": "qwen", "modality": "multimodal", "lineage_origins": ["CN"], "sites": ["gra"] },
+        { "name": "Qwen3.5-397B-A17B", "family": "qwen", "modality": "multimodal", "lineage_origins": ["CN"], "sites": ["gra"] },
+        { "name": "Qwen3.6-27B", "family": "qwen", "modality": "multimodal", "lineage_origins": ["CN"], "sites": ["gra"] },
+        { "name": "Qwen3.5-9B", "family": "qwen", "modality": "multimodal", "lineage_origins": ["CN"], "sites": ["gra"] },
+        { "name": "Qwen3-Embedding-8B", "family": "qwen", "modality": "embedding", "lineage_origins": ["CN"], "sites": ["gra"] },
+        { "name": "Qwen3Guard-Gen-0.6B", "family": "qwen", "lineage_origins": ["CN"], "sites": ["gra"] },
+        { "name": "Qwen3Guard-Gen-8B", "family": "qwen", "lineage_origins": ["CN"], "sites": ["gra"] },
+        { "name": "gpt-oss-120b", "family": "openai", "lineage_origins": ["US"], "sites": ["gra"] },
+        { "name": "gpt-oss-20b", "family": "openai", "lineage_origins": ["US"], "sites": ["gra"] },
+        { "name": "Whisper Large v3", "family": "openai", "modality": "audio", "lineage_origins": ["US"], "sites": ["gra"] },
+        { "name": "Whisper Large v3 Turbo", "family": "openai", "modality": "audio", "lineage_origins": ["US"], "sites": ["gra"] },
+        { "name": "Mistral Small 3.2 24B Instruct 2506", "family": "mistral", "modality": "multimodal", "lineage_origins": ["FR"], "sites": ["gra"] },
+        { "name": "Qwen2.5-VL-72B-Instruct", "family": "qwen", "modality": "multimodal", "lineage_origins": ["CN"], "sites": ["gra"] },
+        { "name": "BGE Multilingual Gemma2", "family": "baai", "modality": "embedding", "lineage_origins": ["CN"], "sites": ["gra"] },
+        { "name": "Llama 3.3 70B Instruct", "family": "meta", "lineage_origins": ["US"], "sites": ["gra"] },
+        { "name": "BGE-M3", "family": "baai", "modality": "embedding", "lineage_origins": ["CN"], "sites": ["gra"] },
+        { "name": "Mistral Nemo Instruct 2407", "family": "mistral", "lineage_origins": ["FR", "US"], "sites": ["gra"] }
+      ]
+    },
+    {
+      "id": "ionos",
+      "name": "IONOS AI Model Hub",
+      "operator": { "name": "IONOS", "country": "DE", "url": "https://docs.ionos.com/cloud/ai/ai-model-hub/models" },
+      "note": "Endpoint openai.inference.de-txl.ionos.com. Paraphrase Multilingual MPNet v2 and FLUX.1-schnell are deprecated and leave the hub on 30 November 2026.",
+      "sites": [
+        { "id": "ber", "region": "DE-BE", "site": "Berlin", "status": "live", "basis": "documented", "source": "https://learn.cloud.ionos.com/foundational/products/AI/ai-model-hub.html", "checked": "2026-11-02", "note": "'All processing occurs exclusively in IONOS CLOUD German data centers (Berlin)'; no cross-region replication.", "geo": { "lat": 52.52, "lon": 13.405, "precision": "city" } }
+      ],
+      "models": [
+        { "name": "Qwen3.5 9B", "family": "qwen", "lineage_origins": ["CN"], "sites": ["ber"] },
+        { "name": "Mistral Small 3.2 24B", "family": "mistral", "artifact": "hf:mistralai/Mistral-Small-3.2-24B-Instruct-2506", "lineage_origins": ["FR"], "sites": ["ber"] },
+        { "name": "Qwen3.8 27B", "family": "qwen", "lineage_origins": ["CN"], "sites": ["ber"] },
+        { "name": "Llama 3.3 70B", "family": "meta", "lineage_origins": ["US"], "sites": ["ber"] },
+        { "name": "GPT-OSS 120B", "family": "openai", "lineage_origins": ["US"], "sites": ["ber"] },
+        { "name": "Qwen3.5 397B A17B", "family": "qwen", "lineage_origins": ["CN"], "sites": ["ber"] },
+        { "name": "Qwen3 Coder Next 80B", "family": "qwen", "lineage_origins": ["CN"], "sites": ["ber"] },
+        { "name": "BGE M3", "family": "baai", "modality": "embedding", "lineage_origins": ["CN"], "sites": ["ber"] },
+        { "name": "Paraphrase Multilingual MPNet v2", "family": "sentence-transformers", "modality": "embedding", "lineage_origins": ["DE"], "sites": ["ber"] },
+        { "name": "Qwen3 VL Embedding 8B", "family": "qwen", "modality": "embedding", "lineage_origins": ["CN"], "sites": ["ber"] },
+        { "name": "Qwen3 VL Reranker 8B", "family": "qwen", "modality": "rerank", "lineage_origins": ["CN"], "sites": ["ber"] },
+        { "name": "FLUX.1-schnell", "family": "black-forest-labs", "modality": "image", "lineage_origins": ["DE"], "sites": ["ber"] },
+        { "name": "FLUX.2-klein-4B", "family": "black-forest-labs", "modality": "image", "lineage_origins": ["DE"], "sites": ["ber"] },
+        { "name": "LightOnOCR-2-1B", "family": "lighton", "modality": "multimodal", "lineage_origins": ["FR"], "sites": ["ber"] },
+        { "name": "Whisper Large v3", "family": "openai", "modality": "audio", "lineage_origins": ["US"], "sites": ["ber"] }
+      ]
+    },
+    {
+      "id": "stackit",
+      "name": "STACKIT AI Model Serving",
+      "operator": { "name": "STACKIT (Schwarz Digits)", "country": "DE", "url": "https://docs.stackit.cloud/products/data-and-ai/ai-model-serving/basics/available-shared-models/" },
+      "note": "Every shared model is priced in region EU01, and the endpoint is api.openai-compat.model-serving.eu01.onstackit.cloud. No AI Model Serving was found documented for the Austrian region eu02.",
+      "sites": [
+        { "id": "eu01", "region": "DE", "site": "Germany South (eu01)", "status": "live", "basis": "documented", "source": "https://docs.stackit.cloud/platform/regions/", "checked": "2026-11-02", "note": "STACKIT: 'all regions exclusively in Germany (eu01) and Austria (eu02)'; the price list labels EU01 Germany South. STACKIT's publicly named German data centres are DC01 Neckarsulm and DC08 Ellhofen (https://stackit.com/en/facts), both near Heilbronn, but it does not say which of them serve AI Model Serving. The point marks that area.", "geo": { "lat": 49.1919, "lon": 9.2246, "precision": "region" } }
+      ],
+      "models": [
+        { "name": "Qwen3-VL 235B A22B Instruct FP8", "family": "qwen", "modality": "multimodal", "artifact": "hf:Qwen/Qwen3-VL-235B-A22B-Instruct-FP8", "lineage_origins": ["CN"], "sites": ["eu01"] },
+        { "name": "Qwen3.8 27B", "family": "qwen", "modality": "multimodal", "artifact": "hf:Qwen/Qwen3.8-27B", "lineage_origins": ["CN"], "sites": ["eu01"] },
+        { "name": "Qwen3.6 27B", "family": "qwen", "modality": "multimodal", "artifact": "hf:Qwen/Qwen3.6-27B", "lineage_origins": ["CN"], "sites": ["eu01"] },
+        { "name": "Llama 3.3 70B Instruct FP8", "family": "meta", "artifact": "hf:cortecs/Llama-3.3-70B-Instruct-FP8-Dynamic", "lineage_origins": ["US"], "sites": ["eu01"] },
+        { "name": "GPT-OSS 120B", "family": "openai", "artifact": "hf:openai/gpt-oss-120b", "lineage_origins": ["US"], "sites": ["eu01"] },
+        { "name": "GPT-OSS 20B", "family": "openai", "artifact": "hf:openai/gpt-oss-20b", "lineage_origins": ["US"], "sites": ["eu01"] },
+        { "name": "Gemma 4 31B", "family": "google", "modality": "multimodal", "artifact": "hf:google/gemma-4-31B-it", "lineage_origins": ["US"], "sites": ["eu01"] },
+        { "name": "E5 Mistral 7B Instruct", "family": "microsoft", "modality": "embedding", "artifact": "hf:intfloat/e5-mistral-7b-instruct", "lineage_origins": ["US", "FR"], "sites": ["eu01"] },
+        { "name": "Qwen3 VL Embedding 8B", "family": "qwen", "modality": "embedding", "artifact": "hf:Qwen/Qwen3-VL-Embedding-8B", "lineage_origins": ["CN"], "sites": ["eu01"] }
+      ]
+    },
+    {
+      "id": "t-systems",
+      "name": "T-Systems AI Foundation Services (LLM Hub)",
+      "operator": { "name": "T-Systems International", "country": "DE", "url": "https://docs.llmhub.t-systems.net/models/comparison/" },
+      "note": "Only the models 'Hosted on T-Cloud Public — Telekom's sovereign infrastructure in Germany' are listed. The hub's Azure and GCP models (GPT, Claude, Gemini, in 'EU regions' or unstated regions) are left out, and so is 'd3', whose developer is not named.",
+      "sites": [
+        { "id": "de", "region": "DE", "site": "Germany (T-Cloud Public)", "status": "live", "basis": "documented", "source": "https://docs.llmhub.t-systems.net/models/comparison/", "checked": "2026-11-02", "note": "LLM Hub names only the country. T Cloud Public (formerly Open Telekom Cloud) runs its German region eu-de from the Magdeburg/Biere twin-core data centres (https://open-telekom-cloud.com/en/security/data-centers), but LLM Hub does not name the facility.", "geo": { "lat": 51.1657, "lon": 10.4515, "precision": "country" } }
+      ],
+      "models": [
+        { "name": "BGE-M3", "family": "baai", "modality": "embedding", "lineage_origins": ["CN"], "sites": ["de"] },
+        { "name": "DiffusionGemma 26B A4B", "family": "google", "modality": "multimodal", "lineage_origins": ["US"], "sites": ["de"] },
+        { "name": "Gemma 4", "family": "google", "lineage_origins": ["US"], "sites": ["de"] },
+        { "name": "GLM 5.3", "family": "zai", "lineage_origins": ["CN"], "sites": ["de"] },
+        { "name": "GLM 5.3 Flash", "family": "zai", "modality": "multimodal", "lineage_origins": ["CN"], "sites": ["de"] },
+        { "name": "GPT-OSS 120B", "family": "openai", "lineage_origins": ["US"], "sites": ["de"] },
+        { "name": "Jina Embeddings v2 Base DE", "family": "jina", "modality": "embedding", "lineage_origins": ["DE"], "sites": ["de"] },
+        { "name": "LightOnOCR-3-4B", "family": "lighton", "modality": "multimodal", "lineage_origins": ["FR"], "sites": ["de"] },
+        { "name": "Mistral Small 4", "family": "mistral", "modality": "multimodal", "lineage_origins": ["FR"], "sites": ["de"] },
+        { "name": "NVIDIA Nemotron 3 Super 120B FP8", "family": "nvidia", "lineage_origins": ["US"], "sites": ["de"] },
+        { "name": "PaddleOCR-VL-1.6", "family": "baidu", "modality": "multimodal", "lineage_origins": ["CN"], "sites": ["de"] },
+        { "name": "Qwen 3.6 35B FP8", "family": "qwen", "modality": "multimodal", "lineage_origins": ["CN"], "sites": ["de"] },
+        { "name": "Qwen 3.8 27B FP8", "family": "qwen", "modality": "multimodal", "lineage_origins": ["CN"], "sites": ["de"] },
+        { "name": "Qwen3 Embedding 8B", "family": "qwen", "modality": "embedding", "lineage_origins": ["CN"], "sites": ["de"] },
+        { "name": "Qwen3-Reranker-4B", "family": "qwen", "modality": "rerank", "lineage_origins": ["CN"], "sites": ["de"] },
+        { "name": "Whisper Large v3", "family": "openai", "modality": "audio", "lineage_origins": ["US"], "sites": ["de"] },
+        { "name": "Whisper Large v3 Turbo", "family": "openai", "modality": "audio", "lineage_origins": ["US"], "sites": ["de"] }
+      ]
+    },
+    {
+      "id": "nebius-token-factory",
+      "name": "Nebius Token Factory",
+      "operator": { "name": "Nebius", "country": "NL", "url": "https://docs.tokenfactory.nebius.com/public-serverless.md" },
+      "note": "Public serverless endpoints show Region 'Global': Nebius says the processing location is decided dynamically and can change without notice. Only dedicated endpoints are pinned to a user-selected region. Token Factory docs use eu-north1 (Finland) as the dedicated-endpoint region in their deploy example. Nebius's regions page lists eu-north1 as Finland without naming a city; Mäntsälä is Nebius's own Finnish data centre per its newsroom, so the eu-north1 = Mäntsälä mapping is inferred.",
+      "sites": [
+        { "id": "eu-north1", "region": "FI-18", "site": "Mäntsälä", "status": "live", "basis": "documented", "source": "https://docs.tokenfactory.nebius.com/ai-models-inference/dedicated-endpoints/deploy-api.md", "checked": "2026-11-02", "note": "Dedicated endpoints only (region eu-north1, Finland per https://docs.nebius.com/overview/regions). City from https://nebius.com/newsroom/nebius-to-triple-capacity-at-finland-data-center-to-75-mw.", "geo": { "lat": 60.6336, "lon": 25.3178, "precision": "city" } },
+        { "id": "eu-west1", "region": "FR", "site": "France", "status": "live", "basis": "claimed", "source": "https://www.bolna.ai/docs/custom-llm-inference/nebius.md", "checked": "2026-11-02", "note": "A third-party integration guide lists eu-west1 as a dedicated-endpoint region. Nebius's own regions page lists eu-west1 as France with no city, and Token Factory docs don't list it.", "geo": { "lat": 46.2276, "lon": 2.2137, "precision": "country" } }
+      ],
+      "models": [],
+      "models_note": "No per-region model mapping. The serverless catalogue is global and not tied to a site. Dedicated endpoints deploy any model from the endpoint-template list, which Nebius says is the source of truth for model/GPU/region combinations, into the chosen region."
+    },
+    {
+      "id": "infomaniak",
+      "name": "Infomaniak AI Services",
+      "operator": { "name": "Infomaniak", "country": "CH", "url": "https://www.infomaniak.com/en/hosting/ai-services/open-source-models" },
+      "note": "Infomaniak says its AI and GPU services run in its own data centres in Switzerland and doesn't name the site for the API. Its Euria press release (Dec 2025) names the D4 data centre (Geneva area) as the one powering Euria, its assistant. Whisper V3 (speech-to-text) is offered too but left out because no modality value fits.",
+      "sites": [
+        { "id": "ch", "region": "CH", "site": "Switzerland (Infomaniak data centres)", "status": "live", "basis": "documented", "source": "https://www.infomaniak.com/en/hosting/ai-services", "checked": "2026-11-02", "note": "Infomaniak's support guide says the AI is hosted only on its own servers in Switzerland (https://www.infomaniak.com/en/support/faq/1369/understanding-the-use-of-ai-at-infomaniak).", "geo": { "lat": 46.8182, "lon": 8.2275, "precision": "country" } }
+      ],
+      "models": [
+        { "name": "Kimi K2.6", "family": "moonshot", "modality": "multimodal", "artifact": "hf:moonshotai/Kimi-K2.6", "lineage_origins": ["CN"], "sites": ["ch"] },
+        { "name": "Qwen3.5 397B A17B FP8", "family": "qwen", "modality": "multimodal", "artifact": "hf:Qwen/Qwen3.5-397B-A17B-FP8", "lineage_origins": ["CN"], "sites": ["ch"] },
+        { "name": "Qwen3.8 27B FP8", "family": "qwen", "modality": "multimodal", "artifact": "hf:Qwen/Qwen3.8-27B-FP8", "lineage_origins": ["CN"], "sites": ["ch"] },
+        { "name": "Mistral Small 4 119B (2603)", "family": "mistral", "modality": "multimodal", "artifact": "hf:mistralai/Mistral-Small-4-119B-2603", "lineage_origins": ["FR"], "sites": ["ch"] },
+        { "name": "Apertus v1.5 70B", "family": "swiss-ai", "modality": "multimodal", "artifact": "hf:swiss-ai/Apertus-v1.5-70B", "lineage_origins": ["CH"], "sites": ["ch"] },
+        { "name": "Gemma 4 31B IT", "family": "google", "artifact": "hf:google/gemma-4-31B-it", "lineage_origins": ["US"], "sites": ["ch"] },
+        { "name": "Ministral 3 14B Instruct (2512)", "family": "mistral", "modality": "multimodal", "artifact": "hf:mistralai/Ministral-3-14B-Instruct-2512", "lineage_origins": ["FR"], "sites": ["ch"] },
+        { "name": "BGE Reranker v2 M3", "family": "baai", "modality": "rerank", "artifact": "hf:BAAI/bge-reranker-v2-m3", "lineage_origins": ["CN"], "sites": ["ch"] },
+        { "name": "Qwen3 Reranker 0.6B", "family": "qwen", "modality": "rerank", "artifact": "hf:Qwen/Qwen3-Reranker-0.6B", "lineage_origins": ["CN"], "sites": ["ch"] },
+        { "name": "Qwen3 Embedding 8B", "family": "qwen", "modality": "embedding", "artifact": "hf:Qwen/Qwen3-Embedding-8B", "lineage_origins": ["CN"], "sites": ["ch"] },
+        { "name": "BGE Multilingual Gemma2", "family": "baai", "modality": "embedding", "lineage_origins": ["CN"], "sites": ["ch"] },
+        { "name": "All MiniLM L12 v2", "family": "sentence-transformers", "modality": "embedding", "lineage_origins": ["US"], "sites": ["ch"] },
+        { "name": "PhotoMaker V2", "family": "tencent", "modality": "image", "lineage_origins": ["CN"], "sites": ["ch"] },
+        { "name": "FLUX.1 schnell", "family": "black-forest-labs", "modality": "image", "lineage_origins": ["DE"], "sites": ["ch"] }
+      ]
+    },
+    {
+      "id": "regolo",
+      "name": "Regolo.ai",
+      "operator": { "name": "Seeweb", "country": "IT", "url": "https://regolo.ai/team-infrastructure/" },
+      "note": "Regolo is Seeweb's inference platform. It says its inference infrastructure is physically hosted in data centres in the Province of Frosinone (Lazio) and in Lombardy, plus unspecified further regions via DHH S.p.A.",
+      "sites": [
+        { "id": "frosinone", "region": "IT-FR", "site": "Province of Frosinone", "status": "live", "basis": "documented", "source": "https://regolo.ai/team-infrastructure/", "checked": "2026-11-02", "geo": { "lat": 41.6396, "lon": 13.3426, "precision": "region" } },
+        { "id": "lombardy", "region": "IT-25", "site": "Lombardy", "status": "live", "basis": "documented", "source": "https://regolo.ai/team-infrastructure/", "checked": "2026-11-02", "note": "Regolo names only the region. Seeweb's Lombardy facilities are reported in Milan and Sesto San Giovanni, which Regolo doesn't confirm.", "geo": { "lat": 45.5853, "lon": 9.9302, "precision": "region" } }
+      ],
+      "models": [],
+      "models_note": "No per-site mapping. The public catalogue (https://api.regolo.ai/models, checked 2026-11-02) lists apertus-70b, deepseek-ocr-2, gemma4-31b, glm5.2, gpt-oss-120b, gpt-oss-20b, mistral-small-4-119b, qwen3.5-122b, qwen3.5-9b, qwen3.8-27b, Qwen-Image, Qwen3-Embedding-8B and Qwen3-Reranker-4B. It also lists faster-whisper-large-v3 (speech) and Regolo's own brick-v1-beta and clef-flash."
+    },
+    {
+      "id": "berget",
+      "name": "Berget AI",
+      "operator": { "name": "Berget AI", "country": "SE", "url": "https://berget.ai/" },
+      "note": "Berget says it runs on its own hardware in Sweden. A second data centre in Southern Stockholm went live in March 2026 (https://berget.ai/en/blog/second-datacenter-is-live). The original site's city isn't named, so both sites are recorded as one country-level site. Speech-to-text models (KB-Whisper, NB-Whisper, Pianissimo, faster-whisper) and preview/eval 'system-one' models are left out.",
+      "sites": [
+        { "id": "se", "region": "SE", "site": "Sweden (incl. Southern Stockholm)", "status": "live", "basis": "documented", "source": "https://berget.ai/", "checked": "2026-11-02", "geo": { "lat": 60.1282, "lon": 18.6435, "precision": "country" } }
+      ],
+      "models": [
+        { "name": "Mistral Small 3.2 24B Instruct (2506)", "family": "mistral", "artifact": "hf:mistralai/Mistral-Small-3.2-24B-Instruct-2506", "lineage_origins": ["FR"], "sites": ["se"] },
+        { "name": "GLM-5.3-Flash", "family": "zai", "modality": "multimodal", "artifact": "hf:zai-org/GLM-5.3-Flash", "lineage_origins": ["CN"], "sites": ["se"] },
+        { "name": "Kimi K3", "family": "moonshot", "modality": "multimodal", "artifact": "hf:moonshotai/Kimi-K3", "lineage_origins": ["CN"], "sites": ["se"] },
+        { "name": "Gemma 4 31B IT", "family": "google", "modality": "multimodal", "artifact": "hf:google/gemma-4-31B-it", "lineage_origins": ["US"], "sites": ["se"] },
+        { "name": "BGE Reranker v2 M3", "family": "baai", "modality": "rerank", "artifact": "hf:BAAI/bge-reranker-v2-m3", "lineage_origins": ["CN"], "sites": ["se"] },
+        { "name": "Multilingual E5 Large Instruct", "family": "microsoft", "modality": "embedding", "artifact": "hf:intfloat/multilingual-e5-large-instruct", "lineage_origins": ["US"], "sites": ["se"] },
+        { "name": "Multilingual E5 Large", "family": "microsoft", "modality": "embedding", "artifact": "hf:intfloat/multilingual-e5-large", "lineage_origins": ["US"], "sites": ["se"] }
+      ]
+    },
+    {
+      "id": "swisscom-swiss-ai-platform",
+      "name": "Swisscom Swiss AI Platform",
+      "operator": { "name": "Swisscom", "country": "CH", "url": "https://www.swisscom.ch/en/business/enterprise/offer/platforms-applications/data-driven-business/swiss-ai-platform.html" },
+      "note": "Enterprise offer with managed inference endpoints through the Swisscom Digital Marketplace. Swisscom says data stays in Switzerland but names no data-centre city. Apertus is the only model it names; other multimodal, speech-to-text and LLM models are mentioned without names.",
+      "sites": [
+        { "id": "ch", "region": "CH", "site": "Switzerland", "status": "live", "basis": "documented", "source": "https://www.swisscom.ch/en/business/enterprise/offer/platforms-applications/data-driven-business/swiss-ai-platform.html", "checked": "2026-11-02", "geo": { "lat": 46.8182, "lon": 8.2275, "precision": "country" } }
+      ],
+      "models": [
+        { "name": "Apertus", "family": "swiss-ai", "lineage_origins": ["CH"], "sites": ["ch"] }
+      ]
+    },
+    {
+      "id": "exoscale",
+      "name": "Exoscale AI Inference",
+      "operator": { "name": "Exoscale", "country": "CH", "url": "https://www.exoscale.com/ai-cloud-infrastructure/managed-inference/" },
+      "note": "There are two products. On-Demand Inference is a per-token model catalogue, in private preview by invitation, and runs only in AT-VIE-2 (Vienna). Dedicated Inference (GA since 15 June 2026) runs bring-your-own Hugging Face models on dedicated GPUs in the GPU zones, which the product page gives as examples: AT-VIE-2, CH-GVA-2, DE-FRA-1, HR-ZAG-1, CH-DK-2. Dedicated Inference has no fixed catalogue, so models are attached only to AT-VIE-2. Zone cities are from https://www.exoscale.com/datacenters/.",
+      "sites": [
+        { "id": "at-vie-2", "region": "AT-9", "site": "Vienna", "status": "live", "basis": "documented", "source": "https://www.exoscale.com/ai-cloud-infrastructure/managed-inference/", "checked": "2026-11-02", "note": "On-Demand Inference (private preview) and Dedicated Inference.", "geo": { "lat": 48.2082, "lon": 16.3738, "precision": "city" } },
+        { "id": "ch-gva-2", "region": "CH-GE", "site": "Geneva", "status": "live", "basis": "documented", "source": "https://www.exoscale.com/ai-cloud-infrastructure/dedicated-inference/", "checked": "2026-11-02", "note": "Dedicated Inference only (bring your own model).", "geo": { "lat": 46.2044, "lon": 6.1432, "precision": "city" } },
+        { "id": "de-fra-1", "region": "DE-HE", "site": "Frankfurt", "status": "live", "basis": "documented", "source": "https://www.exoscale.com/ai-cloud-infrastructure/dedicated-inference/", "checked": "2026-11-02", "note": "Dedicated Inference only (bring your own model).", "geo": { "lat": 50.1109, "lon": 8.6821, "precision": "city" } },
+        { "id": "hr-zag-1", "region": "HR-21", "site": "Zagreb", "status": "live", "basis": "documented", "source": "https://www.exoscale.com/ai-cloud-infrastructure/dedicated-inference/", "checked": "2026-11-02", "note": "Dedicated Inference only (bring your own model).", "geo": { "lat": 45.815, "lon": 15.9819, "precision": "city" } },
+        { "id": "ch-dk-2", "region": "CH-ZH", "site": "Zurich", "status": "live", "basis": "documented", "source": "https://www.exoscale.com/ai-cloud-infrastructure/dedicated-inference/", "checked": "2026-11-02", "note": "Dedicated Inference only (bring your own model).", "geo": { "lat": 47.3769, "lon": 8.5417, "precision": "city" } }
+      ],
+      "models": [
+        { "name": "Qwen3.8 27B", "family": "qwen", "lineage_origins": ["CN"], "sites": ["at-vie-2"] },
+        { "name": "Qwen3 Embedding 8B", "family": "qwen", "modality": "embedding", "lineage_origins": ["CN"], "sites": ["at-vie-2"] }
+      ]
+    },
+    {
+      "id": "greenpt",
+      "name": "GreenPT API",
+      "operator": { "name": "GreenPT BV", "country": "NL", "url": "https://greenpt.com/sustainability" },
+      "note": "GreenPT says the platform is hosted by Scaleway in Paris and that its Code models (GLM-5.3, Kimi K2.7 Code) run in Verda data centres in Helsinki. It does not say where the other models run, so they are listed without a site. Left out: MiniMax (conflicting statements), Deepgram speech models, Metis, the green-* aliases and models marked \"Older\".",
+      "sites": [
+        { "id": "par", "region": "FR-IDF", "site": "Paris", "status": "live", "basis": "documented", "source": "https://greenpt.com/sustainability", "checked": "2026-11-02", "note": "Scaleway (location code PAR).", "geo": { "lat": 48.8566, "lon": 2.3522, "precision": "city" } },
+        { "id": "hel", "region": "FI-18", "site": "Helsinki", "status": "live", "basis": "documented", "source": "https://greenpt.com/sustainability", "checked": "2026-11-02", "note": "Verda data centres FIN-01, FIN-02 and FIN-03.", "geo": { "lat": 60.1699, "lon": 24.9384, "precision": "city" } }
+      ],
+      "models": [
+        { "name": "GLM-5.3", "family": "zai", "lineage_origins": ["CN"], "sites": ["hel"] },
+        { "name": "Kimi K2.7 Code", "family": "moonshot", "modality": "multimodal", "lineage_origins": ["CN"], "sites": ["hel"] },
+        { "name": "DeepSeek V4.1 Flash", "family": "deepseek", "modality": "multimodal", "lineage_origins": ["CN"], "sites": [] },
+        { "name": "Kimi K3", "family": "moonshot", "modality": "multimodal", "lineage_origins": ["CN"], "sites": [] },
+        { "name": "GLM-5.3-Flash", "family": "zai", "modality": "multimodal", "lineage_origins": ["CN"], "sites": [] },
+        { "name": "Qwen3 Embedding 8B", "family": "qwen", "modality": "embedding", "lineage_origins": ["CN"], "sites": [] },
+        { "name": "Qwen3 Reranker 4B", "family": "qwen", "modality": "rerank", "lineage_origins": ["CN"], "sites": [] }
+      ]
+    },
+    {
+      "id": "groq",
+      "name": "Groq (Helsinki)",
+      "operator": { "name": "Groq", "country": "US", "url": "https://groq.com/news/groq-launches-european-data-center-footprint-in-helsinki-finland" },
+      "note": "Groq's first European footprint, in space leased from Equinix (the facility among Equinix's Helsinki sites is not stated). GroqCloud docs say customer data is retained in GCP buckets in the United States; there is no documented EU region selection.",
+      "sites": [
+        { "id": "hel", "region": "FI-18", "site": "Helsinki (Equinix)", "status": "live", "basis": "documented", "facility_operator": "Equinix", "source": "https://groq.com/news/groq-launches-european-data-center-footprint-in-helsinki-finland", "checked": "2026-11-02", "note": "Announced 6 July 2025; reachable over Equinix Fabric private connections", "geo": { "lat": 60.1699, "lon": 24.9384, "precision": "city" } }
+      ],
+      "models": [],
+      "models_note": "Groq does not say which GroqCloud models are served from Helsinki, and its data page (https://console.groq.com/docs/your-data) mentions no European region."
+    },
+    {
+      "id": "cerebras",
+      "name": "Cerebras Inference (Europe, planned)",
+      "operator": { "name": "Cerebras Systems", "country": "US", "url": "https://investors.cerebras.ai/news-releases/news-release-details/cerebras-systems-accelerates-european-expansion-200mw-ai-compute" },
+      "note": "July 2026: Cerebras says its first European capacity comes online by end of 2026, scaling to 200 MW across France and the Nordics by end of 2027; part of it is for OpenAI workloads. No European site is confirmed live. The University of Edinburgh (EPCC) CS-3 cluster is a research system, not Cerebras Inference, and is left out.",
+      "sites": [
+        { "id": "mik", "region": "FI-04", "site": "Mikkeli (Compute Nordic Finland)", "status": "planned", "basis": "documented", "facility_operator": "Compute Nordic Finland", "source": "https://investors.cerebras.ai/news-releases/news-release-details/cerebras-and-compute-nordic-finland-announce-new-165-mw-ai-data", "checked": "2026-11-02", "note": "Announced 1 September 2026; 165 MW in phases, first 50 MW under construction", "geo": { "lat": 61.6886, "lon": 27.2723, "precision": "city" } },
+        { "id": "fr", "region": "FR", "site": "France (site not named)", "status": "planned", "basis": "documented", "source": "https://investors.cerebras.ai/news-releases/news-release-details/cerebras-systems-accelerates-european-expansion-200mw-ai-compute", "checked": "2026-11-02", "note": "Country only; part of the 200 MW European build-out announced July 2026", "geo": { "lat": 46.2276, "lon": 2.2137, "precision": "country" } },
+        { "id": "no", "region": "NO", "site": "Norway (site not named)", "status": "planned", "basis": "documented", "source": "https://investors.cerebras.ai/news-releases/news-release-details/cerebras-systems-accelerates-european-expansion-200mw-ai-compute", "checked": "2026-11-02", "note": "Country only; capacity contracted for 2027", "geo": { "lat": 60.472, "lon": 8.4689, "precision": "country" } }
+      ],
+      "models": [],
+      "models_note": "No European site is live yet, and Cerebras names no models for its European capacity."
+    },
+    {
+      "id": "nscale",
+      "name": "Nscale (Norway, UK)",
+      "operator": { "name": "Nscale", "country": "GB", "url": "https://nscale.com/ai-infrastructure" },
+      "note": "Nscale sells GPU capacity and also runs a serverless inference API, but it does not say which site serves it. Partner sites listed by Nscale (Stavanger, Oslo, Hayes, Sines, Keflavik, Blönduós) are left out because their status is not stated.",
+      "sites": [
+        { "id": "glo", "region": "NO-18", "site": "Glomfjord", "status": "live", "basis": "documented", "source": "https://nscale.com/ai-infrastructure", "checked": "2026-11-02", "note": "30 MW operational, expandable to 60 MW", "geo": { "lat": 66.8106, "lon": 13.947, "precision": "city" } },
+        { "id": "nvk", "region": "NO-18", "site": "Narvik (Kvandal), Stargate Norway", "status": "planned", "basis": "documented", "source": "https://nscale.com/ai-infrastructure", "checked": "2026-11-02", "note": "Designed for 230 MW. Announced July 2025 with Aker and OpenAI; in 2026 Microsoft contracted the capacity after OpenAI reportedly withdrew. No confirmed go-live.", "geo": { "lat": 68.4385, "lon": 17.4273, "precision": "city" } },
+        { "id": "lou", "region": "GB-ESS", "site": "Loughton, Essex", "status": "planned", "basis": "documented", "source": "https://nscale.com/ai-infrastructure", "checked": "2026-11-02", "note": "Up to 90 MW; press reports a Q4 2026 go-live", "geo": { "lat": 51.6481, "lon": 0.0553, "precision": "city" } }
+      ],
+      "models": [],
+      "models_note": "GPU capacity for customers. Nscale's serverless inference models are not tied to any site, and its model docs require an access code."
+    },
+    {
+      "id": "lumi-aif",
+      "name": "LUMI AI Factory (Kajaani)",
+      "operator": { "name": "CSC – IT Center for Science", "country": "FI", "url": "https://docs.lumi-supercomputer.eu/laif/inference/aitta/" },
+      "note": "EuroHPC AI Factory. Aitta is an OpenAI-compatible inference service on LUMI-G nodes (2 nodes), open to LUMI project users and not meant for production. LUMI-AI, a new system in the same Kajaani data centre, is due in the second half of 2027.",
+      "sites": [
+        { "id": "kaj", "region": "FI-05", "site": "Kajaani (CSC data centre, LUMI)", "status": "live", "basis": "documented", "source": "https://docs.lumi-supercomputer.eu/laif/inference/aitta/", "checked": "2026-11-02", "note": "LUMI is located in CSC's Kajaani data centre (https://www.lumi-supercomputer.eu/lumi-ai-factory-first-services/)", "geo": { "lat": 64.2222, "lon": 27.7278, "precision": "city" } }
+      ],
+      "models": [
+        { "name": "GPT-OSS 120B", "family": "openai", "lineage_origins": ["US"], "sites": ["kaj"] },
+        { "name": "Llama Poro 2 70B Instruct", "family": "meta", "lineage_origins": ["FI", "US"], "sites": ["kaj"] },
+        { "name": "Qwen3-Coder-Next", "family": "qwen", "lineage_origins": ["CN"], "sites": ["kaj"] }
+      ]
+    },
+    {
+      "id": "jaif",
+      "name": "JUPITER AI Factory (Jülich)",
+      "operator": { "name": "Forschungszentrum Jülich", "country": "DE", "url": "https://www.eurohpc-ju.europa.eu/ai-factories/germany_en" },
+      "note": "EuroHPC AI Factory on JUPITER. It lists a Model Deployment service, and JUPITER is to be extended with the JARVIS inference system (https://cordis.europa.eu/project/id/101250682). JARVIS was put to tender in July 2026, with the contract due to start in March 2027.",
+      "sites": [
+        { "id": "jue", "region": "DE-NW", "site": "Jülich (JSC, JUPITER)", "status": "planned", "basis": "documented", "source": "https://www.eurohpc-ju.europa.eu/ai-factories/germany_en", "checked": "2026-11-02", "note": "Planned refers to the JARVIS inference service; JUPITER itself is in operation", "geo": { "lat": 50.922, "lon": 6.3583, "precision": "city" } }
+      ],
+      "models": [],
+      "models_note": "Models not published; the inference system is still being procured."
+    },
+    {
+      "id": "hammerhai",
+      "name": "HammerHAI AI Factory (Stuttgart)",
+      "operator": { "name": "HLRS (University of Stuttgart)", "country": "DE", "url": "https://www.hlrs.de/news/detail/hammerhai-a-new-supercomputer-for-artificial-intelligence" },
+      "note": "EuroHPC AI Factory open since April 2025. It already offers startups and SMEs access to LLM inference services, on existing systems hosted by consortium partners, without saying which. The dedicated HammerHAI system (HPE, NVIDIA GB200 NVL4, Axelera AI inference partition) is due in operation in the second half of 2026.",
+      "sites": [
+        { "id": "stu", "region": "DE-BW", "site": "Stuttgart (HLRS)", "status": "planned", "basis": "documented", "source": "https://www.hlrs.de/news/detail/hammerhai-a-new-supercomputer-for-artificial-intelligence", "checked": "2026-11-02", "note": "Delivery scheduled for Q2 2026, operation for H2 2026; later moving to the new HLRS III building. Go-live not confirmed.", "geo": { "lat": 48.7758, "lon": 9.1829, "precision": "city" } }
+      ],
+      "models": [],
+      "models_note": "No model list published for HammerHAI's LLM inference services."
+    },
+    {
+      "id": "it4lia",
+      "name": "IT4LIA AI Factory (Bologna)",
+      "operator": { "name": "CINECA", "country": "IT", "url": "https://www.eurohpc-ju.europa.eu/eurohpc-ju-signs-contract-boost-ai-capabilities-it4lia-ai-factory-2026-04-22_en" },
+      "note": "EuroHPC AI Factory. It has offered AI compute on Leonardo since April 2025. The new AI-optimised system (contract signed April 2026) has a dedicated European partition with Axelera AI accelerators for AI inference.",
+      "sites": [
+        { "id": "blq", "region": "IT-45", "site": "Bologna (DAMA Tecnopolo, CINECA)", "status": "planned", "basis": "documented", "source": "https://www.eurohpc-ju.europa.eu/eurohpc-ju-signs-contract-boost-ai-capabilities-it4lia-ai-factory-2026-04-22_en", "checked": "2026-11-02", "note": "Planned refers to the inference partition; no installation date published", "geo": { "lat": 44.4949, "lon": 11.3426, "precision": "city" } }
+      ],
+      "models": [],
+      "models_note": "Models not published; no hosted model service documented yet."
+    },
+    {
+      "id": "bsc-aif",
+      "name": "BSC AI Factory (Barcelona)",
+      "operator": { "name": "Barcelona Supercomputing Center (BSC-CNS)", "country": "ES", "url": "https://www.eurohpc-ju.europa.eu/ai-factories/spain_en" },
+      "note": "EuroHPC AI Factory. MareNostrum 5 is being upgraded with AI partitions 'specially designed' for LLM training and inference (contract signed January 2026). No hosted model service is described.",
+      "sites": [
+        { "id": "bcn", "region": "ES-CT", "site": "Barcelona (BSC, MareNostrum 5)", "status": "planned", "basis": "documented", "source": "https://www.eurohpc-ju.europa.eu/ai-factories/spain_en", "checked": "2026-11-02", "note": "Planned refers to the AI partitions; MareNostrum 5 itself is in operation", "geo": { "lat": 41.3874, "lon": 2.1686, "precision": "city" } }
+      ],
+      "models": [],
+      "models_note": "Compute for inference workloads; no hosted model API and no models published."
+    },
+    {
+      "id": "telekom-industrial-ai-cloud",
+      "name": "Deutsche Telekom Industrial AI Cloud (Munich)",
+      "operator": { "name": "Deutsche Telekom (T-Systems)", "country": "DE", "url": "https://www.telekom.com/en/newsroom/latest-updates/media-information/2026/2/germany-s-first-ai-factory-for-industry" },
+      "sites": [
+        { "id": "muc", "region": "DE-BY", "site": "Munich (Tucherpark), Industrial AI Cloud", "status": "live", "basis": "documented", "source": "https://www.telekom.com/en/newsroom/latest-updates/media-information/2026/2/germany-s-first-ai-factory-for-industry", "checked": "2026-11-02", "note": "In operation since 4 February 2026. Telekom said (Nov 2025) that Perplexity would use it for in-country inference.", "geo": { "lat": 48.1351, "lon": 11.582, "precision": "city" } }
+      ],
+      "models": [],
+      "models_note": "GPU capacity (about 10,000 NVIDIA Blackwell GPUs, with data-centre partner Polarise); no public list of models served there. Telekom's hosted models are listed under T-Systems AI Foundation Services."
+    }
+  ]
+}
