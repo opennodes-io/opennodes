@@ -106,7 +106,7 @@
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<nav class="top" aria-label="Site"><div class="wrap"><a class="brand" href="/"><img src="/favicon.svg" width="20" height="20" alt="">OpenNodes</a><a href="https://registry.opennodes.io/">Registry</a><a href="/integrations">Integrations</a><a href="/eu">Europe</a><a href="/about" aria-current="page">About</a><a href="https://github.com/opennodes-io/opennodes">GitHub</a></div></nav>
+<nav class="top" aria-label="Site"><div class="wrap"><a class="brand" href="/"><img src="/favicon.svg" width="20" height="20" alt="">OpenNodes</a><a href="https://registry.opennodes.io/">Registry</a><a href="https://registry.opennodes.io/#/where">Map</a><a href="/integrations">Integrations</a><a href="/eu">Europe</a><a href="/about" aria-current="page">About</a><a href="https://github.com/opennodes-io/opennodes">GitHub</a></div></nav>
 <main id="main" tabindex="-1">
 <header class="hero" style="padding:3rem 0 2rem"><div class="wrap">
   <h1 style="font-size:2.4rem">Who runs OpenNodes, and what it keeps</h1>
@@ -145,6 +145,7 @@
     <li><b>Your prompts and answers.</b> The chat, the playground, the CLI, the gateway and the Ollama router send them straight from your device to the node you chose. The registry is out of the data path.</li>
     <li><b>Your API keys.</b> Keys you type in the web app stay in your browser's local storage; the gateway and router keep them on your machine.</li>
     <li><b>Accounts or tracking.</b> There are no accounts, no advertising, and no third-party analytics.</li>
+    <li><b>The maps</b> on the home page and the registry's "Where models run" page load the Leaflet library from cdnjs.cloudflare.com and map tiles from OpenStreetMap, so those services see your IP address while a map is shown. Nothing else is sent to them.</li>
   </ul>
   <p style="font-size:0.92rem;color:var(--muted)">One exception: the catalog's "Ask the advisor" box sends the task text you type to the registry to compute a recommendation; it is not stored. The MCP server and the router extract features locally and send only those.</p>
 </div></section>
