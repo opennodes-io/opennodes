@@ -102,6 +102,8 @@ try {
         keys,
         policy: minTier ? { min_tier: minTier } : {},
         reputationPath: args.includes('--no-reputation') ? null : flag('reputation', DEFAULT_REPUTATION_PATH),
+        // embeddings go to the local Ollama's embedding models first (not OLLAMA_HOST: that may be the router)
+        ollama: args.includes('--no-ollama') ? null : flag('ollama', 'http://127.0.0.1:11434'),
         ledgerPath: flag('ledger', null),
         env: args.includes('--no-env-keys') ? {} : process.env,
       });
@@ -159,7 +161,7 @@ usage:
   onp estimate --offering <node_id>/<offering_id> [--in 1000] [--out 500]
   onp invoke --offering <node_id>/<offering_id> [--prompt "..."]
   onp card <node-origin-url>
-  onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--no-env-keys] [--min-tier unverified|community|verified] [--no-reputation] [--ledger receipts.jsonl]
+  onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--no-env-keys] [--min-tier unverified|community|verified] [--no-reputation] [--ollama http://127.0.0.1:11434 | --no-ollama] [--ledger receipts.jsonl]
   onp check <node_id>/<offering_id> [--key host=KEY] [--max-usd 0.02] [--context 8192|full] [--json] [--no-save]
   onp check --url https://api.example.com/v1 --model <id>    # any OpenAI-compatible endpoint
   onp mcp [--print-config]    # stdio MCP server for Cursor / VS Code / Claude Desktop

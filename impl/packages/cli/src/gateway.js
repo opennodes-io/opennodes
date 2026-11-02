@@ -4,7 +4,7 @@
 import { appendFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
-import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend, parseAutoModel, AUTO_MODEL_NAMES, responseBudgetMs, fetchWithin } from '@opennodes/core';
+import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend, recommendEmbedders, isEmbedder, parseAutoModel, AUTO_MODEL_NAMES, responseBudgetMs, fetchWithin } from '@opennodes/core';
 import { OnpClient } from './client.js';
 import { loadChecks, DEFAULT_CHECKS_PATH } from './check.js';
 import { Reputation } from './reputation.js';
@@ -46,7 +46,8 @@ export function credentialsFrom(keys = {}, env = process.env) {
 }
 
 const hostOf = (o) => { try { return new URL(o.endpoints.openai).hostname; } catch { return null; } };
-const searchHint = (host) => HOST_SEARCH[host] ?? host.split('.').slice(-2, -1)[0];
+// a domain is found by its name (api.acme.ai -> "acme"); an IP address has none, so search without a text filter
+const searchHint = (host) => HOST_SEARCH[host] ?? (/^[\d.]+$|^\[/.test(host) ? '' : host.split('.').slice(-2, -1)[0]);
 
 /**
  * Can this machine call the offering right now? Registered nodes with a free tier need no
@@ -66,6 +67,7 @@ export async function startGateway({
   env = process.env,   // where standard provider key variables are read from; pass {} to disable
   checksPath = DEFAULT_CHECKS_PATH,   // results of `onp check`; null to ignore them
   reputationPath = null,   // where passive reputation persists (the CLI uses ~/.opennodes); null = this run only
+  ollama = null,   // your local Ollama (the CLI uses http://127.0.0.1:11434): its embedding models serve /v1/embeddings first
 } = {}) {
   if (!['127.0.0.1', 'localhost', '::1'].includes(host) && !token) {
     throw new Error('refusing non-loopback bind without --token (TC-NFR-03)');
@@ -277,6 +279,106 @@ export async function startGateway({
     return { done: true, ms: Math.round(performance.now() - t0), ...(body.stream ? { first_ms: firstMs } : {}) };
   }
 
+  /* ---------------------------------------------------------------- embeddings */
+  let embedListings = { at: 0, byBase: new Map() };
+  let localEmbed = { at: 0, list: [] };
+
+  /** The registry's Ollama-library embedding listings, by model base name (sizes and pulls for ranking). */
+  async function libraryEmbedders() {
+    if (Date.now() - embedListings.at < CACHE_TTL_MS * 10 && embedListings.byBase.size) return embedListings.byBase;
+    try {
+      const list = await client.search({ modality: 'embedding', limit: 200 });
+      embedListings = { at: Date.now(), byBase: new Map(list.filter((o) => o.local).map((o) => [o.binding.model_id.split(':')[0], o])) };
+    } catch { /* ranking just has less to go on */ }
+    return embedListings.byBase;
+  }
+
+  /** Embedding models already pulled into the local Ollama: free, and nothing leaves this machine. */
+  async function localEmbedders() {
+    if (!ollama) return [];
+    if (Date.now() - localEmbed.at < CACHE_TTL_MS) return localEmbed.list;
+    let list = [];
+    try {
+      const res = await fetch(`${ollama}/api/tags`, { signal: AbortSignal.timeout(2000) });
+      const { models = [] } = res.ok ? await res.json() : {};
+      const library = await libraryEmbedders();
+      list = models.flatMap((m) => {
+        const base = m.name.split(':')[0];
+        const lib = library.get(base);
+        const o = {
+          node_id: 'local', offering_id: m.name, tier: 'local', source: 'local', modality: lib ? 'embedding' : 'text',
+          model: { name: m.name, ...(lib?.model?.params_b ? { params_b: lib.model.params_b } : {}) },
+          binding: { model_id: m.name }, endpoints: { openai: `${ollama}/v1` },
+          pricing: { currency: 'USD', input_per_mtok: 0, output_per_mtok: 0 },
+          local: { run: `ollama pull ${base}`, ...(lib?.local?.pulls ? { pulls: lib.local.pulls } : {}) }, observed: {},
+        };
+        return isEmbedder(o) ? [o] : [];
+      });
+    } catch { /* no local Ollama running */ }
+    localEmbed = { at: Date.now(), list };
+    return list;
+  }
+
+  /** Candidates for an embeddings request: auto models rank local, registered and keyed embedders. */
+  async function resolveEmbedding(modelId, body) {
+    await refresh();
+    const local = await localEmbedders();
+    const auto = parseAutoModel(modelId, 'onp/');
+    if (auto) {
+      const remote = [...cache.byId.values()].filter(isEmbedder);
+      const pool = reputation.apply(auto.preset === 'private' ? local : [...local, ...remote]);
+      const inputs = Array.isArray(body.input) ? body.input : [body.input];
+      const sample = inputs.filter((x) => typeof x === 'string').slice(0, 5).join(' ').slice(0, 4000);
+      // what gets embedded is the user's own material: treat it as private, so local models lead
+      const features = { ...extractFeatures(sample, { request: {} }), corpus: { documents: inputs.length, private: true } };
+      const ranked = recommendEmbedders(pool, features, { min_tier: policy.min_tier, jurisdiction: auto.jurisdiction ?? policy.jurisdiction, limit: 5 });
+      lastAdvice = { model: modelId, kind: 'embeddings', features, recommendations: ranked.map((r) => {
+        const seen = reputation.describe(r.offering);
+        return { offering: r.offering, score: r.score, reasons: seen ? [...r.reasons, seen] : r.reasons };
+      }) };
+      const byId = new Map(pool.map((o) => [`${o.node_id}/${o.offering_id}`, o]));
+      return ranked.map((r) => byId.get(r.offering)).filter(Boolean);
+    }
+    const target = aliases[modelId] ?? modelId;
+    const mine = local.find((o) => o.offering_id === target || o.offering_id === `${target}:latest`);
+    if (mine) return [mine];
+    const offering = cache.byId.get(target) ?? await lookup(target);
+    return offering ? [offering] : [];
+  }
+
+  /** One upstream embeddings call; same contract as attempt(). */
+  async function attemptEmbedding(offering, body, res, requestedModel) {
+    const isLocal = offering.tier === 'local';
+    if (!isLocal) client.checkPolicy(offering, 0);
+    const t0 = performance.now();
+    const upstreamKey = isLocal ? null : creds[new URL(offering.endpoints.openai).hostname];
+    const { models: _fallbacks, ...upstreamBody } = body;
+    const chars = JSON.stringify(body.input ?? '').length;
+    const upstream = await fetchWithin(`${offering.endpoints.openai}/embeddings`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(!isLocal && offering.source !== 'import' ? { 'onp-offering': `${offering.node_id}/${offering.offering_id}`, 'onp-card-revision': offering.card_revision } : {}),
+        ...(upstreamKey ? { authorization: `Bearer ${upstreamKey}` } : {}),
+      },
+      body: JSON.stringify({ ...upstreamBody, model: offering.binding.model_id }),
+    }, 30_000 + Math.ceil(chars / 4) * 2);   // ~2 ms per input token on modest hardware
+    if (!upstream.ok) return { failed: `upstream ${upstream.status}` };
+    const result = await upstream.json().catch(() => null);
+    if (!Array.isArray(result?.data)) return { failed: 'no embeddings in the response' };
+    const tokens = result.usage?.prompt_tokens ?? result.usage?.total_tokens ?? null;
+    const price = offering.pricing?.input_per_mtok;
+    logRequest({
+      ts: new Date().toISOString(), model: requestedModel, kind: 'embeddings',
+      offering: `${offering.node_id}/${offering.offering_id}`, revision: offering.card_revision ?? null,
+      receipt_id: null, currency: offering.pricing?.currency ?? 'USD', usage: result.usage ?? null,
+      cost: isLocal ? 0 : tokens != null && price != null ? round6(tokens * price / 1e6) : null,
+      latency_ms: Math.round(performance.now() - t0),
+    });
+    sendJson(res, 200, { ...result, model: requestedModel });
+    return { done: true, ms: Math.round(performance.now() - t0) };
+  }
+
   async function repin(offering) {
     const origin = new URL(offering.endpoints.openai).origin;
     const { card } = await client.resolveCard(origin);
@@ -344,8 +446,34 @@ export async function startGateway({
       problem(res, 502, 'all-candidates-failed', errors.join(' | '));
     }],
 
-    ['POST', '/v1/embeddings', (req, res) => {
-      problem(res, 501, 'not-implemented', 'embeddings profile lands with a fixture that serves it');
+    ['POST', '/v1/embeddings', async (req, res) => {
+      if (!authed(req, res)) return;
+      const body = await readJson(req, 50_000_000);
+      if (body.input == null || !body.model) return problem(res, 400, 'bad-request', 'embeddings need "model" and "input"');
+      const candidates = await resolveEmbedding(body.model, body);
+      const auto = parseAutoModel(body.model, 'onp/');
+      if (!candidates.length) {
+        return auto
+          ? problem(res, 404, 'no-callable-offerings', `no embedding model this gateway can call for ${body.model}: pull one into your local Ollama (ollama pull nomic-embed-text)` +
+            (auto.preset === 'private' ? '' : ', or pass --key <host>=<key> for a hosted provider that lists embedding models'))
+          : problem(res, 404, 'model-not-found', String(body.model));
+      }
+      const errors = [];
+      for (const offering of candidates) {
+        const id = `${offering.node_id}/${offering.offering_id}`;
+        const t0 = performance.now();
+        try {
+          const r = await attemptEmbedding(offering, body, res, body.model);
+          if (r.done) { reputation.record(id, { ok: true, ms: r.ms }); return; }
+          reputation.record(id, { ok: false, ms: Math.round(performance.now() - t0), why: r.failed });
+          errors.push(`${id}: ${r.failed}`);
+        } catch (err) {
+          if (!err.message.startsWith('policy: ')) reputation.record(id, { ok: false, ms: Math.round(performance.now() - t0), why: err.message });
+          errors.push(`${id}: ${err.message}`);
+        }
+      }
+      if (errors.every((e) => e.includes(': policy: '))) return problem(res, 403, 'policy-refused', errors.join(' | '));
+      problem(res, 502, 'all-candidates-failed', errors.join(' | '));
     }],
 
     ['GET', '/gateway/reputation', (req, res) => {

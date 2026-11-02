@@ -494,7 +494,12 @@ export function recommend(offerings, features, policy = {}) {
  * Fit favours multilingual models for non-English text and the user's own machine for a private
  * collection; the indexing estimate assumes ~1,000 tokens per document (stated in the output).
  */
-function rankEmbedders(offerings, features, policy, minTier) {
+/** Rank embedding models for indexing (also used by the gateway's /v1/embeddings). Full list, best first. */
+export function recommendEmbedders(offerings, features, policy = {}) {
+  return rankEmbedders(offerings, features, policy, TIER_ORDER.indexOf(policy.min_tier ?? 'unverified'), policy.limit ?? Infinity);
+}
+
+function rankEmbedders(offerings, features, policy, minTier, limit = 3) {
   const docs = features.corpus?.documents ?? null;
   const tokens = docs ? docs * TOKENS_PER_DOCUMENT : null;
   const pool = offerings.filter((o) => isEmbedder(o)
@@ -526,7 +531,7 @@ function rankEmbedders(offerings, features, policy, minTier) {
       endpoint: o.endpoints?.openai ?? null, score, components, reasons, ...(indexing ? { indexing_estimate: indexing } : {}), popularity: pullsOf(o) };
   }).sort((a, b) => b.score - a.score || b.popularity - a.popularity || a.offering.localeCompare(b.offering))
     .map(({ popularity: _p, ...r }) => r);
-  return ranked.slice(0, 3);
+  return ranked.slice(0, limit);
 }
 
 function explain(c, features, w) {
