@@ -62,7 +62,7 @@ const CUES = {
   private_corpus: /\b(internal|private|confidential|proprietary|company|our|my|in-house|customers?)\b/i,   // their own documents: private by default
   writing_long: /\b(essay|article|blog post|report|white ?paper|documentation|chapter|story|long[- ]form|detailed (guide|explanation)|cover letter|proposal)\b/i,
   short_output: /\b(one word|yes or no|single (word|number|line)|just the (answer|number)|briefly|in one sentence)\b/i,
-  agentic: /\b(browse|open the (website|page|url)|click|fill (in|out) the form|book|order|schedule|send (an )?email|run (it|the (tests|script|command))|execute|deploy|install)\b/i,
+  agentic: /\b(browse|open the (website|page|url)|click|fill (in|out) the form|book|order|schedule|send (an )?email|run (it(?! (locally|offline|on (my|our|this|the) ))|the (tests|script|command))|execute|deploy|install)\b/i,
   batch: /\b(batch|bulk|all (the )?(files|rows|records|documents|emails)|every (file|row|record)|dataset|thousands?)\b/i,
   tools_search: /\b(latest|current|today|this week|recent|news|search (the )?(web|internet)|look up|up[- ]to[- ]date|what is the (price|weather|score))\b|https?:\/\//i,
   tools_code_exec: /\b(run (this|the) (code|script)|execute|calculate exactly|compute|simulate|plot|chart the data)\b/i,
@@ -102,6 +102,7 @@ export function extractFeatures(task, { attachments = [], est_output_tokens = nu
   else if (CUES.summarization.test(text)) taskClass = 'summarization';
   else if (CUES.reasoning_high.test(text)) taskClass = 'reasoning';
   else if (CUES.writing_long.test(text)) taskClass = 'writing';
+  if (taskClass === 'chat' && CUES.moderation.test(text)) taskClass = 'classification';   // flag / filter content: a label per item
 
   const reasoning = CUES.reasoning_high.test(text) || taskClass === 'reasoning' ? 'high'
     : (CUES.reasoning_medium.test(text) || taskClass === 'code' ? 'medium' : 'low');
@@ -528,8 +529,11 @@ export function recommend(offerings, features, policy = {}) {
     return { offering: o, score: round2(score), components, basis: prior.basis, rag_tuned: tuned, specialty, off_field: offField, local_fit, estimate: { currency: o.pricing?.currency ?? 'USD', ...bounds } };
   }).filter((c) => c.estimate.max <= (policy.max_total_usd ?? Infinity));
 
-  // Deterministic order: score, then cheaper estimate, then larger model, then id.
-  scored.sort((a, b) => (b.score - a.score)
+  // Deterministic order: score, then cheaper estimate, then larger model, then id. A task that asked to run
+  // on the user's own machine gets the local models that fit first; hosted ones follow as the fallback.
+  const localFirst = features.locality === 'preferred';
+  scored.sort((a, b) => (localFirst ? Number(!!b.offering.local) - Number(!!a.offering.local) : 0)
+    || (b.score - a.score)
     || (a.estimate.max - b.estimate.max)
     || ((b.offering.model?.params_b ?? 0) - (a.offering.model?.params_b ?? 0))
     || `${a.offering.node_id}/${a.offering.offering_id}`.localeCompare(`${b.offering.node_id}/${b.offering.offering_id}`));

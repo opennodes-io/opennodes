@@ -356,6 +356,15 @@ test('locality: "on my laptop" prefers the own machine; "offline" requires it', 
   assert.equal(laptop.recommendations[0].offering, 'import.ollama.library/granite4.1');
   assert.ok(laptop.recommendations[0].reasons.includes('runs on your own machine, as the task asked'));
   assert.equal(laptop.recommendations.length, 2, 'preferred, not required: hosted stays as an option');
+  const strong = { ...hosted, offering_id: 'glm-5', model: { name: 'GLM-5', params_b: 744 } };
+  const refactor = recommend([strong, local], extractFeatures('Refactor this Python function on my laptop'), { local_memory_gb: 16 });
+  assert.deepEqual(refactor.recommendations.map((r) => r.offering), ['import.ollama.library/granite4.1', 'import.hf.baseten/glm-5'],
+    'asked for the laptop: local first even against a far larger hosted model');
+  const noFit = recommend([strong, local], extractFeatures('Refactor this Python function on my laptop'), { local_memory_gb: 2 });
+  assert.deepEqual(noFit.recommendations.map((r) => r.offering), ['import.hf.baseten/glm-5'], 'nothing local fits: hosted is the fallback');
+  const f = extractFeatures('Flag toxic comments in our forum, run it locally on my laptop');
+  assert.equal(f.task_class, 'classification', 'moderation is a label per item, and "run it locally" is placement, not an agent');
+  assert.equal(f.locality, 'preferred');
   const offline = recommend([hosted, local], extractFeatures('summarize this note offline'), {});
   assert.deepEqual(offline.recommendations.map((r) => r.offering), ['import.ollama.library/granite4.1']);
   assert.equal(offline.rejected.not_local, 1);
