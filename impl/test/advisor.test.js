@@ -383,6 +383,8 @@ test('specialists: classifiers never chat, specialists score down outside their 
   assert.ok(rag.recommendations.find((r) => /codestral/.test(r.offering)).reasons.includes('coding specialist — scored down for a rag task'));
   assert.equal(ids('Refactor this Python function')[0], 'codestral', 'in its field the specialist leads');
   assert.equal(ids('Flag toxic comments in our forum')[0], 'gpt-oss-safeguard', 'moderation tasks may use classifiers');
+  assert.ok(recommend(pool, extractFeatures('Flag toxic comments in our forum'), {}).recommendations[0].reasons
+    .includes('safety / fact-check classifier, matching this task'), 'the classifier says why it was picked');
 
   // sensitive data on the user's own machine needs no published data policy
   const sensitive = recommend(pool, extractFeatures('Summarize patient discharge notes on my machine'), {});
