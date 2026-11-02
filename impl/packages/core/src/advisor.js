@@ -223,6 +223,27 @@ function diversify(scored, limit) {
   return picked;
 }
 
+/**
+ * Memory a model needs to run locally at Ollama's default 4-bit quantization, in GB — an estimate:
+ * ~0.6 GB per billion parameters for the weights, plus runtime and a default-size context cache.
+ * (8B ≈ 6 GB, 70B ≈ 46 GB.) Real use varies with quantization and context length.
+ */
+export function memoryGbFor(paramsB) {
+  return Math.round((paramsB * 0.6 + 0.5 + Math.min(4, paramsB * 0.06)) * 10) / 10;
+}
+const sizeParams = (tag) => {
+  const m = String(tag).match(/^(\d+(?:\.\d+)?)([mb])$/i);
+  return m ? (m[2].toLowerCase() === 'b' ? Number(m[1]) : Number(m[1]) / 1000) : null;
+};
+/** A locally-run model's sizes (Ollama tags like "8b", "270m") with their memory estimate, smallest first. */
+export function localSizes(o) {
+  if (!o.local) return [];
+  const tags = o.local.sizes?.length ? o.local.sizes : (o.model?.params_b ? [`${o.model.params_b}b`] : []);
+  return tags.map((tag) => ({ tag, params_b: sizeParams(tag) })).filter((x) => x.params_b)
+    .sort((a, b) => a.params_b - b.params_b).map((x) => ({ ...x, memory_gb: memoryGbFor(x.params_b) }));
+}
+const sizesLine = (sizes) => sizes.map((x) => `${x.tag} ~${x.memory_gb} GB`).join(', ');
+
 /** Quality prior of a ~8B model: enough for light work (see isLight). */
 const LIGHT_ENOUGH = 0.33;
 /** Quality prior of a ~50B model: answering from retrieved passages gains little beyond it. */
@@ -423,6 +444,10 @@ export function recommend(offerings, features, policy = {}) {
       if (pins.length && !pins.includes(policy.region)) return reject('region');
     }
     if (policy.jurisdiction && !o.local && !inJurisdiction(o, policy.jurisdiction)) return reject('jurisdiction');
+    if (policy.local_memory_gb && o.local) {
+      const sizes = localSizes(o);
+      if (sizes.length && !sizes.some((x) => x.memory_gb <= policy.local_memory_gb)) return reject('memory');
+    }
     return true;
   });
 
@@ -434,7 +459,10 @@ export function recommend(offerings, features, policy = {}) {
     : features.task_class === 'rag' ? RAG_ENOUGH : 1;
   const maxPrice = Math.max(...candidates.map((o) => o.pricing?.input_per_mtok ?? 0), 0.000001);
   const scored = candidates.map((o) => {
-    const prior = qualityPrior(o, features);
+    const sizes = localSizes(o);
+    const fits = policy.local_memory_gb ? sizes.filter((x) => x.memory_gb <= policy.local_memory_gb) : [];
+    const pick = fits.at(-1) ?? null;
+    const prior = qualityPrior(pick ? { ...o, model: { ...o.model, params_b: pick.params_b } } : o, features);
     const tuned = features.task_class === 'rag' && ragTuned(o);
     const components = {
       quality: round2(Math.min(1, Math.min(qualityCap, prior.q) * languageFit(o, features.language) + (tuned ? 0.1 : 0))),
@@ -445,7 +473,9 @@ export function recommend(offerings, features, policy = {}) {
     let score = Object.entries(w).reduce((s, [k, wk]) => s + wk * components[k], 0);
     if (policy.prefer_local && o.local && (policy.preset !== 'private' || isLight(features))) score += 0.1;
     const bounds = estimateBounds(o.pricing ?? {}, features.est_input_tokens, features.est_output_tokens);
-    return { offering: o, score: round2(score), components, basis: prior.basis, rag_tuned: tuned, estimate: { currency: o.pricing?.currency ?? 'USD', ...bounds } };
+    const local_fit = sizes.length ? { sizes: sizes.map(({ tag, memory_gb }) => ({ tag, memory_gb })), pick: pick?.tag ?? null,
+      ...(pick ? { run: `ollama run ${o.binding?.model_id ?? o.model?.name}:${pick.tag}` } : {}), basis: '4-bit estimate' } : null;
+    return { offering: o, score: round2(score), components, basis: prior.basis, rag_tuned: tuned, local_fit, estimate: { currency: o.pricing?.currency ?? 'USD', ...bounds } };
   }).filter((c) => c.estimate.max <= (policy.max_total_usd ?? Infinity));
 
   // Deterministic order: score, then cheaper estimate, then larger model, then id.
@@ -472,7 +502,8 @@ export function recommend(offerings, features, policy = {}) {
       ttft_ms: c.offering.observed?.ttft_ms?.p50 ?? null,
       tps: c.offering.observed?.tps ?? null,
     },
-    reasons: explain(c, features, w),
+    ...(c.local_fit ? { local_fit: c.local_fit } : {}),
+    reasons: explain(c, features, w, policy),
   }));
 
   return {
@@ -504,6 +535,7 @@ function rankEmbedders(offerings, features, policy, minTier, limit = 3) {
   const tokens = docs ? docs * TOKENS_PER_DOCUMENT : null;
   const pool = offerings.filter((o) => isEmbedder(o)
     && tierRank(o.tier) >= minTier
+    && !(policy.local_memory_gb && o.local && localSizes(o).length && !localSizes(o).some((x) => x.memory_gb <= policy.local_memory_gb))
     && (o.pricing?.input_per_mtok ?? 0) <= (policy.max_input_per_mtok ?? Infinity)
     && (!policy.jurisdiction || o.local || inJurisdiction(o, policy.jurisdiction)));
   const maxPrice = Math.max(...pool.map((o) => o.pricing?.input_per_mtok ?? 0), 0.000001);
@@ -519,7 +551,7 @@ function rankEmbedders(offerings, features, policy, minTier, limit = 3) {
     };
     const score = round2(0.35 * components.fit + 0.2 * components.quality + 0.3 * components.price + 0.15 * components.trust);
     const reasons = [];
-    if (local) reasons.push(`runs on your machine${o.local.run ? ` (${o.local.run})` : ''}${o.local.sizes ? `, ${o.local.sizes.join(' / ')}` : ''} — documents never leave it`);
+    if (local) reasons.push(`runs on your machine${o.local.run ? ` (${o.local.run})` : ''}${localSizes(o).length ? `, ${sizesLine(localSizes(o))}` : ''} — documents never leave it`);
     else reasons.push(`hosted by ${o.node_id}${o.jurisdiction?.country ? ` (${o.jurisdiction.country})` : ''}`);
     if (multilingual && MULTILINGUAL_EMBED.test(nameOf(o))) reasons.push(`multilingual model, for ${features.language} text`);
     if (o.source === 'import') reasons.push('imported catalog listing — unprobed');
@@ -534,7 +566,7 @@ function rankEmbedders(offerings, features, policy, minTier, limit = 3) {
   return ranked.slice(0, limit);
 }
 
-function explain(c, features, w) {
+function explain(c, features, w, policy = {}) {
   const o = c.offering;
   const r = [];
   const dominant = Object.entries(c.components).sort((a, b) => (w[b[0]] * b[1]) - (w[a[0]] * a[1]))[0]?.[0];
@@ -551,6 +583,12 @@ function explain(c, features, w) {
     const tags = [EEA_COUNTRIES.includes(String(o.jurisdiction.country).toUpperCase()) ? 'EEA' : null, o.jurisdiction.basis === 'inferred' ? 'inferred' : null].filter(Boolean);
     r.push(`operator in ${o.jurisdiction.country}${tags.length ? ` (${tags.join(', ')})` : ''}`);
   }
+  if (c.local_fit) {
+    const pick = c.local_fit.sizes.find((x) => x.tag === c.local_fit.pick);
+    r.push(pick
+      ? `runs on your machine: ${pick.tag} needs ~${pick.memory_gb} GB RAM/VRAM, within ${policy.local_memory_gb} GB (4-bit estimate)`
+      : `runs on your machine — memory needed (4-bit estimate): ${sizesLine(c.local_fit.sizes)}`);
+  }
   if (c.rag_tuned) r.push('described as built for answering from retrieved documents (RAG)');
   if (o.source === 'import') r.push('imported catalog listing — unprobed');
   return r;
@@ -562,6 +600,7 @@ function equivalentQuery(features, policy, required, needCtx) {
   if (features.language !== 'en') q.lang = `${features.language}:strong`;
   if (policy.min_tier) q.tier = policy.min_tier;
   if (policy.max_input_per_mtok != null) q.max_input_price = policy.max_input_per_mtok;
+  if (policy.local_memory_gb) q.local_memory_gb = policy.local_memory_gb;
   if (policy.jurisdiction) q.jurisdiction = policy.jurisdiction;
   return q;
 }

@@ -630,6 +630,13 @@ function ctxBit(o) {
   const basis = (o.source === 'import' && !o.serving.context_capped_from) ? ' <span class="micro m-claimed">CLAIMED</span>' : '';
   return `<span>ctx <b class="num">${fmtInt(o.serving.context_window)}</b>${cap}${basis}</span>`;
 }
+/** RAM/VRAM to run an Ollama size tag ("8b", "270m") at 4-bit: same estimate as core's memoryGbFor. */
+function memGb(tag) {
+  const m = String(tag).match(/^(\d+(?:\.\d+)?)([mb])$/i);
+  if (!m) return null;
+  const p = m[2].toLowerCase() === 'b' ? Number(m[1]) : Number(m[1]) / 1000;
+  return Math.round((p * 0.6 + 0.5 + Math.min(4, p * 0.06)) * 10) / 10;
+}
 /** Listing-only imports carry no endpoints.openai: they are shown but never called. */
 const invocable = (o) => o.invocable !== false && Boolean(o.endpoints?.openai);
 /** Ollama library entries and local-app catalogs have no server: their endpoint is the visitor's own computer. */
@@ -813,7 +820,7 @@ window.toggleRow = async function (el, idx) {
         ${o.serving?.max_output_tokens ? `<dt>max output</dt><dd class="num">${fmtInt(o.serving.max_output_tokens)}</dd>` : ''}
         ${hwStr(o) ? `<dt>hardware</dt><dd>${hwStr(o)}</dd>` : ''}
         <dt>schemes</dt><dd>${esc((o.pricing.schemes || []).join(', '))}</dd>
-        ${o.local ? `<dt>run locally</dt><dd><code style="background:var(--panel-2); padding:0.1em 0.4em; border-radius:3px" class="mono">${esc(o.local.run)}</code>${o.local.pulls ? ` <span class="prov" style="display:inline">· ${esc(o.local.pulls)} pulls</span>` : ''}${o.local.sizes ? ` <span class="prov" style="display:inline">· sizes: ${esc(o.local.sizes.join(' '))}</span>` : ''}</dd>` : ''}
+        ${o.local ? `<dt>run locally</dt><dd><code style="background:var(--panel-2); padding:0.1em 0.4em; border-radius:3px" class="mono">${esc(o.local.run)}</code>${o.local.pulls ? ` <span class="prov" style="display:inline">· ${esc(o.local.pulls)} pulls</span>` : ''}${o.local.sizes ? `<br><span class="prov" style="display:inline" title="Memory to run it at Ollama's default 4-bit quantization: weights plus runtime and a default context; an estimate">memory needed: ${o.local.sizes.map((t) => `${esc(t)} ~${memGb(t) ?? '?'} GB`).join(' · ')}</span>` : ''}</dd>` : ''}
       </dl>
     </div>
     <div>

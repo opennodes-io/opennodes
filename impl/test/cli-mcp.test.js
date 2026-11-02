@@ -3,12 +3,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 import { readFileSync } from 'node:fs';
-import { createStdioMcp } from '@opennodes/cli/src/mcpserver.js';
+import { createStdioMcp, machineMemoryGb } from '@opennodes/cli/src/mcpserver.js';
+import { startRegistry } from '@opennodes/registry';
 
-function session() {
+function session(registry = 'http://127.0.0.1:9') {
   const input = new PassThrough();
   const output = new PassThrough();
-  const mcp = createStdioMcp({ registry: 'http://127.0.0.1:9', input, output });
+  const mcp = createStdioMcp({ registry, input, output });
   let buffer = '';
   const waiting = new Map();
   output.on('data', (chunk) => {
@@ -81,4 +82,19 @@ test('get_node summary keeps vetting facts and caps imported catalogs', async ()
   assert.deepEqual(s.offerings.map((o) => o.offering_id), ['m0', 'm1']);
   assert.equal(JSON.stringify(s).includes('signature'), false);
   assert.equal(summarizeNode({ ...node, state: 'indexed', probes: [] }).tier, 'unverified');
+});
+
+test('recommend from the local stdio server knows how much memory a local model may use', async (t) => {
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  const { rpc, close } = session(registry.origin);
+  t.after(async () => { close(); await registry.close(); });
+  const call = async (args) => JSON.parse((await rpc('tools/call', { name: 'recommend', arguments: args })).result.content[0].text);
+
+  const filled = await call({ task: 'summarize this note' });
+  assert.equal(filled.local_memory.gb, machineMemoryGb());
+  assert.match(filled.local_memory.basis, /75% of this machine's RAM/);
+  assert.equal(filled.query.local_memory_gb, machineMemoryGb(), 'and the ranking used it');
+  const given = await call({ task: 'summarize this note', policy: { local_memory_gb: 12 } });
+  assert.equal(given.local_memory, undefined, 'an explicit value is used as given');
+  assert.equal(given.query.local_memory_gb, 12);
 });

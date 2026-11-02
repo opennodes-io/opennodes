@@ -39,6 +39,7 @@ export const MCP_TOOLS = [
             region: { type: 'string', description: 'Required data region, e.g. "eu". Offerings pinned to other regions are excluded.' },
             jurisdiction: { type: 'string', description: 'Only operators in this jurisdiction: "eea" or ISO country codes ("DE,FI"). Local and LAN models always qualify.' },
             prefer_local: { type: 'boolean', description: 'Give a bonus to nodes on this machine or LAN.' },
+            local_memory_gb: { type: 'number', minimum: 1, description: 'RAM/VRAM this machine can give a local model, in GB. Local models that cannot fit are left out, and the largest size that fits is picked (4-bit estimate). The local stdio server fills this from the machine when it is not given.' },
             limit: { type: 'integer', minimum: 1, maximum: 20, default: 3, description: 'Number of candidates to return.' },
           },
         },

@@ -313,3 +313,27 @@ test('diversity: the shortlist offers different models and providers before repe
   assert.deepEqual(ids, ['a/Big-1', 'a/Big-2', 'b/Mid'], 'no duplicate model, at most two per node, then the rest');
   assert.equal(recommend(pool, extractFeatures('hello', { request: {} }), { limit: 5 }).recommendations.length, 5, 'repeats still fill a longer list');
 });
+
+test('hardware fit: local sizes carry a memory estimate; a memory budget picks the size that fits', () => {
+  const lib = (id, sizes) => ({ node_id: 'import.ollama.library', offering_id: id, tier: 'unverified', source: 'import', modality: 'text',
+    model: { name: id, params_b: Math.max(...sizes.map((x) => parseFloat(x))) }, binding: { model_id: id },
+    pricing: { currency: 'USD', input_per_mtok: 0, output_per_mtok: 0 }, serving: { supports: ['streaming'] },
+    local: { runtime: 'ollama', run: `ollama run ${id}`, sizes }, observed: {} });
+  const pool = [lib('llama3-chatqa', ['8b', '70b']), lib('granite4.1', ['3b', '8b', '30b'])];
+  const f = extractFeatures('RAG over our 2,000 internal documents');
+
+  const open = recommend(pool, f, { limit: 2 }).recommendations[0];
+  assert.deepEqual(open.local_fit.sizes.map((x) => x.memory_gb), open.offering.includes('chatqa') ? [5.8, 46.5] : [2.4, 5.8, 19.3]);
+  assert.equal(open.local_fit.pick, null, 'without a budget nothing is picked, every size is shown');
+  assert.ok(open.reasons.some((x) => /memory needed \(4-bit estimate\): .*~\d/.test(x)));
+
+  const laptop = recommend(pool, f, { local_memory_gb: 16, limit: 2 });
+  for (const r of laptop.recommendations) assert.equal(r.local_fit.pick, '8b');
+  assert.ok(laptop.recommendations[0].reasons.some((x) => /needs ~5\.8 GB RAM\/VRAM, within 16 GB/.test(x)));
+  assert.match(laptop.recommendations[0].local_fit.run, /^ollama run .+:8b$/);
+
+  const tiny = recommend(pool, f, { local_memory_gb: 4 });
+  assert.deepEqual(tiny.recommendations.map((r) => r.offering), ['import.ollama.library/granite4.1']);
+  assert.equal(tiny.recommendations[0].local_fit.pick, '3b');
+  assert.equal(tiny.rejected.memory, 1, 'a model with no size that fits is left out');
+});
