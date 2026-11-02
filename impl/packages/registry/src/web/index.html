@@ -11,19 +11,20 @@
 <style>
   :root {
     --ground: #F7F9FA; --panel: #FFFFFF; --panel-2: #EEF2F4;
-    --ink: #1C2733; --muted: #5C6E7E; --faint: #8FA1B0; --line: #D6DEE3; --line-2: #EEF2F4;
-    --accent: #0F7A80; --accent-soft: #E0EFF0; --good: #2F6B3A;
+    --ink: #1C2733; --muted: #4F6170; --faint: #5A6C7C; --line: #D6DEE3; --line-2: #EEF2F4;   /* both ≥4.5:1 on every surface */
+    --accent: #0F7A80; --accent-soft: #E0EFF0; --on-accent: #FFFFFF; --good: #2F6B3A;
     --warn: #A16207; --bad: #A33333; --star: #B45309;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --ground: #101820; --panel: #16202A; --panel-2: #1C2833;
-      --ink: #E4EBF0; --muted: #8FA1B0; --faint: #64788A; --line: #2C3B48; --line-2: #223140;
-      --accent: #4FC0C6; --accent-soft: #12333A; --good: #7CC08A;
+      --ink: #E4EBF0; --muted: #A3B4C2; --faint: #8A9CAB; --line: #2C3B48; --line-2: #223140;
+      --accent: #4FC0C6; --accent-soft: #12333A; --on-accent: #0B1A20; --good: #7CC08A;
       --warn: #D9A648; --bad: #E08585; --star: #D9A648;
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }   /* an inline display (e.g. grid) must not override the hidden attribute */
   body { margin: 0; background: var(--ground); color: var(--ink);
     font-family: "Archivo", "Helvetica Neue", Arial, sans-serif; font-size: 0.9rem; line-height: 1.5; }
   a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
@@ -38,7 +39,7 @@
   .toolbar input, .toolbar select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 0.42rem 0.6rem; }
   .toolbar input[type=number] { width: 8.5rem; }
   .mgrid { display: grid; grid-template-columns: 23rem minmax(0, 1fr); gap: 1.2rem; align-items: start; }
-  @media (max-width: 980px) { .mgrid { grid-template-columns: 1fr; } }
+  @media (max-width: 980px) { .mgrid { grid-template-columns: minmax(0, 1fr); } }
   .mlist { display: flex; flex-direction: column; gap: 0.4rem; max-height: 76vh; overflow-y: auto; padding-right: 0.25rem; }
   .mitem { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.6rem 0.75rem; cursor: pointer; }
   .mitem:hover { border-color: var(--accent); }
@@ -47,10 +48,23 @@
   .mitem .t .nm { font-weight: 600; font-size: 0.86rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mitem .b { display: flex; gap: 0.8rem; margin-top: 0.25rem; font-size: 0.7rem; color: var(--muted); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
   .mdetail { min-height: 30rem; }
+  .scorebox { margin: 0.4rem 0 0.8rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: 0.5rem 0.75rem; font-size: 0.8rem; }
+  .scorebox summary { cursor: pointer; }
+  .scorebox table { width: 100%; border-collapse: collapse; margin-top: 0.4rem; }
+  .scorebox td { padding: 0.2rem 0.5rem 0.2rem 0; border-top: 1px solid var(--line-2); vertical-align: top; }
+  .scorebox td.num { text-align: right; white-space: nowrap; }
+  .scorebox td.sub { font-size: 0.74rem; }
+  .scorebox tr.tot td { border-top: 1px solid var(--line); }
+  .pager { display: flex; align-items: center; justify-content: center; gap: 0.3rem; margin-top: 0.5rem; font-size: 0.78rem; color: var(--muted); flex-wrap: wrap; }
+  .pager:empty { display: none; }
+  .pgbtn { font: inherit; min-width: 2rem; padding: 0.25rem 0.5rem; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--accent); cursor: pointer; }
+  .pgbtn:disabled { color: var(--faint); cursor: default; }
+  .pgnum { padding: 0 0.3rem; }
+  .pgnum input { width: 4rem; font: inherit; padding: 0.2rem 0.3rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); text-align: center; }
 
   /* chat */
   .chatgrid { display: grid; grid-template-columns: minmax(0, 1fr) 19rem; gap: 1.2rem; align-items: start; }
-  @media (max-width: 980px) { .chatgrid { grid-template-columns: 1fr; } }
+  @media (max-width: 980px) { .chatgrid { grid-template-columns: minmax(0, 1fr); } }
   .chatlog { display: flex; flex-direction: column; gap: 0.7rem; min-height: 20rem; max-height: 60vh; overflow-y: auto; padding: 1rem; }
   .msg { max-width: 46rem; font-size: 0.9rem; line-height: 1.55; white-space: pre-wrap; border-radius: 8px; padding: 0.6rem 0.9rem; }
   .msg.user { align-self: flex-end; background: var(--accent-soft); border: 1px solid var(--accent); }
@@ -68,7 +82,22 @@
   nav a.tab:hover { text-decoration: none; color: var(--ink); }
   nav a.tab.active { color: var(--ink); border-bottom-color: var(--accent); }
   nav .spacer { flex: 1; }
-  nav .cta { align-self: center; background: var(--accent); color: #fff; font-weight: 600; font-size: 0.82rem; border-radius: 6px; padding: 0.55rem 1rem; }
+  nav .cta { align-self: center; background: var(--accent); color: var(--on-accent); font-weight: 600; font-size: 0.82rem; border-radius: 6px; padding: 0.55rem 1rem; }
+  /* phones: the tabs wrap onto rows instead of widening the page */
+  @media (max-width: 760px) {
+    nav .wrap { flex-wrap: wrap; height: auto; gap: 0 1.1rem; padding-top: 0.5rem; padding-bottom: 0.5rem; }
+    nav .brand { flex-basis: 100%; padding: 0.2rem 0 0.3rem; }
+    nav a.tab, nav .ext { padding: 0.45rem 0; }
+    nav .spacer { display: none; }
+    nav .cta { margin-top: 0.3rem; }
+  }
+  details.claim { margin: 0.2rem 0 0.7rem; }
+  details.claim > summary { display: inline-block; list-style: none; font-size: 0.82rem; padding: 0.45rem 0.9rem; }
+  details.claim > summary::-webkit-details-marker { display: none; }
+  details.claim p { font-size: 0.84rem; color: var(--muted); margin: 0.6rem 0; }
+  details.claim pre { font-size: 0.74rem; overflow-x: auto; }
+  .rm { font: inherit; cursor: pointer; color: var(--muted); background: none; border: 0; padding: 0.1rem 0.3rem; min-width: 24px; min-height: 24px; border-radius: 4px; }
+  .rm:hover { color: var(--ink); background: var(--line-2); }
   nav .cta:hover { text-decoration: none; opacity: 0.92; }
   nav .ext { align-self: center; font-size: 0.78rem; color: var(--muted); }
 
@@ -119,6 +148,20 @@
     background: var(--panel); color: var(--muted); cursor: pointer; font-family: inherit; }
   .toggle.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
   .switchrow { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; user-select: none; }
+  .kindtabs { display: flex; gap: 1.4rem; border-bottom: 1px solid var(--line); margin: 0.6rem 0 0.7rem; }
+  .kindtabs button { font: inherit; font-size: 0.86rem; font-weight: 600; color: var(--muted); background: none; border: none;
+    border-bottom: 2px solid transparent; padding: 0.35rem 0 0.5rem; margin-bottom: -1px; cursor: pointer; }
+  .kindtabs button:hover { color: var(--ink); }
+  .kindtabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+  .kindtabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .kindtabs .counts { font-weight: 400; margin-left: 0.25rem; }
+  .runrow code { font-size: 0.78rem; }
+  .olbox { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; font-size: 0.82rem; margin: 0 0 0.7rem; }
+  .olbox input { font: inherit; font-size: 0.78rem; width: 12.5rem; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 0.3rem 0.5rem; }
+  .olbox .ok { color: var(--accent); font-weight: 600; }
+  .olhelp { font-size: 0.8rem; margin: 0 0 0.8rem; }
+  .olhelp pre { font-size: 0.74rem; overflow-x: auto; margin: 0.3rem 0 0.6rem; }
+  .chip.inst { color: var(--on-accent, #fff); background: var(--accent); border-color: var(--accent); }
   .switch { width: 30px; height: 17px; border-radius: 999px; background: var(--line); position: relative; transition: background 0.15s; flex: none; }
   .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--panel); transition: left 0.15s; }
   .switchrow.on .switch { background: var(--accent); } .switchrow.on .switch::after { left: 15px; }
@@ -157,22 +200,25 @@
     color: var(--muted); text-align: left; padding: 0.55rem 0.8rem; background: var(--panel-2); border-bottom: 1px solid var(--line); white-space: nowrap; }
   table.grid td { padding: 0.7rem 0.8rem; border-bottom: 1px solid var(--line-2); vertical-align: middle; }
   table.grid tr:last-child td { border-bottom: none; }
+  table.grid td.mono, #md-artifact { overflow-wrap: anywhere; white-space: normal; }   /* long ids wrap on phones */
   .tablewrap { overflow-x: auto; }
 
   .btn { font: inherit; font-weight: 600; font-size: 0.82rem; padding: 0.55rem 1rem; border-radius: 6px;
-    border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+    border: 1px solid var(--accent); background: var(--accent); color: var(--on-accent); cursor: pointer; }
   .btn.sec { background: transparent; color: var(--accent); }
   .btn:disabled { opacity: 0.5; cursor: default; }
-  input.wide { width: 100%; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 0.55rem 0.7rem; }
+  input.wide, textarea.wide { width: 100%; box-sizing: border-box; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 0.55rem 0.7rem; }
   label.f { display: block; font-size: 0.78rem; color: var(--muted); margin: 0.9rem 0 0.25rem; }
   .ok { color: var(--good); } .fail { color: var(--bad); } .warncol { color: var(--warn); }
   .err { color: var(--bad); font-size: 0.82rem; margin-top: 0.5rem; }
   .stage { display: grid; grid-template-columns: 7rem 1fr; gap: 0.8rem; padding: 0.5rem 0; border-bottom: 1px dashed var(--line); font-size: 0.82rem; }
   .stage:last-child { border-bottom: none; }
-  .stage .k { font-family: "IBM Plex Mono", monospace; font-size: 0.66rem; font-weight: 600; color: var(--accent); }
+  .stage .k { min-width: 0; overflow-wrap: anywhere; font-family: "IBM Plex Mono", monospace; font-size: 0.66rem; font-weight: 600; color: var(--accent); }
+  .stage.wide { grid-template-columns: minmax(0, 14rem) 1fr; }   /* node ids and suite names are longer than stage labels */
+  @media (max-width: 560px) { .stage.wide { grid-template-columns: 1fr; gap: 0.15rem; } }
   .tabbtns { display: flex; gap: 0.5rem; flex-wrap: wrap; }
   .tabbtn { font: inherit; font-weight: 600; font-size: 0.8rem; padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; }
-  .tabbtn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .tabbtn.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   /* model/node card header */
   .statstrip { display: flex; flex-wrap: wrap; gap: 1.8rem; margin: 0.8rem 0 0.4rem; }
   .stat { display: flex; flex-direction: column; gap: 0.1rem; }
@@ -226,34 +272,52 @@
     <h1>Models</h1>
     <span class="counts" id="m-counts"></span>
   </div>
-  <p class="sub">Search across registered AI nodes and imported catalogs — pick a model on the left, its full card is on the right. Claimed values are never blended with measured ones.</p>
+  <div class="kindtabs" id="m-kind" role="tablist" aria-label="Kind of listing">
+    <button role="tab" data-kind="hosted" aria-selected="true">Hosted <span class="counts" id="m-n-hosted"></span></button>
+    <button role="tab" data-kind="local" aria-selected="false">Runs on your machine <span class="counts" id="m-n-local"></span></button>
+  </div>
+  <p class="sub hostedonly">Search across registered AI nodes and imported catalogs — pick a model on the left, its full card is on the right. Claimed values are never blended with measured ones.</p>
+  <p class="sub localonly" hidden>Models you download and run yourself with Ollama: no server, no account, and your data stays on your machine. There is nothing to verify remotely, so they are ranked by popularity (Ollama pulls); memory needs are 4-bit estimates.</p>
+  <div class="olbox localonly" id="ol-box" hidden>
+    <button class="btn sec" id="ol-check" type="button">Check my Ollama</button>
+    <input id="ol-base" aria-label="Your Ollama address" spellcheck="false">
+    <span id="ol-status" class="sub">Asks the Ollama on your own computer which models you have. The answer stays in your browser; nothing is sent to this registry.</span>
+    <span class="switchrow" id="f-installed" hidden><span class="switch"></span><b style="font-size:0.78rem">Installed only</b></span>
+  </div>
+  <div class="olhelp localonly" id="ol-help" hidden></div>
   <div class="toolbar">
     <input type="text" id="f-q" placeholder="Search models, families, nodes…">
-    <span class="switchrow" id="f-verified" title="identity-fingerprinted · context-verified · continuously probed"><span class="switch"></span><b style="font-size:0.78rem">Verified only</b></span>
+    <span class="switchrow hostedonly" id="f-verified" title="identity-fingerprinted · context-verified · continuously probed"><span class="switch"></span><b style="font-size:0.78rem">Verified only</b></span>
+    <span class="switchrow hostedonly" id="f-eea" title="operators in the EU, Iceland, Liechtenstein or Norway — declared by registered nodes, inferred for imported listings of known European providers"><span class="switch"></span><b style="font-size:0.78rem">EU/EEA</b></span>
     <select id="f-modality">
       <option value="">any modality</option>
       <option>text</option><option>multimodal</option><option>image</option>
       <option>audio</option><option>video</option><option>embedding</option>
     </select>
-    <button class="toggle" data-sup="tool_calls">tools</button>
-    <button class="toggle" data-sup="vision">vision</button>
-    <button class="toggle" data-sup="json_mode">json</button>
-    <input type="number" id="f-price" placeholder="max $/MTok in" min="0" step="0.05">
+    <button class="toggle hostedonly" data-sup="tool_calls">tools</button>
+    <button class="toggle hostedonly" data-sup="vision">vision</button>
+    <button class="toggle hostedonly" data-sup="json_mode">json</button>
+    <input type="number" class="hostedonly" id="f-price" placeholder="max $/MTok in" min="0" step="0.05">
+    <select id="f-mem" class="localonly" hidden title="RAM (or GPU VRAM) you can give the model — keeps the models with a size that fits">
+      <option value="">fits: any memory</option><option value="4">fits in 4 GB</option><option value="8">fits in 8 GB</option>
+      <option value="16">fits in 16 GB</option><option value="24">fits in 24 GB</option><option value="32">fits in 32 GB</option><option value="64">fits in 64 GB</option>
+    </select>
     <select id="f-sort"><option value="rank">sort: rank</option><option value="price">sort: price</option><option value="ttft">sort: fastest first token</option><option value="tps">sort: throughput</option></select>
   </div>
   <details class="panel pad" id="advisor" style="margin:0.2rem 0 0.8rem">
     <summary style="cursor:pointer; font-weight:600; font-size:0.9rem">Ask the advisor — describe a task, get the best node + model, priced and explained</summary>
-    <textarea id="adv-task" rows="2" class="wide" style="margin-top:0.6rem; font-size:0.86rem" placeholder="e.g. Translate this 20-page contract into Polish and extract the payment terms as JSON"></textarea>
+    <textarea id="adv-task" rows="4" class="wide" style="margin-top:0.6rem; font-size:0.86rem; resize:vertical" placeholder="e.g. Translate this 20-page contract into Polish and extract the payment terms as JSON"></textarea>
     <div class="toolbar" style="margin-top:0.4rem">
       <select id="adv-preset"><option value="">balanced</option><option value="cheap">cheapest</option><option value="fast">fastest</option><option value="quality">best quality</option><option value="private">privacy-first</option></select>
       <span class="switchrow" id="adv-verified"><span class="switch"></span><b style="font-size:0.78rem">Verified only</b></span>
+      <span class="switchrow" id="adv-eea" title="only operators that declare an EU/EEA country"><span class="switch"></span><b style="font-size:0.78rem">EU/EEA</b></span>
       <button class="btn" id="adv-go">Recommend</button>
       <span class="prov">Deterministic: same catalog + task + policy → same answer, with the score components shown. The <code>onp mcp</code> / gateway advisors extract features locally and never send your prompt; this box sends the text to this registry.</span>
     </div>
     <div id="adv-out"></div>
   </details>
   <div class="mgrid">
-    <div class="mlist" id="m-list"></div>
+    <div class="mcol"><div class="mlist" id="m-list"></div><div class="pager" id="m-pager"></div></div>
     <div class="mdetail" id="m-detail"><p class="sub">Select a model from the list.</p></div>
   </div>
 </div>
@@ -270,8 +334,9 @@
   </div>
   <p class="desc" id="md-desc" hidden></p>
   <div class="statstrip" id="md-stats"></div>
+  <div id="md-score"></div>
   <div class="secnav" id="md-nav"></div>
-  <h2 id="sec-offerings">Offerings <span class="counts" id="md-count"></span></h2>
+  <h2 id="sec-offerings"><span id="md-offtitle">Offerings</span> <span class="counts" id="md-count"></span></h2>
   <div class="panel tablewrap" id="md-offerings"></div>
   <h2 id="sec-play">Playground <span class="counts">runs in your browser — your prompt goes straight to the node, never through this registry</span></h2>
   <div class="panel pad" style="max-width:56rem">
@@ -285,6 +350,7 @@
         <input class="wide mono" id="pg-key" type="password" placeholder="optional" style="font-size:0.78rem">
       </div>
     </div>
+    <p class="sub" id="pg-note" hidden style="margin:0.6rem 0 0; font-size:0.8rem"></p>
     <div id="pg-customrow" hidden style="display:grid; grid-template-columns: 2fr 1fr; gap:0.8rem">
       <div><label class="f">Custom OpenAI-compatible endpoint <span style="font-weight:400">(e.g. your local Ollama: http://127.0.0.1:11434/v1)</span></label>
         <input class="wide mono" id="pg-endpoint" placeholder="http://127.0.0.1:11434/v1" style="font-size:0.78rem"></div>
@@ -298,6 +364,7 @@
       <span class="prov" id="pg-meta"></span>
     </div>
     <div id="pg-out" style="margin-top:0.8rem; font-size:0.88rem; white-space:pre-wrap; line-height:1.55"></div>
+    <div id="pg-hosted"></div>
   </div>
   <div id="md-perfsec"></div>
   <div id="md-benchsec"></div>
@@ -540,6 +607,9 @@
 
 <script>
 const $ = (s) => document.querySelector(s);
+// The model card moves between the list's detail pane and its own page; held here so that clearing
+// the pane ("No offerings match") cannot destroy it.
+const MODEL_CARD = document.getElementById('model-card');
 const api = (p, opts) => fetch(p, opts).then(async (r) => { const b = await r.json().catch(() => ({})); if (!r.ok) throw new Error(b.detail || r.status); return b; });
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt = (n) => n == null ? '—' : (typeof n === 'number' ? (Math.round(n * 1000) / 1000) : n);
@@ -553,8 +623,10 @@ const ago = (iso) => {
   return Math.round(s / 86400) + 'd ago';
 };
 const tierChip = (t) => `<span class="chip t-${esc(t)}">${esc(String(t).toUpperCase())}</span>`;
-const priceStr = (p) => {
-  if (p.input_per_mtok == null && p.output_per_mtok == null) return 'price not published';
+const SUBSCRIPTION_NODE = /-plan(-|$)|\.gitlab$/;
+const pricePublished = (p) => p && (p.input_per_mtok != null || p.output_per_mtok != null);
+const priceStr = (p, nodeId = '') => {
+  if (!pricePublished(p)) return SUBSCRIPTION_NODE.test(nodeId) ? 'in a subscription plan' : 'price not published';
   const i = p.input_per_mtok ?? 0, o = p.output_per_mtok ?? 0;
   return (i === 0 && o === 0) ? 'free' : `$${fmt(i)} / $${fmt(o)} per MTok`;
 };
@@ -581,7 +653,7 @@ function route() {
   document.querySelectorAll('nav a.tab').forEach((a) => a.classList.toggle('active', a.dataset.view === view || (view === 'model' && a.dataset.view === 'models') || (view === 'node' && a.dataset.view === 'nodes')));
   window.scrollTo(0, 0);
   if (view === 'models') search();
-  if (view === 'model' && arg) { $('#view-model').appendChild($('#model-card')); loadModel(arg); }
+  if (view === 'model' && arg) { $('#view-model').appendChild(MODEL_CARD); loadModel(arg); }
   if (view === 'chat') loadChatTargets();
   if (view === 'rankings') loadRankings();
   if (view === 'nodes') loadNodes();
@@ -592,14 +664,139 @@ function route() {
 window.addEventListener('hashchange', route);
 
 /* ---------- catalog ---------- */
+// Hosted offerings and local models (no server: they run on the visitor's machine) are listed apart.
+let listKind = 'hosted';
+try { if (localStorage.getItem('onp-list-kind') === 'local') listKind = 'local'; } catch { /* storage blocked */ }
+const SORTS = {
+  hosted: [['rank', 'sort: rank'], ['price', 'sort: price'], ['ttft', 'sort: fastest first token'], ['tps', 'sort: throughput']],
+  local: [['rank', 'sort: most pulled'], ['size', 'sort: smallest first'], ['name', 'sort: name']],
+};
+function applyKind() {
+  document.querySelectorAll('#m-kind [data-kind]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.kind === listKind)));
+  document.querySelectorAll('#view-models .hostedonly').forEach((el) => { el.hidden = listKind !== 'hosted'; });
+  document.querySelectorAll('#view-models .localonly').forEach((el) => { el.hidden = listKind !== 'local'; });
+  const sel = $('#f-sort'), cur = sel.value;
+  sel.innerHTML = SORTS[listKind].map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  if (SORTS[listKind].some(([v]) => v === cur)) sel.value = cur;
+}
+applyKind();
+document.querySelectorAll('#m-kind [data-kind]').forEach((b) => b.addEventListener('click', () => {
+  if (b.dataset.kind === listKind) return;
+  listKind = b.dataset.kind;
+  try { localStorage.setItem('onp-list-kind', listKind); } catch { /* storage blocked */ }
+  applyKind();
+  search();
+  if (listKind === 'local') autoCheckOllama();
+}));
+
+/* ---------- your Ollama: which local models are installed ----------
+   The browser asks the visitor's own Ollama (/api/tags) directly — only after a click, or on later
+   visits once a check has succeeded. The list of models never reaches this registry, except as the
+   ids of an "installed only" search. */
+const OLLAMA_DEFAULT = 'http://127.0.0.1:11434';
+const ollama = { base: OLLAMA_DEFAULT, installed: null, state: 'unknown', count: 0 };
+try { ollama.base = localStorage.getItem('onp-ollama-base') || OLLAMA_DEFAULT; } catch { /* storage blocked */ }
+$('#ol-base').value = ollama.base;
+const olHost = () => { try { return new URL(ollama.base).host; } catch { return ollama.base; } };
+/** Tags of this local model installed in the visitor's Ollama ("3b", "latest"), or null. */
+function installedTags(o) {
+  if (!ollama.installed || !o?.local) return null;
+  return ollama.installed.get(String(o.binding?.model_id ?? o.offering_id).split(':')[0].toLowerCase()) ?? null;
+}
+async function checkOllama() {
+  ollama.base = ($('#ol-base').value.trim() || OLLAMA_DEFAULT).replace(/\/+$/, '');
+  try { localStorage.setItem('onp-ollama-base', ollama.base); } catch { /* storage blocked */ }
+  $('#ol-check').disabled = true;
+  $('#ol-status').textContent = 'asking your Ollama…';
+  try {
+    const r = await fetch(ollama.base + '/api/tags', { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) throw new Error('status ' + r.status);
+    const { models = [] } = await r.json();
+    ollama.installed = new Map();
+    for (const m of models) {
+      const [base, tag = 'latest'] = String(m.name ?? m.model ?? '').toLowerCase().split(':');
+      if (!base) continue;
+      if (!ollama.installed.has(base)) ollama.installed.set(base, []);
+      ollama.installed.get(base).push(tag);
+    }
+    ollama.count = models.length;
+    ollama.state = 'ok';
+    try { localStorage.setItem('onp-ollama-ok', '1'); } catch { /* storage blocked */ }
+  } catch {
+    ollama.installed = null;
+    // A no-cors request still reaches a running server: if it goes through, Ollama is up and only
+    // refuses this page's origin (OLLAMA_ORIGINS); if it fails too, nothing answered.
+    let reachable = false;
+    try { await fetch(ollama.base + '/api/version', { mode: 'no-cors', signal: AbortSignal.timeout(4000) }); reachable = true; } catch { /* not running */ }
+    ollama.state = reachable ? 'blocked' : 'down';
+  } finally { $('#ol-check').disabled = false; }
+  const filtered = $('#f-installed').classList.contains('on');
+  renderOllamaStatus();
+  markInstalled();
+  if (filtered) search();   // re-filter by the new answer, or drop the filter if Ollama no longer answers
+}
+function autoCheckOllama() {
+  let remembered = false;
+  try { remembered = localStorage.getItem('onp-ollama-ok') === '1'; } catch { /* storage blocked */ }
+  if (remembered && ollama.state === 'unknown') checkOllama();
+}
+function renderOllamaStatus() {
+  const status = $('#ol-status'), help = $('#ol-help');
+  $('#f-installed').hidden = ollama.state !== 'ok';
+  if (ollama.state !== 'ok') $('#f-installed').classList.remove('on');
+  help.hidden = true;
+  if (ollama.state === 'ok') {
+    status.innerHTML = `<span class="ok">✓ Your Ollama at ${esc(olHost())}</span> has ${ollama.count} model${ollama.count === 1 ? '' : 's'} — installed ones are marked.`;
+    return;
+  }
+  const origin = location.origin;
+  if (ollama.state === 'blocked') {
+    status.innerHTML = `<b>Ollama is running at ${esc(olHost())} but does not allow this page.</b> Allow it once, then quit and restart Ollama:`;
+    help.innerHTML = `<b>Windows</b> (PowerShell or cmd)<pre><code>setx OLLAMA_ORIGINS "${esc(origin)}"</code></pre>
+      <b>macOS</b><pre><code>launchctl setenv OLLAMA_ORIGINS "${esc(origin)}"</code></pre>
+      <b>Linux</b> (systemd): <code>sudo systemctl edit ollama</code>, add the two lines below, then <code>sudo systemctl restart ollama</code><pre><code>[Service]
+Environment="OLLAMA_ORIGINS=${esc(origin)}"</code></pre>
+      <span class="sub">This lets this page read which models you have and use the playground; other sites stay blocked. To allow more origins, separate them with commas.</span>`;
+    help.hidden = false;
+    return;
+  }
+  status.innerHTML = `<b>No Ollama answered at ${esc(olHost())}.</b> Start it, or install it from <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com</a>, then check again. If your browser asked whether this page may reach devices on your network, allow it.`;
+}
+/** Mark installed models in the list, on the open card and in the playground note. */
+function markInstalled() {
+  document.querySelectorAll('.mitem').forEach((el) => {
+    const o = lastResults.find((x) => `${x.node_id}/${x.offering_id}` === el.dataset.key);
+    if (!o?.local) return;
+    const tags = installedTags(o);
+    const chip = el.querySelector('.chip.loc, .chip.inst');
+    if (!chip) return;
+    chip.className = tags ? 'chip inst' : 'chip loc';
+    chip.textContent = tags ? 'INSTALLED' : 'LOCAL';
+    chip.title = tags ? 'installed in your Ollama: ' + tags.join(', ') : '';
+  });
+  const inst = $('#md-inst');
+  if (inst) {
+    const o = pgOfferings.find((x) => x.local);
+    const tags = installedTags(o);
+    inst.hidden = ollama.state !== 'ok' || !o;
+    inst.className = tags ? 'chip inst' : 'chip';
+    inst.textContent = tags ? `INSTALLED: ${tags.join(', ')}` : 'NOT INSTALLED';
+  }
+  pgUpdateNote();
+}
+$('#ol-check').addEventListener('click', checkOllama);
+$('#ol-base').addEventListener('keydown', (e) => { if (e.key === 'Enter') checkOllama(); });
+$('#f-installed').addEventListener('click', () => { $('#f-installed').classList.toggle('on'); search(); });
+if (listKind === 'local') autoCheckOllama();
 const sup = new Set();
 document.querySelectorAll('.toggle').forEach((b) => b.addEventListener('click', () => {
   b.classList.toggle('on'); b.classList.contains('on') ? sup.add(b.dataset.sup) : sup.delete(b.dataset.sup); search();
 }));
 $('#f-verified').addEventListener('click', () => { $('#f-verified').classList.toggle('on'); search(); });
+$('#f-eea').addEventListener('click', () => { $('#f-eea').classList.toggle('on'); search(); });
 let debounce;
 for (const id of ['f-q', 'f-price']) $('#' + id).addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(search, 250); });
-for (const id of ['f-modality', 'f-sort']) $('#' + id).addEventListener('change', search);
+for (const id of ['f-modality', 'f-sort', 'f-mem']) $('#' + id).addEventListener('change', search);
 
 function measuredBits(o) {
   const obs = o.observed || {};
@@ -630,8 +827,17 @@ function ctxBit(o) {
   const basis = (o.source === 'import' && !o.serving.context_capped_from) ? ' <span class="micro m-claimed">CLAIMED</span>' : '';
   return `<span>ctx <b class="num">${fmtInt(o.serving.context_window)}</b>${cap}${basis}</span>`;
 }
+/** RAM/VRAM to run an Ollama size tag ("8b", "270m") at 4-bit: same estimate as core's memoryGbFor. */
+function memGb(tag) {
+  const m = String(tag).match(/^(\d+(?:\.\d+)?)([mb])$/i);
+  if (!m) return null;
+  const p = m[2].toLowerCase() === 'b' ? Number(m[1]) : Number(m[1]) / 1000;
+  return Math.round((p * 0.6 + 0.5 + Math.min(4, p * 0.06)) * 10) / 10;
+}
 /** Listing-only imports carry no endpoints.openai: they are shown but never called. */
 const invocable = (o) => o.invocable !== false && Boolean(o.endpoints?.openai);
+/** Ollama library entries and local-app catalogs have no server: their endpoint is the visitor's own computer. */
+const runsLocally = (o) => Boolean(o.local) || /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(o.endpoints?.openai ?? '');
 /** endpoints.docs only when it is a plain web link (cards are third-party data). */
 const docsUrl = (endpoints) => /^https?:\/\//i.test(endpoints?.docs ?? '') ? endpoints.docs : null;
 function provLine(o) {
@@ -644,33 +850,87 @@ function provLine(o) {
   return bits.join(' · ');
 }
 
-async function search() {
-  const p = new URLSearchParams({ limit: 60 });
-  if ($('#f-q').value) p.set('q', $('#f-q').value);
-  if ($('#f-modality').value) p.set('modality', $('#f-modality').value);
-  if ($('#f-verified').classList.contains('on')) p.set('tier', 'verified');
-  if ($('#f-price').value) p.set('max_input_price', $('#f-price').value);
-  if (sup.size) p.set('supports', [...sup].join(','));
-  p.set('sort', $('#f-sort').value);
+const PAGE = 60;
+let listQuery = '', listTotal = 0, listPage = 0;
+
+// Count line and page controls under the list: first / previous / page N of M / next / last.
+function updatePager() {
+  const pages = Math.max(1, Math.ceil(listTotal / PAGE));
+  const from = listTotal ? listPage * PAGE + 1 : 0, to = Math.min(listTotal, (listPage + 1) * PAGE);
+  $('#m-counts').textContent = fmtInt(listTotal) + (listKind === 'local' ? ' local models' : ' offerings') + (pages > 1 ? ` · ${fmtInt(from)}–${fmtInt(to)}` : '');
+  const pager = $('#m-pager');
+  if (pages <= 1) { pager.innerHTML = ''; return; }
+  const btn = (label, page, title) => `<button class="pgbtn" data-page="${page}" title="${title}"${page < 0 || page >= pages || page === listPage ? ' disabled' : ''}>${label}</button>`;
+  pager.innerHTML = btn('«', 0, 'first page') + btn('‹', listPage - 1, 'previous page')
+    + `<span class="pgnum">Page <input id="m-page" type="number" min="1" max="${pages}" value="${listPage + 1}" aria-label="page number"> of ${fmtInt(pages)}</span>`
+    + btn('›', listPage + 1, 'next page') + btn('»', pages - 1, 'last page');
+  pager.querySelectorAll('.pgbtn').forEach((b) => b.addEventListener('click', () => goToPage(Number(b.dataset.page))));
+  $('#m-page').addEventListener('change', (e) => goToPage(Math.min(pages, Math.max(1, Math.round(Number(e.target.value) || 1))) - 1));
+}
+
+async function goToPage(page) {
+  const query = listQuery;
+  const p = new URLSearchParams(query);
+  p.set('offset', page * PAGE);
+  $('#m-pager').querySelectorAll('button, input').forEach((el) => { el.disabled = true; });
   try {
     const { offerings, total } = await api('/v0/offerings?' + p);
+    if (query !== listQuery) return;   // the filters changed meanwhile
+    listPage = page;
+    listTotal = total ?? listTotal;
     lastResults = offerings;
-    const n = total ?? offerings.length;
-    $('#m-counts').textContent = fmtInt(n) + ' offerings' + (offerings.length < n ? ` · showing top ${offerings.length}` : '');
-    $('#m-list').innerHTML = offerings.map(renderItem).join('')
-      || '<p class="sub">No offerings match. A fresh registry fills up via catalog imports and node registrations.</p>';
-    document.querySelectorAll('.mitem').forEach((el) => el.addEventListener('click', () => selectModel(el)));
+    renderList(offerings);
+    $('#m-list').scrollTop = 0;
+    updatePager();
+  } catch (e) { updatePager(); $('#m-pager').insertAdjacentHTML('beforeend', '<span class="err">' + esc(e.message) + '</span>'); }
+}
+
+// Render one page of the list, keeping the highlighted model when it is on this page.
+function renderList(offerings) {
+  $('#m-list').innerHTML = offerings.map(renderItem).join('')
+    || '<p class="sub">No offerings match. A fresh registry fills up via catalog imports and node registrations.</p>';
+  document.querySelectorAll('.mitem').forEach((el) => el.addEventListener('click', () => selectModel(el)));
+  const current = MODEL_CARD.dataset.artifact;
+  document.querySelectorAll('.mitem').forEach((el) => el.classList.toggle('sel', el.dataset.artifact === current));
+}
+
+async function search() {
+  const p = new URLSearchParams({ limit: PAGE });
+  if ($('#f-q').value) p.set('q', $('#f-q').value);
+  if ($('#f-modality').value) p.set('modality', $('#f-modality').value);
+  p.set('local', String(listKind === 'local'));
+  if (listKind === 'hosted') {   // trust, location, price and capabilities describe a server
+    if ($('#f-verified').classList.contains('on')) p.set('tier', 'verified');
+    if ($('#f-eea').classList.contains('on')) p.set('jurisdiction', 'eea');
+    if ($('#f-price').value) p.set('max_input_price', $('#f-price').value);
+    if (sup.size) p.set('supports', [...sup].join(','));
+  } else {
+    if ($('#f-mem').value) p.set('memory_gb', $('#f-mem').value);
+    if ($('#f-installed').classList.contains('on') && ollama.installed) p.set('ids', [...ollama.installed.keys()].join(','));
+  }
+  p.set('sort', $('#f-sort').value);
+  listQuery = p.toString();
+  try {
+    const { offerings, total, counts } = await api('/v0/offerings?' + p);
+    if (listQuery !== p.toString()) return;   // a newer search is under way
+    if (counts) { $('#m-n-hosted').textContent = fmtInt(counts.hosted); $('#m-n-local').textContent = fmtInt(counts.local); }
+    lastResults = offerings;
+    listTotal = total ?? offerings.length;
+    listPage = 0;
+    renderList(offerings);
+    updatePager();
     // keep the current selection when still listed, else select the first result
-    const current = $('#model-card')?.dataset.artifact;
+    const current = MODEL_CARD.dataset.artifact;
     const keep = current && [...document.querySelectorAll('.mitem')].find((el) => el.dataset.artifact === current);
     const target = keep ?? document.querySelector('.mitem');
     if (target) selectModel(target);
     else $('#m-detail').innerHTML = '<p class="sub">No offerings match.</p>';
-  } catch (e) { $('#m-list').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
+  } catch (e) { $('#m-list').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; $('#m-pager').innerHTML = ''; }
 }
 
 /* ---------- advisor (ONP-3 §5b) ---------- */
 $('#adv-verified').addEventListener('click', () => $('#adv-verified').classList.toggle('on'));
+$('#adv-eea').addEventListener('click', () => $('#adv-eea').classList.toggle('on'));
 $('#adv-go').addEventListener('click', runAdvisor);
 $('#adv-task').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) runAdvisor(); });
 async function runAdvisor() {
@@ -679,6 +939,7 @@ async function runAdvisor() {
   const policy = { limit: 3 };
   if ($('#adv-preset').value) policy.preset = $('#adv-preset').value;
   if ($('#adv-verified').classList.contains('on')) policy.min_tier = 'verified';
+  if ($('#adv-eea').classList.contains('on')) policy.jurisdiction = 'eea';
   $('#adv-out').innerHTML = '<p class="sub">ranking…</p>';
   try {
     const r = await api('/v0/recommend', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ task, policy }) });
@@ -710,24 +971,47 @@ function renderAdvice(r) {
   });
 }
 
+let listedOffering = null;   // the list entry the detail was opened from: its score is explained there
 function selectModel(el) {
   document.querySelectorAll('.mitem').forEach((x) => x.classList.toggle('sel', x === el));
+  listedOffering = lastResults.find((o) => `${o.node_id}/${o.offering_id}` === el.dataset.key) ?? null;
   const host = $('#m-detail');
-  if (!host.contains($('#model-card'))) { host.innerHTML = ''; host.appendChild($('#model-card')); }
+  if (!host.contains(MODEL_CARD)) { host.innerHTML = ''; host.appendChild(MODEL_CARD); }
   loadModel(el.dataset.artifact);
 }
 
 let lastResults = [];
+/** "1b–27b · from ~1.6 GB" for a local model's sizes (4-bit memory estimates from the registry). */
+function sizesBit(o) {
+  const sz = o.local?.sizes_memory ?? [];
+  if (!sz.length) return '';
+  return (sz.length > 1 ? `${sz[0].tag}–${sz.at(-1).tag}` : sz[0].tag) + ` · from ~${sz[0].memory_gb} GB`;
+}
+function renderLocalItem(o) {
+  const tags = installedTags(o);
+  return `<div class="mitem" data-artifact="${esc(o.model.artifact)}" data-key="${esc(o.node_id + '/' + o.offering_id)}">
+    <div class="t">
+      <span class="nm">${esc(o.model.name)}</span>
+      ${o.specialty ? `<span class="chip">${esc(o.specialty)}</span>` : ''}
+      ${tags ? `<span class="chip inst" title="installed in your Ollama: ${esc(tags.join(', '))}">INSTALLED</span>` : '<span class="chip loc">LOCAL</span>'}
+    </div>
+    <div class="b">
+      ${sizesBit(o) ? `<span>${esc(sizesBit(o))}</span>` : ''}
+      ${o.local.pulls ? `<span>${esc(o.local.pulls)} pulls</span>` : ''}
+    </div>
+  </div>`;
+}
 function renderItem(o) {
+  if (o.local) return renderLocalItem(o);
   const obs = o.observed || {};
-  return `<div class="mitem" data-artifact="${esc(o.model.artifact)}">
+  return `<div class="mitem" data-artifact="${esc(o.model.artifact)}" data-key="${esc(o.node_id + '/' + o.offering_id)}">
     <div class="t">
       <span class="nm">${esc(o.model.name)}</span>
       ${tierChip(o.tier)}
       ${o.local ? '<span class="chip loc">LOCAL</span>' : (o.source === 'import' ? '<span class="chip imp">IMP</span>' : '')}
     </div>
     <div class="b">
-      <span><b style="color:var(--ink)">${priceStr(o.pricing)}</b></span>
+      <span><b style="color:var(--ink)">${priceStr(o.pricing, o.node_id)}</b></span>
       ${o.serving?.context_window ? `<span>ctx ${fmtInt(o.serving.context_window)}${o.serving.context_capped_from ? ' <span class="micro m-warn">▼</span>' : ''}</span>` : (o.serving?.context_capped_from ? '<span>ctx <span class="micro m-warn">unverified</span></span>' : '')}
       ${obs.ttft_ms?.p50 != null ? `<span>${obs.ttft_ms.p50}ms <span class="micro m-measured">●</span></span>` : ''}
       <span class="mono">${fmt(o.rank)}</span>
@@ -761,9 +1045,9 @@ window.toggleRow = async function (el, idx) {
         ${o.serving?.max_output_tokens ? `<dt>max output</dt><dd class="num">${fmtInt(o.serving.max_output_tokens)}</dd>` : ''}
         ${hwStr(o) ? `<dt>hardware</dt><dd>${hwStr(o)}</dd>` : ''}
         <dt>schemes</dt><dd>${esc((o.pricing.schemes || []).join(', '))}</dd>
-        <dt>served from</dt><dd>${o.locations?.length ? locStr(o.locations) : '<span style="color:var(--faint)">location not declared</span>'}</dd>
+        ${o.local ? '' : `<dt>served from</dt><dd>${o.locations?.length ? locStr(o.locations) : '<span style="color:var(--faint)">location not declared</span>'}</dd>`}
         ${o.model.lineage_origins ? `<dt>lineage</dt><dd>${esc(o.model.lineage_origins.join(', '))} <span class="prov" style="display:inline">· declared</span></dd>` : ''}
-        ${o.local ? `<dt>run locally</dt><dd><code style="background:var(--panel-2); padding:0.1em 0.4em; border-radius:3px" class="mono">${esc(o.local.run)}</code>${o.local.pulls ? ` <span class="prov" style="display:inline">· ${esc(o.local.pulls)} pulls</span>` : ''}${o.local.sizes ? ` <span class="prov" style="display:inline">· sizes: ${esc(o.local.sizes.join(' '))}</span>` : ''}</dd>` : ''}
+        ${o.local ? `<dt>run locally</dt><dd><code style="background:var(--panel-2); padding:0.1em 0.4em; border-radius:3px" class="mono">${esc(o.local.run)}</code>${o.local.pulls ? ` <span class="prov" style="display:inline">· ${esc(o.local.pulls)} pulls</span>` : ''}${o.local.sizes ? `<br><span class="prov" style="display:inline" title="Memory to run it at Ollama's default 4-bit quantization: weights plus runtime and a default context; an estimate">memory needed: ${o.local.sizes.map((t) => `${esc(t)} ~${memGb(t) ?? '?'} GB`).join(' · ')}</span>` : ''}</dd>` : ''}
       </dl>
     </div>
     <div>
@@ -790,7 +1074,7 @@ window.toggleRow = async function (el, idx) {
       ? others.slice(0, 5).map((x) => `<div class="alsorow">
           <a href="#/node/${encodeURIComponent(x.node_id)}" class="mono" style="font-size:0.72rem">${esc(x.node_id)}</a>
           ${tierChip(x.tier)}
-          <span class="num" style="color:var(--muted)">${priceStr(x.pricing)}</span>
+          <span class="num" style="color:var(--muted)">${priceStr(x.pricing, x.node_id)}</span>
           ${x.observed?.ttft_ms?.p50 != null ? `<span class="num" style="color:var(--muted)">${x.observed.ttft_ms.p50}ms <span class="micro m-measured">●</span></span>` : ''}
         </div>`).join('') + (others.length > 5 ? `<div class="alsorow"><a href="#/model/${encodeURIComponent(o.model.artifact)}">+${others.length - 5} more on the model page</a></div>` : '')
       : 'no other nodes serve this exact artifact';
@@ -814,7 +1098,7 @@ function renderRow(o, idx) {
       </span>
     </div>
     <div class="l2 num">
-      <span><b>${priceStr(o.pricing)}</b></span>
+      <span><b>${priceStr(o.pricing, o.node_id)}</b></span>
       ${ctxBit(o)}
       ${measuredBits(o).join('')}
       ${(o.serving?.supports || []).filter((s) => s !== 'streaming').map((s) => `<span class="chip">${esc(s)}</span>`).join('')}
@@ -825,19 +1109,62 @@ function renderRow(o, idx) {
 }
 
 /* ---------- model detail ---------- */
+// How the list's ranking score for the selected entry was computed: weight × component per part.
+function renderScore(artifact) {
+  const host = $('#md-score');
+  const o = listedOffering;
+  if (!o?.rank_explanation || o.model.artifact !== artifact) { host.innerHTML = ''; return; }
+  if (o.rank_explanation.basis === 'local') {
+    host.innerHTML = `<details class="scorebox" open>
+      <summary>Popularity <b class="mono">${fmt(o.rank)}</b> <span class="sub">among the local models in the current list</span></summary>
+      <table><tr><td>Ollama pulls</td><td class="num mono">${esc(o.rank_explanation.pulls ?? '—')}</td><td class="num mono"><b>${fmt(o.rank)}</b></td>
+        <td class="sub">log scale against the most-pulled local model listed (1.00)</td></tr></table>
+      <p class="sub" style="margin:0.5rem 0 0; font-size:0.78rem">Local models are not scored on price, trust tier or checks: there is no server behind them, and they cost nothing per token. How well one runs depends on your machine.</p>
+    </details>`;
+    return;
+  }
+  const { weights, components } = o.rank_explanation;
+  const obs = o.observed || {};
+  const why = {
+    price: o.pricing?.input_per_mtok == null ? `${priceStr(o.pricing, o.node_id)} — no price points`
+      : `${o.pricing.input_per_mtok === 0 ? 'free' : '$' + fmt(o.pricing.input_per_mtok) + '/MTok in'} — position among the listed results (cheapest 1.00, dearest 0.00)`,
+    tier: {
+      verified: 'verified: passed identity, context and capacity checks',
+      community: 'community: passed the registration checks',
+      attested: 'attested by a third party',
+    }[o.tier] ?? (o.source === 'import' ? 'unverified: imported from a public catalog, not checked by this registry' : 'unverified: not checked yet'),
+    probe_success: obs.probes > 0 ? `${Math.round((obs.probe_success ?? 0) * obs.probes)} of the last ${obs.probes} checks passed` : 'no checks yet',
+  };
+  const label = { price: 'Price', tier: 'Trust tier', probe_success: 'Check pass rate' };
+  const rows = Object.keys(weights).map((k) => `<tr>
+      <td>${label[k] ?? esc(k)}</td>
+      <td class="num mono">${fmt(components[k] ?? 0)} × ${fmt(weights[k])}</td>
+      <td class="num mono"><b>${fmt((components[k] ?? 0) * weights[k])}</b></td>
+      <td class="sub">${esc(why[k] ?? '')}</td></tr>`).join('');
+  host.innerHTML = `<details class="scorebox" open>
+    <summary>Ranking score <b class="mono">${fmt(o.rank)}</b> <span class="sub">for ${esc(o.node_id)} in the current list</span></summary>
+    <table>${rows}<tr class="tot"><td>Total</td><td></td><td class="num mono"><b>${fmt(o.rank)}</b></td><td class="sub">weighted sum; measured values, never paid placement</td></tr></table>
+  </details>`;
+}
+
 async function loadModel(artifact) {
-  $('#model-card').dataset.artifact = artifact;
+  MODEL_CARD.dataset.artifact = artifact;
   $('#md-crumb').innerHTML = '<a href="#/">Models</a> / ' + esc(artifact);
   $('#md-title').textContent = '…';
   $('#md-offerings').innerHTML = '';
   $('#md-benchsec').innerHTML = '';
+  $('#pg-hosted').innerHTML = '';
+  $('#pg-note').hidden = true;
+  $('#pg-target').innerHTML = '';
+  pgOfferings = [];
   try {
     const { offerings } = await api('/v0/offerings?limit=100&q=' + encodeURIComponent(artifact));
     const list = offerings.filter((o) => o.model.artifact === artifact);
     if (!list.length) { $('#md-title').textContent = 'Not found'; return; }
     const tierOrder = { verified: 3, community: 2, unverified: 1 };
-    list.sort((a, b) => (tierOrder[b.tier] ?? 0) - (tierOrder[a.tier] ?? 0) || (a.pricing.input_per_mtok ?? 0) - (b.pricing.input_per_mtok ?? 0));
+    list.sort((a, b) => (tierOrder[b.tier] ?? 0) - (tierOrder[a.tier] ?? 0) || (a.pricing.input_per_mtok ?? Infinity) - (b.pricing.input_per_mtok ?? Infinity));
     const first = list[0];
+    const isLocal = list.every((o) => o.local);   // an Ollama library model: no server, runs on the visitor's machine
     $('#md-title').textContent = first.model.name;
     // the artifact chip links to its authoritative home: Hugging Face for hf: artifacts
     $('#md-artifact').innerHTML = artifact.startsWith('hf:')
@@ -854,9 +1181,13 @@ async function loadModel(artifact) {
       first.model.params_b ? `<span class="chip">${first.model.params_b}B</span>` : '',
       `<span class="chip">${esc(first.modality)}</span>`,
       first.model.family ? `<span class="chip">${esc(first.model.family)}</span>` : '',
+      isLocal && first.specialty && first.specialty !== first.modality ? `<span class="chip">${esc(first.specialty)}</span>` : '',
+      isLocal ? '<span class="chip loc">LOCAL</span><span class="chip" id="md-inst" hidden></span>' : '',
       ...extLinks,
     ].join('');
-    $('#md-count').textContent = list.length + ' node' + (list.length === 1 ? '' : 's');
+    $('#md-offtitle').textContent = isLocal ? 'Run it' : 'Offerings';
+    if (isLocal) autoCheckOllama();
+    $('#md-count').textContent = isLocal ? 'with Ollama, on your own machine' : list.length + ' node' + (list.length === 1 ? '' : 's');
 
     // description (imported catalogs carry one; absent otherwise)
     const desc = list.map((o) => o.model.description).find(Boolean);
@@ -864,32 +1195,51 @@ async function loadModel(artifact) {
     if (desc) $('#md-desc').textContent = desc;
 
     // stats strip: aggregate honestly across serving nodes
-    const prices = list.map((o) => o.pricing.input_per_mtok ?? 0);
+    const prices = list.filter((o) => pricePublished(o.pricing)).map((o) => o.pricing.input_per_mtok ?? 0);
     const minP = Math.min(...prices), maxP = Math.max(...prices);
     const ctxMax = Math.max(...list.map((o) => o.serving?.context_window ?? 0), 0);
     const verified = list.filter((o) => o.tier === 'verified').length;
     const released = list.map((o) => o.model.released).find(Boolean);
     const stat = (v, l) => `<span class="stat"><span class="sv">${v}</span><span class="sl">${l}</span></span>`;
-    $('#md-stats').innerHTML = [
-      stat(minP === 0 && maxP === 0 ? 'free' : (minP === maxP ? '$' + fmt(minP) : '$' + fmt(minP) + '–' + fmt(maxP)), '$/MTOK IN ACROSS NODES'),
+    const sizes = first.local?.sizes_memory ?? [];
+    if (isLocal) $('#md-stats').innerHTML = [
+      stat('free', 'RUNS ON YOUR MACHINE'),
+      sizes.length ? stat(esc(sizes.map((x) => x.tag).join(' · ')), sizes.length === 1 ? 'SIZE' : 'SIZES') : '',
+      sizes.length ? stat(`~${sizes[0].memory_gb} GB`, 'SMALLEST NEEDS (4-BIT EST.)') : '',
+      first.local.pulls ? stat(esc(first.local.pulls), 'OLLAMA PULLS') : '',
+    ].filter(Boolean).join('');
+    else $('#md-stats').innerHTML = [
+      stat(!prices.length ? priceStr(first.pricing, first.node_id) : minP === 0 && maxP === 0 ? 'free' : (minP === maxP ? '$' + fmt(minP) : '$' + fmt(minP) + '–' + fmt(maxP)), '$/MTOK IN ACROSS NODES'),
       ctxMax ? stat(fmtInt(ctxMax), 'MAX CONTEXT') : '',
       stat(`${verified}/${list.length}`, 'VERIFIED NODES'),
       released ? stat(esc(released), 'RELEASED') : '',
       first.modalities ? stat(esc((first.modalities.input || []).join('+')) + ' → ' + esc((first.modalities.output || []).join('+')), 'MODALITIES') : '',
     ].filter(Boolean).join('');
 
-    // section nav (anchors appear only for sections that render)
-    const navBits = [['#sec-offerings', 'OFFERINGS'], ['#sec-play', 'PLAYGROUND']];
+    renderScore(artifact);
 
-    // playground targets: this page's offerings + a custom endpoint (e.g. local Ollama)
-    pgOfferings = list.filter(invocable);
-    $('#pg-target').innerHTML = pgOfferings.map((o, i) =>
-      `<option value="${i}">${esc(o.node_id)} — ${priceStr(o.pricing)} [${esc(o.tier)}]</option>`).join('')
+    // section nav (anchors appear only for sections that render)
+    const navBits = [['#sec-offerings', isLocal ? 'RUN IT' : 'OFFERINGS'], ['#sec-play', 'PLAYGROUND']];
+
+    // playground targets: hosted offerings first, then the ones that run on the visitor's own computer,
+    // then a custom endpoint
+    pgOfferings = [...list.filter((o) => invocable(o) && !runsLocally(o)), ...list.filter((o) => invocable(o) && runsLocally(o))];
+    $('#pg-target').innerHTML = pgOfferings.map((o, i) => `<option value="${i}">${pgLabel(o)}</option>`).join('')
       + '<option value="custom">custom endpoint (your local Ollama / any OpenAI-compatible server)</option>';
     $('#pg-customrow').hidden = pgOfferings.length > 0;   // listing-only offerings leave just the custom endpoint
     $('#pg-out').textContent = '';
     $('#pg-meta').textContent = '';
-    $('#md-offerings').innerHTML = `<table class="grid num"><thead><tr>
+    markInstalled();
+    $('#pg-hosted').innerHTML = '';
+    if (pgOfferings.length && pgOfferings.every(runsLocally)) showHostedAlternatives(first, artifact);
+    const runName = first.binding?.model_id ?? first.model.name;
+    const verb = first.modality === 'embedding' ? 'pull' : 'run';   // embedding models answer the API, not a chat prompt
+    if (isLocal) $('#md-offerings').innerHTML = `<table class="grid num"><thead><tr><th>SIZE</th><th>MEMORY NEEDED</th><th>COMMAND</th></tr></thead><tbody>`
+      + (sizes.length ? sizes.map((x) => `<tr class="runrow"><td><b>${esc(x.tag)}</b></td><td>~${x.memory_gb} GB <span class="micro m-claimed">4-BIT EST.</span></td>
+          <td><code class="mono">ollama ${verb} ${esc(runName)}:${esc(x.tag)}</code></td></tr>`).join('')
+        : `<tr class="runrow"><td>—</td><td>—</td><td><code class="mono">ollama ${verb} ${esc(runName)}</code></td></tr>`)
+      + `</tbody></table><p class="sub" style="margin:0.6rem 0.8rem; font-size:0.8rem">Install Ollama from <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com</a>, then run one command. Pick the largest size that fits the RAM (or GPU VRAM) you can spare; real use grows with the context length.</p>`;
+    else $('#md-offerings').innerHTML = `<table class="grid num"><thead><tr>
       <th>NODE</th><th>PRICE IN/OUT</th><th>HARDWARE</th><th>CONTEXT</th><th>TTFT</th><th>TOK/S</th><th>UP</th><th>CAPABILITIES</th><th>REVISION</th>
     </tr></thead><tbody>` + list.map((o) => {
       const obs = o.observed || {};
@@ -905,9 +1255,9 @@ async function loadModel(artifact) {
       return `<tr>
         <td><div style="display:flex; flex-direction:column; gap:0.2rem">
           <a href="#/node/${encodeURIComponent(o.node_id)}" style="font-weight:600">${esc(o.node_id)}</a>
-          <span style="display:flex; gap:0.3rem">${tierChip(o.tier)}${o.institutional ? '<span class="chip inst">institutional</span>' : ''}${o.source === 'import' ? '<span class="chip imp">IMPORTED</span>' : ''}</span>
+          <span style="display:flex; gap:0.3rem">${tierChip(o.tier)}${o.institutional ? '<span class="chip inst">institutional</span>' : ''}${o.source === 'import' ? `<span class="chip imp">IMPORTED</span> <a class="prov" href="#/node/${encodeURIComponent(o.node_id)}">claim</a>` : ''}</span>
         </div></td>
-        <td><b>${priceStr(o.pricing)}</b></td>
+        <td><b>${priceStr(o.pricing, o.node_id)}</b></td>
         <td>${hwStr(o) || '<span style="color:var(--faint)" title="Vendor has not disclosed the hardware behind this offering">undisclosed</span>'}</td>
         <td>${ctx}</td>
         <td>${ttft}</td>
@@ -923,7 +1273,7 @@ async function loadModel(artifact) {
     $('#md-perfsec').innerHTML = probed.length ? `<h2 id="sec-perf">Performance &amp; uptime <span class="counts">registry-measured, blind-probed</span></h2>
       <div class="panel pad">` + probed.map((o) => {
         const obs = o.observed;
-        return `<div class="stage"><span class="k">${esc(o.node_id)}</span><span class="num">
+        return `<div class="stage wide"><span class="k">${esc(o.node_id)}</span><span class="num">
           ${obs.ttft_ms?.p50 != null ? `ttft <b>${obs.ttft_ms.p50}ms</b> p50${obs.ttft_ms.p95 != null ? ` / ${obs.ttft_ms.p95}ms p95` : ''} · ` : ''}
           ${obs.tps > 0 ? `<b>${obs.tps}</b> tok/s · ` : ''}
           ${obs.availability?.ratio != null ? `up <b>${Math.round(obs.availability.ratio * 100)}%</b> · ` : ''}
@@ -933,7 +1283,7 @@ async function loadModel(artifact) {
 
     const bench = list.flatMap((o) => o.benchmarks || []);
     $('#md-benchsec').innerHTML = bench.length ? '<h2 id="sec-bench">Benchmarks</h2><div class="panel pad">' + bench.map((b) =>
-      `<div class="stage"><span class="k">${esc(b.suite)}</span><span class="num"><b>${fmt(b.score)}</b> <span class="micro ${b.basis === 'attested' ? 'm-measured' : 'm-claimed'}">${esc(String(b.basis || 'claimed').toUpperCase())}</span></span></div>`).join('') + '</div>' : '';
+      `<div class="stage wide"><span class="k">${esc(b.suite)}</span><span class="num"><b>${fmt(b.score)}</b> <span class="micro ${b.basis === 'attested' ? 'm-measured' : 'm-claimed'}">${esc(String(b.basis || 'claimed').toUpperCase())}</span></span></div>`).join('') + '</div>' : '';
     if (bench.length) navBits.push(['#sec-bench', 'BENCHMARKS']);
 
     // related: same family, different artifact
@@ -948,7 +1298,7 @@ async function loadModel(artifact) {
           $('#md-relsec').innerHTML = `<h2 id="sec-related">More from ${esc(first.model.family)}</h2><div class="relcards">` +
             cards.map((r) => `<a class="relcard" href="#/model/${encodeURIComponent(r.model.artifact)}">
               <span class="rn">${esc(r.model.name)}</span>
-              <span class="rm">${esc(r.modality)} · ${priceStr(r.pricing)}</span></a>`).join('') + '</div>';
+              <span class="rm">${esc(r.modality)} · ${priceStr(r.pricing, r.node_id)}</span></a>`).join('') + '</div>';
           navBits.push(['#sec-related', 'RELATED']);
         }
       } catch { /* related is optional */ }
@@ -957,7 +1307,12 @@ async function loadModel(artifact) {
     // FAQ — generated strictly from the data on this page
     const supports = [...new Set(list.flatMap((o) => o.serving?.supports || []))].filter((s) => s !== 'streaming');
     const capped = list.filter((o) => o.serving?.context_capped_from);
-    const faqs = [
+    const faqs = isLocal ? [
+      ['What is ' + first.model.name + '?', desc || `A ${first.modality} model from the Ollama library${first.model.family ? ` in the ${first.model.family} family` : ''}.`],
+      ['What does it cost?', 'Nothing per token: it runs on your own hardware with Ollama. The cost is your memory, compute and electricity.'],
+      ['How do I run it?', `Install Ollama, then run ${sizes.length ? `"ollama ${verb} ${runName}:${sizes.at(-1).tag}"${sizes.length > 1 ? ` (or a smaller size: ${sizes.map((x) => x.tag).join(', ')})` : ''}` : `"ollama ${verb} ${runName}"`}.${sizes.length ? ` The smallest size needs about ${sizes[0].memory_gb} GB at 4-bit.` : ''}${verb === 'pull' ? ' Embedding models are called through the API (as the playground below does), not chatted with.' : ''}`],
+      ['Is it verified?', 'There is no server to verify: the model runs on your machine, so how fast and how well depends on your hardware. The listing comes from the Ollama library. The playground on this page sends to your own Ollama and shows whether it answers.'],
+    ] : [
       ['What is ' + first.model.name + '?', desc
         ? desc
         : `A ${first.modality} model${first.model.params_b ? ` (${first.model.params_b}B parameters)` : ''}${first.model.family ? ` in the ${first.model.family} family` : ''}, served by ${list.length} node${list.length === 1 ? '' : 's'} listed in this registry. Artifact: ${artifact}.`],
@@ -979,8 +1334,69 @@ async function loadModel(artifact) {
 
 /* ---------- playground ---------- */
 let pgOfferings = [];
+const localHost = (o) => { try { return new URL(o.endpoints.openai).host; } catch { return 'localhost'; } };
+function pgLabel(o) {
+  if (!runsLocally(o)) return `${esc(o.node_id)} — ${priceStr(o.pricing, o.node_id)} [${esc(o.tier)}]`;
+  return `your computer — ${esc(o.local?.runtime === 'ollama' ? 'Ollama' : 'local app')} at ${esc(localHost(o))} (no hosted server for this listing)`;
+}
+/** Embedding models answer /embeddings with a vector, not /chat/completions with text. */
+const isEmbedOffering = (o) => Boolean(o) && (o.modality === 'embedding' || /embeddings/.test(o.binding?.profile ?? ''));
+/** Says plainly where Send goes when the target is the visitor's own machine. */
+function pgUpdateNote() {
+  const note = $('#pg-note');
+  const v = $('#pg-target').value;
+  const o = v === 'custom' ? null : pgOfferings[Number(v)];
+  const embed = isEmbedOffering(o);
+  $('#pg-prompt').placeholder = embed ? 'Text to embed — the answer is a vector of numbers…' : 'Try the model…';
+  $('#pg-send').textContent = embed ? 'Embed' : 'Send';
+  note.hidden = !o || !runsLocally(o);
+  if (note.hidden) return;
+  const app = o.local?.runtime === 'ollama' ? 'Ollama' : 'the local app';
+  note.innerHTML = `This listing has no server behind it: Send goes to ${app} on <b>your own computer</b> (${esc(localHost(o))}), `
+    + `and answers only if ${app} is running with this model installed${o.local?.run ? ` (<code class="mono">${esc(o.local.run)}</code>)` : ''}. `
+    + 'It tests your machine, not a node.';
+  if (o.local && ollama.state === 'ok') {
+    const tags = installedTags(o);
+    const id = o.binding?.model_id ?? o.offering_id;
+    note.innerHTML += tags
+      ? ` <b>Installed in your Ollama</b> (${esc(tags.map((t) => id + ':' + t).join(', '))}), so ${embed ? 'Embed' : 'Send'} should answer.`
+      : ` <b>Not installed in your Ollama yet:</b> <code class="mono">ollama pull ${esc(id)}</code> first.`;
+  } else if (o.local && ollama.state === 'blocked') {
+    note.innerHTML += ' <b>Your Ollama does not allow this page yet</b> — see "Check my Ollama" on the local models list.';
+  }
+}
+/** On a local-only model page: hosted listings of the same model, so it can be tried without installing anything. */
+async function showHostedAlternatives(first, artifact) {
+  const base = (first.binding?.model_id ?? first.model.name).split(':')[0].toLowerCase();
+  const norm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const needle = norm(base);
+  if (needle.length < 3) return;
+  const variants = [...new Set([base, base.replace(/([a-z])(\d)/, '$1-$2')])];
+  try {
+    const found = new Map();
+    for (const v of variants) {
+      const r = await api('/v0/offerings?limit=200&invocable=true&q=' + encodeURIComponent(v));
+      for (const o of r.offerings) {
+        if (runsLocally(o) || !invocable(o)) continue;
+        if (!norm(`${o.model.name} ${o.model.artifact} ${o.binding?.model_id}`).includes(needle)) continue;
+        found.set(o.node_id + '/' + o.offering_id, o);
+      }
+    }
+    if (MODEL_CARD.dataset.artifact !== artifact) return;   // the visitor moved on
+    const tierOrder = { attested: 4, verified: 3, community: 2, unverified: 1 };
+    const picks = [...found.values()].sort((a, b) =>
+      (tierOrder[b.tier] ?? 0) - (tierOrder[a.tier] ?? 0)
+      || (a.pricing.input_per_mtok ?? Infinity) - (b.pricing.input_per_mtok ?? Infinity)).slice(0, 6);
+    if (!picks.length) return;
+    $('#pg-hosted').innerHTML = `<p class="sub" style="margin:1rem 0 0.4rem; font-size:0.8rem">To try it without installing anything, open a hosted listing with a matching name:</p>
+      <div class="relcards">` + picks.map((o) => `<a class="relcard" href="#/model/${encodeURIComponent(o.model.artifact)}">
+        <span class="rn">${esc(o.model.name)}</span>
+        <span class="rm">${esc(o.node_id)} · ${priceStr(o.pricing, o.node_id)} · ${o.source === 'import' ? 'your key for that provider' : 'no key needed'}</span></a>`).join('') + '</div>';
+  } catch { /* alternatives are optional */ }
+}
 $('#pg-target').addEventListener('change', () => {
   $('#pg-customrow').hidden = $('#pg-target').value !== 'custom';
+  pgUpdateNote();
 });
 $('#pg-send').addEventListener('click', async () => {
   const out = $('#pg-out'), meta = $('#pg-meta');
@@ -988,6 +1404,7 @@ $('#pg-send').addEventListener('click', async () => {
   if (!prompt) return;
   const isCustom = $('#pg-target').value === 'custom';
   const offering = isCustom ? null : pgOfferings[Number($('#pg-target').value)];
+  if (!isCustom && !offering) return;
   const base = isCustom ? $('#pg-endpoint').value.trim().replace(/\/$/, '') : offering.endpoints.openai.replace(/\/$/, '');
   const model = isCustom ? $('#pg-model').value.trim() : offering.binding.model_id;
   if (!base || !model) { out.innerHTML = '<span class="err">endpoint and model id are required</span>'; return; }
@@ -1000,6 +1417,27 @@ $('#pg-send').addEventListener('click', async () => {
   out.textContent = '…';
   meta.textContent = '';
   const t0 = performance.now();
+  if (isEmbedOffering(offering)) {
+    try {
+      const res = await fetch(base + '/embeddings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(useKey ? { authorization: 'Bearer ' + useKey } : {}) },
+        body: JSON.stringify({ model, input: prompt }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.detail ?? body?.error?.message ?? ('status ' + res.status));
+      const vec = body.data?.[0]?.embedding;
+      if (!Array.isArray(vec)) throw new Error('no embedding in the answer');
+      out.textContent = `A vector of ${vec.length} numbers: the text's position in the model's meaning space. Similar texts get nearby vectors; that is what document search (RAG) compares.\n\n[${vec.slice(0, 8).map((x) => Number(x).toFixed(4)).join(', ')}, …]`;
+      meta.textContent = [Math.round(performance.now() - t0) + 'ms', body.usage?.prompt_tokens != null ? `${body.usage.prompt_tokens} tokens in` : null, `${vec.length} dimensions`].filter(Boolean).join(' · ');
+    } catch (err) {
+      const notPulled = offering && runsLocally(offering) && /not found/i.test(err.message);
+      out.innerHTML = '<span class="err">' + esc(err.message) + '</span><br><span class="prov">' + (notPulled
+        ? `Your Ollama is running but does not have this model yet: <code class="mono">ollama pull ${esc(model)}</code>, then Embed again.`
+        : 'If this is a network/CORS error: for local Ollama set OLLAMA_ORIGINS to include this page&#39;s origin.') + '</span>';
+    } finally { $('#pg-send').disabled = false; }
+    return;
+  }
   try {
     const res = await fetch(base + '/chat/completions', {
       method: 'POST',
@@ -1050,7 +1488,7 @@ async function loadChatTargets() {
       const local = rest.filter((o) => o.local);            // Ollama library: runs on the visitor's own machine
       const imports = rest.filter((o) => !o.local);
       chat.offerings = [...ready, ...local, ...imports];
-      const opt = (o, i) => `<option value="${i}">${esc(o.model.name)} — ${esc(o.node_id)} — ${priceStr(o.pricing)}</option>`;
+      const opt = (o, i) => `<option value="${i}">${esc(o.model.name)} — ${esc(o.node_id)} — ${priceStr(o.pricing, o.node_id)}</option>`;
       $('#ch-add').innerHTML = '<option value="">+ Add a model…</option>'
         + (ready.length ? `<optgroup label="Ready to use — no key needed (${ready.length})">${ready.map((o, i) => opt(o, i)).join('')}</optgroup>` : '')
         + (local.length ? `<optgroup label="On your machine — needs a local Ollama with this model pulled">${local.map((o, i) => opt(o, ready.length + i)).join('')}</optgroup>` : '')
@@ -1137,7 +1575,7 @@ function renderRoster() {
     <div style="display:flex; align-items:center; gap:0.5rem; border:1px solid var(--line); border-radius:6px; padding:0.35rem 0.6rem; font-size:0.78rem">
       <span class="mono" style="font-size:0.66rem; color:var(--accent)">${i + 1}</span>
       <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"><b>${esc(targetLabel(t))}</b>${t.offering ? ` <span style="color:var(--muted)">${esc(t.offering.node_id)}</span>` : ' <span class="chip">custom</span>'}</span>
-      <span style="cursor:pointer; color:var(--muted)" data-rm="${i}" title="remove">✕</span>
+      <button type="button" class="rm" data-rm="${i}" title="remove" aria-label="Remove ${esc(targetLabel(t))}">✕</button>
     </div>`).join('') || '<p class="prov" style="margin:0">no models yet</p>';
   document.querySelectorAll('#ch-chips [data-rm]').forEach((x) => x.addEventListener('click', () => {
     chat.roster.splice(Number(x.dataset.rm), 1); renderRoster();
@@ -1903,6 +2341,70 @@ async function loadFeed() {
 }
 
 /* ---------- node detail ---------- */
+/**
+ * Imported listings invite their operator to claim them (ONP-3 §4: a registered node whose
+ * namespace covers the import's API host supersedes it). Providers reached through the HF router
+ * can't claim via huggingface.co, so they are invited to list their own API instead.
+ */
+const CLAIM_GUIDE = 'https://github.com/opennodes-io/opennodes/tree/main/node-kit#card-only-listing-you-already-run-an-openai-compatible-api';
+function claimBanner(n, card) {
+  if (n.source !== 'import' || ['delisted', 'claimed'].includes(n.state)) return '';
+  const name = card.node?.operator?.name || card.node?.name || n.id;
+  let host = null;
+  try { host = new URL(card.endpoints?.openai).hostname; } catch { /* listing without an API */ }
+  const viaHf = host === 'router.huggingface.co';
+  const suggestedId = host && !viaHf ? host.split('.').reverse().join('.') : null;
+  const body = viaHf
+    ? `This listing reaches <b>${esc(name)}</b> through the Hugging Face router, so it is shown as an unprobed catalog import. List your own API directly to have it measured and verified by this registry.`
+    : host
+      ? `Claim it: publish a signed Node Card at <span class="mono">https://${esc(host)}/.well-known/open-node.json</span> with node id <span class="mono">${esc(suggestedId)}</span> (your parent domain works too) and register. Your verified listing replaces this import, the registry measures what you really serve, and nothing in your stack changes.`
+      : 'This listing has no known API endpoint. Publish a Node Card for your OpenAI-compatible API to be listed, measured and verified.';
+  const mail = `mailto:operators@opennodes.io?subject=${encodeURIComponent('Claim ' + n.id)}`;
+  const api = card.endpoints?.openai;
+  const steps = host && !viaHf ? `<details class="claim">
+      <summary class="btn">Claim this listing</summary>
+      <p>Card-only mode: nothing in your stack changes. The kit signs a card describing your API; you host two files on <span class="mono">${esc(host)}</span> and give the registry a low-quota key for its checks.</p>
+      <pre><code>pipx install onp-node
+onp-node init --engine ${esc(api)} --id ${esc(suggestedId)} --public-url https://${esc(host)}
+# edit onp-node.toml: prices per MTok, schemes = ["prepaid"], data_policy, optional [hardware]
+onp-node card --out well-known
+# host well-known/open-node.json and well-known/jwks.json at https://${esc(host)}/.well-known/
+ONP_PROBE_KEY=&lt;a key with a small quota&gt; onp-node register https://registry.opennodes.io \\
+    --card-url https://${esc(host)}/.well-known/open-node.json --probe-key-env ONP_PROBE_KEY
+# publish the printed challenge at /.well-known/onp-challenge/&lt;token&gt; or as a DNS TXT record</code></pre>
+      <p>The checks then run on their own: model identity, context window, capacity, server location. Passing them earns the verified tier, and your listing replaces this import. The probe key is sent only to your own API and never appears in any registry response.</p>
+    </details>` : '';
+  return `<div class="panel pad" style="max-width:56rem; margin:0.4rem 0 0.8rem; border-left:3px solid var(--accent)">
+    <p style="margin:0 0 0.35rem; font-weight:600">Do you run ${esc(name)}?</p>
+    <p style="margin:0 0 0.6rem; font-size:0.86rem; color:var(--muted); overflow-wrap:anywhere">${body} Free, about 15 minutes with the Node Kit.</p>
+    ${steps}
+    <span style="display:inline-flex; gap:0.6rem; flex-wrap:wrap; font-size:0.84rem">
+      <a href="${CLAIM_GUIDE}" target="_blank" rel="noopener">Full guide →</a>
+      <a href="#/register">Register a node</a>
+      <a href="${mail}">operators@opennodes.io</a>
+    </span>
+  </div>`;
+}
+
+/** Server-location check (registry location.js) in plain words. */
+function locationRow(loc, imported) {
+  if (!loc) return '';
+  const srv = loc.server || {};
+  const claim = imported ? 'inferred for this unclaimed listing' : 'declared by the operator';
+  const words = {
+    match: `✓ server in ${esc(srv.country)}, matching the country ${imported ? 'inferred for this unclaimed listing' : 'the operator declared'}`,
+    same_region: `✓ server in ${esc(srv.country)} (EEA); country ${claim}: ${esc(loc.declared)}`,
+    mismatch: `<b style="color:var(--bad, #b42318)">⚠ server in ${esc(srv.country)}; country ${claim}: ${esc(loc.declared)}</b>`,
+    cdn: `behind a CDN (${esc(srv.network || 'anycast')}) — location not determinable from the network`,
+    inconsistent: `<b style="color:var(--bad, #b42318)">⚠ geolocation (${esc(srv.country || '?')}) contradicted by measured latency</b>`,
+    unknown: `not determined${loc.reason ? ' — ' + esc(loc.reason) : ''}`,
+  };
+  const lat = loc.latency || {};
+  const sites = (lat.sites || []).map((v) => `${esc(v.site)} ${v.rtt_ms} ms`).join(', ');
+  const latWord = { consistent: 'consistent', too_slow: 'slower than expected from every site (soft warning)', too_fast: 'faster than physics allows for the geolocated point', unknown: 'not measured' }[lat.verdict || 'unknown'];
+  return `<tr><td style="color:var(--muted)" class="mono">server</td><td style="font-size:0.8rem">${words[loc.verdict] || esc(loc.verdict)}${srv.asn ? ` · AS${srv.asn}${srv.network ? ' ' + esc(srv.network) : ''}` : ''}<br><span style="color:var(--muted)">latency ${latWord}${sites ? ' (' + sites + ')' : ''} · checked ${esc((loc.checked_at || '').slice(0, 10))} · evidence, not proof</span></td></tr>`;
+}
+
 async function loadNode(id) {
   $('#node-title').textContent = id;
   try {
@@ -1918,23 +2420,25 @@ async function loadNode(id) {
     const offerRows = offers.slice(0, 50).map((o) => `<tr>
       <td><a href="#/model/${encodeURIComponent(o.model?.artifact ?? '')}" style="font-weight:600">${esc(o.model?.name ?? o.offering_id)}</a></td>
       <td><span class="chip">${esc(o.modality)}</span></td>
-      <td class="num"><b>${priceStr(o.pricing || {})}</b></td>
+      <td class="num"><b>${priceStr(o.pricing || {}, o.node_id)}</b></td>
       <td>${hwStr({ hardware: o.hardware ?? card.hardware }) || '<span style="color:var(--faint)">undisclosed</span>'}</td>
       <td class="num">${o.serving?.context_window ? fmtInt(o.serving.context_window) : '—'}</td>
       <td>${(o.serving?.supports || []).filter((s) => s !== 'streaming').map((s) => `<span class="chip">${esc(s)}</span>`).join(' ') || '—'}</td>
     </tr>`).join('');
     $('#node-detail').innerHTML = `
+      ${claimBanner(n, card)}
       ${card.node?.description ? `<p class="desc">${esc(card.node.description)}</p>` : ''}
       <div class="statstrip">
         ${stat(tierChip(tier), 'TRUST TIER')}
         ${stat(String(offers.length), 'OFFERINGS')}
-        ${card.node?.operator?.name ? stat(esc(card.node.operator.name) + (card.node.operator.country ? ' (' + esc(card.node.operator.country) + ')' : ''), 'OPERATOR') : ''}
+        ${card.node?.operator?.name ? stat(esc(card.node.operator.name) + (card.node.operator.country ? ' (' + esc(card.node.operator.country) + (n.source === 'import' ? ' · inferred' : '') + ')' : ''), 'OPERATOR') : ''}
         ${(card.node?.regions || []).length ? stat(esc(card.node.regions.join(', ')), 'REGIONS') : ''}
         ${n.source === 'import' ? stat('<span class="chip imp">IMPORTED</span>', 'SOURCE — unclaimed by operator') : ''}
       </div>
       <div class="panel pad" style="max-width:56rem; margin-top:0.6rem"><table class="grid">
         <tr><td style="color:var(--muted); width:8rem" class="mono">endpoint</td><td class="mono" style="font-size:0.74rem">${card.endpoints?.openai ? esc(card.endpoints.openai) : '— <span style="font-family:inherit; color:var(--muted)">listing only: no known API endpoint, not callable from OpenNodes</span>'}</td></tr>
         ${docsUrl(card.endpoints) ? `<tr><td style="color:var(--muted)" class="mono">docs</td><td class="mono" style="font-size:0.74rem"><a href="${esc(docsUrl(card.endpoints))}" target="_blank" rel="noopener">${esc(docsUrl(card.endpoints))}</a></td></tr>` : ''}
+        ${locationRow(n.location, n.source === 'import')}
         ${card.hardware ? `<tr><td style="color:var(--muted)" class="mono">hardware</td><td style="font-size:0.78rem">${hwStr({ hardware: card.hardware })}</td></tr>` : ''}
         <tr><td style="color:var(--muted)" class="mono">revision</td><td class="mono" style="font-size:0.74rem">${esc(card.revision ?? '—')}</td></tr>
       </table></div>

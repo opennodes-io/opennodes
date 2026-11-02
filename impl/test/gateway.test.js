@@ -73,6 +73,16 @@ test('streaming passes through with usage in final chunk', async (t) => {
   assert.match(text, /echo: stream me/);
   assert.match(text, /"usage"/);
   assert.match(text, /data: \[DONE\]/);
+
+  // The streamed receipt (published by URL after the stream) is fetched, verified and recorded.
+  let ledger;
+  for (let i = 0; i < 20; i++) {
+    ledger = await (await fetch(`${gw.origin}/gateway/receipts`)).json();
+    if (ledger.count) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.equal(ledger.count, 1);
+  assert.ok(ledger.entries[0].receipt_id && ledger.entries[0].cost !== null, JSON.stringify(ledger.entries[0]));
 });
 
 test('reprice mid-session: gateway recovers transparently, receipt uses new revision', async (t) => {
@@ -143,4 +153,36 @@ test('onp/auto with nothing callable explains how to add keys', async (t) => {
   assert.equal(res.status, 404);
   const body = await res.json();
   assert.match(JSON.stringify(body), /OPENROUTER_API_KEY/);
+});
+
+test('--min-tier: auto-routing honours it, and so does an explicitly named node', async (t) => {
+  const { registry } = await setupNetwork(t);   // the fixture registers at community tier
+  const chat = (gw, model) => fetch(`${gw.origin}/v1/chat/completions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model, messages: [{ role: 'user', content: 'tier' }] }),
+  });
+  const open = await startGateway({ port: 0, registry: registry.origin, env: {} });
+  const strict = await startGateway({ port: 0, registry: registry.origin, env: {}, policy: { min_tier: 'verified' } });
+  t.after(async () => { await open.close(); await strict.close(); });
+
+  assert.equal((await chat(open, 'onp/auto')).status, 200, 'default pool includes community nodes');
+  assert.equal((await chat(strict, 'onp/auto')).status, 404, 'verified-only pool has no community node');
+  assert.equal((await chat(strict, 'onp/auto-private')).status, 404, 'private keeps the stricter floor');
+  const refused = await chat(strict, 'org.opennodes.fixture/echo-1');
+  assert.equal(refused.status, 403, 'the floor holds for named models too');
+  assert.match(JSON.stringify(await refused.json()), /policy-refused[\s\S]*below minimum verified/);
+  assert.equal((await chat(open, 'org.opennodes.fixture/echo-1')).status, 200, 'without the flag, any named node is callable');
+});
+
+test('models: [...] fallback list (OpenRouter-compatible) tries the next model', async (t) => {
+  const { registry } = await setupNetwork(t);
+  const gw = await startGateway({ port: 0, registry: registry.origin });
+  t.after(() => gw.close());
+
+  const res = await fetch(`${gw.origin}/v1/chat/completions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'nope/nothing', models: ['also/missing', 'org.opennodes.fixture/echo-1'], messages: [{ role: 'user', content: 'fallback' }] }),
+  });
+  assert.equal(res.status, 200);
+  assert.match((await res.json()).choices[0].message.content, /^echo: fallback/);
 });

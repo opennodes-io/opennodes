@@ -119,4 +119,22 @@ test('router: local + LAN + public catalog; native chat via ONP translated and r
   const refused = await fetch(`${capped.origin}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'onp/org.opennodes.fixture/echo-1', messages: [{ role: 'user', content: 'x'.repeat(4000) }], stream: false }) });
   assert.equal(refused.status, 502);
   assert.match((await refused.json()).error, /max_request_usd/);
+
+  // passive reputation: the three public calls count; our own budget refusal says nothing about the node
+  assert.equal(router.reputation.summary('org.opennodes.fixture/echo-1')?.ok, 3);
+  assert.equal(capped.reputation.report().length, 0);
+  const rep = await (await fetch(`${router.origin}/router/reputation`)).json();
+  assert.ok(rep.offerings.some((r) => r.offering === 'org.opennodes.fixture/echo-1' && r.calls === 3));
+});
+
+test('router: models: [...] fallback list on the OpenAI surface', async (t) => {
+  const local = await startFakeOllama();
+  const router = await startOllamaRouter({ port: 0, ollama: local.origin, mdns: false, log: () => {} });
+  t.after(async () => { await router.close(); await local.close(); });
+  const res = await fetch(`${router.origin}/v1/chat/completions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'missing:latest', models: ['tiny:latest'], messages: [{ role: 'user', content: 'fb' }] }),
+  });
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).choices[0].message.content, 'v1:fb');
 });

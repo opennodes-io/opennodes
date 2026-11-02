@@ -61,6 +61,25 @@ export const MODELS_DEV_API_BASES = {
 };
 
 /**
+ * Country of providers whose own API we import directly and whose company and inference hosting
+ * are known to be in that country — conservative on purpose (routers, gateways and providers with
+ * mixed or unclear hosting are left out). Imports carry it as an *inferred* jurisdiction; only the
+ * operator's own signed card can declare one.
+ */
+export const KNOWN_PROVIDER_COUNTRY = Object.freeze({
+  'cloudferro-sherlock': 'PL', berget: 'SE', evroc: 'SE', 'regolo-ai': 'IT', scaleway: 'FR', ovhcloud: 'FR',
+  mistral: 'FR', stackit: 'DE', hetzner: 'DE', infomaniak: 'CH',
+});
+
+/** Providers whose models are included in a subscription plan rather than priced per token. */
+export const SUBSCRIPTION_PROVIDERS = /-plan(-|$)|^gitlab$/;   // token, coding, code and step plans
+
+function perTokenPriced(providerId, model) {
+  if (SUBSCRIPTION_PROVIDERS.test(providerId)) return false;
+  return model?.cost?.input != null || model?.cost?.output != null;
+}
+
+/**
  * Import a models.dev-shaped catalog: { providerId: { id, name, api?, doc?, models: { key: model } } }.
  * Each provider becomes a synthetic node `import.modelsdev.{provider}`; each model an offering.
  * The API base is the provider's `api`, else MODELS_DEV_API_BASES; `doc` is never used as one.
@@ -91,10 +110,14 @@ export async function importModelsDev(store, catalog) {
           ...(model?.tool_call ? { supports: ['tool_calls'] } : {}),
         },
         binding: { profile: 'onp.openai.chat/v1', model_id: model?.id ?? modelKey },
+        // A missing cost is "not published", never "free"; subscription plans (token plans,
+        // GitLab Duo) list 0 because usage is included in the plan, not because it is free.
         pricing: {
           currency: 'USD',
-          input_per_mtok: Number(model?.cost?.input ?? 0),
-          output_per_mtok: Number(model?.cost?.output ?? 0),
+          ...(perTokenPriced(providerId, model) ? {
+            input_per_mtok: Number(model.cost.input ?? 0),
+            output_per_mtok: Number(model.cost.output ?? 0),
+          } : {}),
           schemes: ['prepaid'],
         },
       });
@@ -111,7 +134,7 @@ export async function importModelsDev(store, catalog) {
         id: nodeId,
         name: provider?.name ?? providerId,
         description: `Imported from models.dev; metadata only, unclaimed by the operator.`,
-        operator: { name: provider?.name ?? providerId },
+        operator: { name: provider?.name ?? providerId, ...(KNOWN_PROVIDER_COUNTRY[providerId] ? { country: KNOWN_PROVIDER_COUNTRY[providerId] } : {}) },
       },
       endpoints: {
         ...(base ? { openai: base, health: `${base}/health` } : {}),
@@ -182,10 +205,13 @@ export async function importHuggingFace(store, router, hub = []) {
             ? { expected_tps: { p50: Math.round(p.throughput), basis: 'claimed' } } : {}),
         },
         binding: { profile: 'onp.openai.chat/v1', model_id: `${model.id}:${p.provider}` },
+        // ~a third of HF provider entries carry no pricing: unknown, not free (as for models.dev)
         pricing: {
           currency: 'USD',
-          input_per_mtok: perMtok(p.pricing?.input),
-          output_per_mtok: perMtok(p.pricing?.output),
+          ...(p.pricing && (p.pricing.input != null || p.pricing.output != null) ? {
+            input_per_mtok: perMtok(p.pricing.input),
+            output_per_mtok: perMtok(p.pricing.output),
+          } : {}),
           schemes: p.is_free ? ['free'] : ['prepaid'],
         },
       };
@@ -221,6 +247,11 @@ export async function importHuggingFace(store, router, hub = []) {
 
 export const OLLAMA_LIBRARY_URL = 'https://ollama.com/library';
 
+/** Text of an HTML fragment: the library page escapes apostrophes and ampersands (&#39; &amp;). */
+const decodeEntities = (t) => t.replace(/&(#(\d+)|#x([0-9a-f]+)|amp|lt|gt|quot|apos);/gi, (m, _, dec, hex) =>
+  dec ? String.fromCodePoint(Number(dec)) : hex ? String.fromCodePoint(parseInt(hex, 16))
+    : { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[m.slice(1, -1).toLowerCase()]);
+
 /** Parse ollama.com/library HTML into entries. Resilient to styling churn:
  *  anchors on /library/{name}, spans classified by content (sizes look like "27b"/"270m"). */
 export function parseOllamaLibrary(html) {
@@ -230,7 +261,8 @@ export function parseOllamaLibrary(html) {
     const name = block.match(/^([a-z0-9._-]+)"/)?.[1];
     if (!name) continue;
     const chunk = block.slice(0, 6000);
-    const description = chunk.match(/<p[^>]*class="[^"]*max-w-lg[^"]*"[^>]*>\s*([^<]{1,400}?)\s*<\/p>/)?.[1]?.trim() ?? null;
+    const rawDescription = chunk.match(/<p[^>]*class="[^"]*max-w-lg[^"]*"[^>]*>\s*([^<]{1,400}?)\s*<\/p>/)?.[1]?.trim();
+    const description = rawDescription ? decodeEntities(rawDescription) : null;
     const spans = [...chunk.matchAll(/<span[^>]*class="[^"]*inline-flex[^"]*"[^>]*>\s*([^<]{1,40}?)\s*<\/span>/g)].map((m) => m[1].trim());
     const sizes = spans.filter((s) => /^\d+(\.\d+)?[mb]$/i.test(s));
     const capabilities = spans.filter((s) => !/^\d+(\.\d+)?[mb]$/i.test(s));

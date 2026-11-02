@@ -1,0 +1,2 @@
+# /problems/{name} (RFC 9457 type URIs) -> the listing, anchored at that name
+/problems/:name /problems/#:name 301

@@ -103,3 +103,16 @@ test('select-based estimate resolves via search', async (t) => {
   const est = await client.estimate([{ select: { modality: 'text', sort: 'price' }, est_input_tokens: 500, est_output_tokens: 200 }]);
   assert.equal(est.steps[0].offering, 'org.opennodes.fixture/echo-1');
 });
+
+test('receipt request_hash is sha256 over the raw request body bytes (ONP-5 §5)', async (t) => {
+  const { createHash } = await import('node:crypto');
+  const { startFixtureNode } = await import('@opennodes/fixture-node');
+  const node = await startFixtureNode();
+  t.after(() => node.close());
+  // deliberately non-canonical bytes: extra spaces and key order a serializer would change
+  const raw = '{ "messages": [ {"role":"user", "content":"hi"} ],  "model": "onp-echo-1" }';
+  const res = await fetch(`${node.origin}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: raw });
+  assert.equal(res.status, 200);
+  const payload = JSON.parse(Buffer.from(res.headers.get('onp-receipt').split('.')[1], 'base64url').toString('utf8'));
+  assert.equal(payload.request_hash, 'sha256:' + createHash('sha256').update(raw).digest('hex'));
+});

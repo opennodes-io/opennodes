@@ -53,6 +53,8 @@ The Node Card is the self-description document of an AI Node. It is the unit reg
 - `id` — reverse-DNS, MUST be under a domain the operator controls (verified per ONP-3 §4, same challenge family as the MCP Registry).
 - `did` — OPTIONAL W3C DID; `did:web` RECOMMENDED so the DID resolves through the same origin that hosts the card.
 - `regions` (and `data_policy.region_pinning`, §5) — region codes SHOULD be ISO 3166-1 alpha-2 (`CA`, `DE`), ISO 3166-2 subdivisions (`CA-QC`), or the ISO-reserved `EU`. Matching is case-insensitive, and a code **contains** its subdivisions: a requirement of `CA` is met by `CA-QC`, but a requirement of `CA-QC` is not met by `CA`. Free-form legacy values (`eu-central`) are tolerated and follow the same rule (`eu` contains `eu-central`), but new cards SHOULD use ISO codes.
+- `operator.country` — ISO 3166-1 alpha-2 country of the **operator** (its legal jurisdiction), as declared by the operator. It is not a statement of where the hardware runs: that is `locations` (§3a), which also delivers the per-offering execution location [KNOWN-ISSUES.md](KNOWN-ISSUES.md) planned for Draft 0.2. Registries present this value as *declared*; jurisdiction filters (ONP-3 §5) use it.
+- One origin hosts exactly one card (§1): an operator with several sites or regions publishes one card per host (e.g. `fi.inference.example.com`, `de.inference.example.com`), each with its own node id under the operator's domain.
 
 ## 3a. `locations` — where serving happens, and how we know
 
@@ -174,7 +176,7 @@ Field rules:
   | `prompt_caching` | Cached-input discount applied; see `pricing.cached_input_per_mtok` |
 
   A node MUST NOT declare a capability it does not implement. Stage B spot-checks declared capabilities (ONP-3 §4a).
-- `model.artifact` — a URI linking the served weights to a public artifact record where one exists: `hf:{org}/{repo}` (Hugging Face model card) or `urn:proprietary:{vendor}:{model}` for closed models (e.g. `urn:proprietary:openai:gpt-5`). This is the endpoint↔artifact join.
+- `model.artifact` — a URI linking the served weights to a public artifact record where one exists: `hf:{org}/{repo}` (Hugging Face model card) or `urn:proprietary:{vendor}:{model}` for closed models (e.g. `urn:proprietary:openai:gpt-5`). This is the endpoint↔artifact join. Draft 0.1 has no way to name a specific file or revision inside a repository (e.g. one GGUF quantization); until Draft 0.2 adds an optional `:{tag}` / `@{revision}` suffix, state the quantization in `model.quantization` and pin the exact weights with `model.revision_pin`.
 - `model.lineage_origins` (OPTIONAL) — the origin country (ISO 3166-1 alpha-2) of **every** developer in the model's derivation chain: base models, merge sources, distillation teachers. A fine-tune of a Chinese base model lists `CN` even if the fine-tuner is elsewhere. It is a claim unless a profile attests it (ONP-7 provenance carries the verified version). Clients apply origin policies to every entry; an offering that declares no lineage is *unknown*, not clean.
 - `locations` (OPTIONAL) — where this offering is served, overriding the node's (§3a).
 - Every performance or quality number carries `basis`: **`claimed`** (self-reported) or **`attested`** (backed by a linked Verifiable Credential from an attester). Registries and clients MUST NOT present claimed values as verified.
@@ -222,7 +224,11 @@ The `mlperf.system_id` link is the standard way to make a hardware claim checkab
 
 ## 8. `signatures`
 
-The card MUST carry at least one JWS (RFC 7515, detached payload = the card minus `signatures`) by a key discoverable via the origin (`/.well-known/jwks.json`) or the node's DID document. Registries MUST reject unsigned cards for `verified`+ tiers and SHOULD accept-but-label them at lower tiers.
+The card MUST carry at least one JWS (RFC 7515) by a key discoverable via the origin (`/.well-known/jwks.json`) or the node's DID document. Registries MUST reject unsigned cards for `verified`+ tiers and SHOULD accept-but-label them at lower tiers.
+
+- **Payload:** the card without its `signatures` member, serialized with the **JSON Canonicalization Scheme (JCS, RFC 8785)** — keys sorted, no insignificant whitespace, numbers and strings in their ECMAScript form — so implementations in any language produce the same bytes. The payload is detached: it is not carried in the signature.
+- **Signature entries:** `{"protected": "<base64url header>", "signature": "<base64url>", "kid": "<key id>"}`. The verifier rebuilds the compact JWS as `protected.base64url(JCS(card − signatures)).signature`. Other members of a signature entry MUST be ignored.
+- **Algorithm:** `EdDSA` (Ed25519) is RECOMMENDED and is what the reference implementations use.
 
 **Canonicalization (normative).** The signed payload is the **JSON Canonicalization Scheme (JCS, RFC 8785)** serialization of the card minus `signatures`:
 - object members sorted by UTF-16 code units, arrays in order, no insignificant whitespace;
@@ -233,4 +239,4 @@ Each entry in `signatures` holds the JWS protected header and signature; the ver
 
 ## 9. JSON Schema
 
-The normative JSON Schema for the card is [`schemas/open-node.schema.json`](../schemas/open-node.schema.json) (JSON Schema 2020-12, `$id` `https://opennodes.io/schemas/0.1/open-node.schema.json`). The schema is normative for **structure**; this document is normative for **semantics**. Where they disagree, file an issue: it is a bug in one of them. Vocabulary fields are open token lists per ONP-1 §5.
+The normative JSON Schema for the card is [`schemas/open-node.schema.json`](../schemas/open-node.schema.json) (JSON Schema 2020-12, `$id` `https://opennodes.io/schemas/0.1/open-node.schema.json`). The schema is normative for **structure**; this document is normative for **semantics**. Where they disagree, the prose is authoritative until the bug is fixed; file an issue. Vocabulary fields are open token lists per ONP-1 §5.

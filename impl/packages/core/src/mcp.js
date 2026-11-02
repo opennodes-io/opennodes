@@ -19,13 +19,16 @@ const FILTERS = {
   location_basis: { ...LOCATION_BASIS, description: 'Minimum evidence for the serving locations: claimed < documented (the provider\'s own dated page) < measured (registry probes) < attested. Offerings without known locations are excluded.' },
   exclude_lineage: { type: 'string', description: 'Comma-separated ISO country codes; drops offerings whose declared model lineage includes any of them, e.g. "CN". Offerings that declare no lineage are kept.' },
   q: { type: 'string', description: 'Free-text match against the model metadata, offering id, and node id, e.g. "bielik" or "coder".' },
+  local: { type: 'boolean', description: "true: only models that run on the user's own machine (the Ollama library: no server, free, ranked by Ollama pulls, with local.sizes_memory per size). false: only hosted offerings. Omit for both (hosted listed first). The result's counts give { hosted, local }." },
+  memory_gb: { type: 'number', minimum: 1, description: 'RAM/VRAM the user can give a local model, in GB: keeps local models with a size that fits (4-bit estimate). Hosted offerings are unaffected.' },
+  jurisdiction: { type: 'string', description: 'Only operators that declare a country inside it: "eea" (EU + Iceland, Liechtenstein, Norway) or comma-separated ISO country codes, e.g. "DE,FI". Registered nodes declare their country; imported listings of known providers carry an inferred one (jurisdiction.basis = "inferred"); listings without a country are excluded.' },
 };
 
 export const MCP_TOOLS = [
   {
     name: 'recommend',
     title: 'Recommend a node and model',
-    description: "Recommend the best AI node + model for a task, with an enforceable cost estimate and human-readable reasons. Use this first when you know the task but not the model. Features (task class, size, language, needs) are extracted LOCALLY from `task` and only those features are sent to the registry — the prompt never leaves this machine. Returns ranked candidates with score components, a cost estimate pinned to the node's card revision, an optional cheaper two-step scenario, and MCP tool categories the task likely needs. To browse instead, use search_offerings; to price a specific chain, use estimate.",
+    description: "Recommend the best AI node + model for a task, with an enforceable cost estimate and human-readable reasons. Use this first when you know the task but not the model. Features (task class, size, language, needs) are extracted LOCALLY from `task` and only those features are sent to the registry — the prompt never leaves this machine. Returns ranked candidates with score components, a cost estimate pinned to the node's card revision, an optional cheaper two-step scenario, and MCP tool categories the task likely needs. For RAG or document Q&A tasks (\"answer questions over 2,000 internal documents\") it also returns roles.embed: embedding models to index the collection, with an indexing cost estimate; private collections favour models that run on the user's own machine. To browse instead, use search_offerings; to price a specific chain, use estimate.",
     inputSchema: {
       type: 'object', required: ['task'], additionalProperties: false,
       properties: {
@@ -40,7 +43,9 @@ export const MCP_TOOLS = [
             max_input_per_mtok: { type: 'number', minimum: 0, description: 'Maximum input price in USD per million tokens.' },
             max_total_usd: { type: 'number', minimum: 0, description: 'Maximum estimated total cost of the call in USD.' },
             region: { type: 'string', description: 'Required data region, e.g. "CA" or "EU". Offerings pinned to, or served from, other regions are excluded.' },
+            jurisdiction: { type: 'string', description: 'Only operators in this jurisdiction: "eea" or ISO country codes ("DE,FI"). Local and LAN models always qualify.' },
             prefer_local: { type: 'boolean', description: 'Give a bonus to nodes on this machine or LAN.' },
+            local_memory_gb: { type: 'number', minimum: 1, description: 'RAM/VRAM this machine can give a local model, in GB. Local models that cannot fit are left out, and the largest size that fits is picked (4-bit estimate). The local stdio server fills this from the machine when it is not given.' },
             limit: { type: 'integer', minimum: 1, maximum: 20, default: 3, description: 'Number of candidates to return.' },
           },
         },
@@ -51,7 +56,7 @@ export const MCP_TOOLS = [
   {
     name: 'search_offerings',
     title: 'Search inference offerings',
-    description: "Search AI inference offerings in the OpenNodes registry — registered nodes AND imported catalogs (OpenRouter, Hugging Face Inference Providers, models.dev, local nodes). All filters are optional and combine with AND. Returns { offerings, total }: each offering has node_id, offering_id, model, pricing (USD per MTok), trust tier, serving capabilities, measured probe results, and a rank explanation. Use get_offering for one offering's full card, recommend to let the advisor choose.",
+    description: "Search AI inference offerings in the OpenNodes registry — registered nodes AND imported catalogs (OpenRouter, Hugging Face Inference Providers, models.dev, local nodes). All filters are optional and combine with AND. Returns { offerings, total, counts }: each offering has node_id, offering_id, model, pricing (USD per MTok), trust tier, serving capabilities, measured probe results, and a rank explanation. Use get_offering for one offering's full card, recommend to let the advisor choose.",
     inputSchema: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -158,6 +163,11 @@ export function summarizeNode(node, offeringLimit = 25) {
     payment_schemes: (card.payment?.schemes ?? []).map((s) => s.scheme),
     listed_at: node.created_at ?? null,
     updated_at: node.updated_at ?? null,
+    location: node.location ? {
+      verdict: node.location.verdict, declared: node.location.declared ?? null,
+      server: node.location.server ?? null, latency: node.location.latency?.verdict ?? 'unknown',
+      checked_at: node.location.checked_at ?? null,
+    } : null,
     availability: liveness.length ? {
       checks: liveness.length,
       ok: liveness.filter((p) => p.ok).length,

@@ -6,6 +6,13 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Swap: a 4 GB host with a model on it needs room for spikes, or it freezes instead of slowing down.
+if [ ! -f /swapfile ]; then
+  fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap -q /swapfile && swapon /swapfile
+  grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  echo 'vm.swappiness=10' > /etc/sysctl.d/99-opennodes.conf && sysctl -q vm.swappiness=10
+fi
+
 if [ ! -f .env ]; then
   umask 077
   printf 'PG_PASSWORD=%s\nONP_ADMIN_TOKEN=%s\n' "$(openssl rand -hex 24)" "$(openssl rand -hex 24)" > .env

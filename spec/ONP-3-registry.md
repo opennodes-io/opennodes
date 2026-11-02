@@ -28,7 +28,7 @@ A registry is any service implementing this API. The architecture copies what wo
 | `GET /v0/attestations?subject=…` | VCs known for a node/offering |
 | `GET /v0/health` | Registry self-description: ONP versions, ranking components (§6), federation peers (§8), fee policy |
 
-Errors follow RFC 9457 (`application/problem+json`).
+Errors follow RFC 9457 (`application/problem+json`). The `type` member is `https://opennodes.io/problems/{name}` and `title` is the bare `{name}` (e.g. `unknown-node`, `namespace-mismatch`, `rate-limited`); clients SHOULD match on `title`. The names in use are listed at `https://opennodes.io/problems/`.
 
 ## 3. Registration lifecycle
 
@@ -56,7 +56,7 @@ Registration alone never grants a trust tier. Tiers above `unverified` are gated
 3. `GET /models` agrees with the card's offerings.
 
 **Stage B — Identity & capability (gate to `verified`, hours–days):**
-4. **Model identity fingerprint** — for open-weight artifacts: a fixed battery of prompts at temperature 0, compared against a reference run of the claimed artifact+quantization; statistical mismatch ⇒ `disputed`, admission refused. When the offering declares `logprobs` (ONP-2 §5), registries SHOULD compare token log-probabilities. Otherwise they compare outputs only and SHOULD record the result as lower-confidence. For proprietary artifacts: only the vendor's own verified namespace may claim them (§6.3).
+4. **Model identity fingerprint** — for open-weight artifacts: a fixed battery of prompts at temperature 0 compared against a reference run of the claimed artifact+quantization on a deployment the registry trusts; mismatch ⇒ `disputed`, admission refused. Registries MAY compare exact output text (what the reference registry does in Draft 0.1: every prompt must match) or output/logprob distributions where the endpoint exposes them. Because outputs can legitimately differ across hardware, quantization kernels and batching even at temperature 0, a mismatch on hardware unlike the reference's SHOULD trigger a reference capture on comparable hardware or a review before `disputed` is final. A two-tier check (distribution comparison where logprobs exist, behavioral signature otherwise) is a Draft 0.2 item. When the offering declares `logprobs` (ONP-2 §5), registries SHOULD compare token log-probabilities; otherwise they compare outputs only and SHOULD record the result as lower-confidence. For proprietary artifacts: only the vendor's own verified namespace may claim them (§6.3).
 5. **Context verification** — retrieval probes (needle-in-haystack family) at 25/50/90% of the claimed `context_window`; failure caps the *advertised* window to the largest verified size rather than rejecting outright. Probes SHOULD be sized in the model's own tokens (calibrated from the endpoint's reported `usage.prompt_tokens`), SHOULD place the fact near the *start* of the prompt so that an engine silently discarding the front of an over-long prompt fails, and SHOULD treat a reported `prompt_tokens` well below the probe size as a failed (truncated) probe. The verified size is the largest probe size at which that probe and every smaller one succeeded. Question wording SHOULD be plain ("what is the magic number"): small models refuse or mangle unusual tokens.
 6. **Capacity ramp** — concurrent load stepped up toward claimed throughput; measures TTFT/TPS percentiles under load and sustains ≥ N minutes (registry-declared, default 15). Claimed `expected_ttft_ms`/`expected_tps` outside measured bounds are re-labeled with the registry's observed values in search results — the node's claims are never silently trusted over measurements.
 7. **Capability spot-checks** — if `supports` declares `tool_calls`/`json_mode`/`vision`, one functional probe each.
@@ -83,6 +83,7 @@ Registration alone never grants a trust tier. Tiers above `unverified` are gated
 &region=EU                   // residency: pinned regions and live serving sites (else node regions) entirely within this code
 &location_basis=documented   // minimum evidence for every serving site (ONP-2 §3a)
 &exclude_lineage=CN          // drop offerings whose declared model lineage includes these countries
+&jurisdiction=eea            // operator country: eea (alias eu) or ISO 3166-1 codes, e.g. CA or DE,FI
 &scheme=x402                 // payment scheme
 &tier=verified               // minimum trust tier
 &basis=attested              // only attested performance/benchmarks
@@ -97,8 +98,9 @@ Matching rules:
 - `location_basis=B` matches an offering that has at least one live serving location and whose every live location has a basis at least as strong as `B` (`claimed` < `documented` < `measured` < `attested`).
 - `exclude_lineage=C1,C2` drops an offering when its `model.lineage_origins` contains any listed country. Offerings that declare no lineage are kept and MUST be shown as unknown, not as compliant.
 - `lang=fr` matches the tag `fr` and its subtags (`fr-CA`); `lang=fr-CA` matches only `fr-CA`.
+- `jurisdiction` matches the operator's country: as **declared** in a registered node's signed card, or **inferred** by the registry for an unclaimed import of a provider it knows (each offering carries `jurisdiction: {country, regions, basis}` with `basis` = `declared` | `inferred`). Offerings with no country never match. Clients that must not rely on inference filter on `basis` as well.
 
-Responses return offering summaries: the card excerpt, trust tier, the effective serving `locations` (live only) and `residency` codes, the **effective hardware allocation** (the offering-level `hardware` override if present, else the node-level declaration — see ONP-2 §6), registry **observations** (measured uptime, TTFT/TPS percentiles from probes, price history), and `rank` with `rank_explanation` (§6). Results MUST distinguish card-claimed vs. registry-observed vs. attested values; performance sorts (`ttft`, `tps`) MUST prefer observed values over claims.
+Responses return offering summaries: the card excerpt, trust tier, the effective serving `locations` (live only) and `residency` codes, the operator `jurisdiction` with the registry's server-location check (§6.4), the **effective hardware allocation** (the offering-level `hardware` override if present, else the node-level declaration — see ONP-2 §6), registry **observations** (measured uptime, TTFT/TPS percentiles from probes, price history), and `rank` with `rank_explanation` (§6). Results MUST distinguish card-claimed vs. registry-observed vs. attested values; performance sorts (`ttft`, `tps`) MUST prefer observed values over claims.
 
 ## 5a. Estimation
 
@@ -122,7 +124,7 @@ Steps may name a concrete offering or embed a §5 `select` query (the registry r
 
 ## 5b. Recommendation (advisor)
 
-`POST /v0/recommend` turns a task into a ranked shortlist with an enforceable estimate — the primitive an agent calls when it does not want to compose a search query itself (ONP-6 §6). The body carries either `task` (free text) or `features` — the output of a client-side feature extraction (modality, task class, language, estimated input/output tokens, needed capabilities, latency sensitivity, privacy sensitivity) — plus a `policy` (`min_tier`, `max_input_per_mtok`, `max_total_usd`, `region`, `prefer_local`, `preset`). Registries MUST accept `features` so a client never has to disclose its prompt; reference clients (gateway, stdio MCP server) extract features locally and send only those.
+`POST /v0/recommend` turns a task into a ranked shortlist with an enforceable estimate — the primitive an agent calls when it does not want to compose a search query itself (ONP-6 §6). The body carries either `task` (free text) or `features` — the output of a client-side feature extraction (modality, task class, language, estimated input/output tokens, needed capabilities, latency sensitivity, privacy sensitivity) — plus a `policy` (`min_tier`, `max_input_per_mtok`, `max_total_usd`, `region`, `jurisdiction`, `prefer_local`, `preset`); `jurisdiction` has the §5 meaning, and offerings running on the user's own machine or network always satisfy it. Registries MUST accept `features` so a client never has to disclose its prompt; reference clients (gateway, stdio MCP server) extract features locally and send only those.
 
 The response lists recommendations each with `offering`, pinned `card_revision`, `estimate` (§5a bounds), `score`, its `components` (quality prior, price, trust, measured performance) with the `weights` used, and human-readable `reasons`; the equivalent §5 search `query`; counts of considered/eligible offerings with per-filter rejection reasons; optionally a two-step ONP-6 scenario (cheap triage/draft → strong expert/refine) when it would plausibly save money; and MCP tool categories the task likely needs. Hard requirements (capabilities, context, data policy, tier, price) are filters, never score inputs. Quality priors MUST be labeled by basis (size heuristic, claimed benchmark, attested benchmark, or registry-measured task probes once available) and measured performance MUST outweigh claimed performance — the same discipline as §6.
 
@@ -161,6 +163,7 @@ The advisor is deliberately deterministic and reproducible: same catalog, same f
 - **Points.** Each site carries `geo`: the location's own point (`derived: false`), or an approximate label point for its region or country (`derived: true`, `precision` `region` or `country`), or `null`. A `within_km` radius matches only points placed at least to the region, because a country-level placeholder says nothing about distance.
 - **GeoJSON.** `format=geojson` returns an RFC 7946 FeatureCollection (`application/geo+json`) with one Point feature per site that has a point, coordinates in `[lon, lat]` order. Properties are flat, with lists joined by `"; "`, so desktop GIS tools read them as columns. The foreign member `unmapped` counts sites without a point.
 - `measured` is the only basis a registry may assign (ONP-2 §3a). It requires probe points inside the region under test, and the registry MUST record which probe points produced it.
+- Sites of registered nodes carry `server_check`: the registry's server-location result for the node's API host (§6.4: verdict, server country, latency verdict, date). It tests where the endpoint answers from, not each declared site, so a passing check does not by itself make a site `measured`.
 
 ## 6. Verification, observations, and ranking
 
@@ -173,9 +176,12 @@ Registries earn their place by turning claims into signals:
 Periodic blind invocations through the advertised binding (registry pays like any client, or uses a node-granted probe allowance declared in the card). Checks: endpoint speaks the profile; streamed usage matches receipts (receipt sampling, ONP-5 §5); latency percentiles.
 
 ### 6.3 Identity probes (anti-impersonation)
-For offerings claiming a known open-weight artifact, registries SHOULD run behavioral fingerprint tests (§4a item 4: log-probability comparison where `logprobs` is declared, output comparison otherwise) and MUST downgrade `model.artifact` to `disputed` on failure. For proprietary artifacts (`urn:proprietary:*`), only the vendor's own verified namespace may claim them — a third party cannot list "gpt-5".
+For offerings claiming a known open-weight artifact, registries SHOULD run behavioral fingerprint tests (exact-output or distribution checks against a reference, §4a.4; log-probability comparison where `logprobs` is declared) and MUST downgrade `model.artifact` to `disputed` on a confirmed failure. For proprietary artifacts (`urn:proprietary:*`), only the vendor's own verified namespace may claim them — a third party cannot list "gpt-5".
 
-### 6.4 Ranking
+### 6.4 Server-location checks (anti residency misstatement, ONP-1 §6 threat 5)
+Registries SHOULD check where a node's API host is: (a) geolocation and network owner of its public IP address, reporting CDN/anycast networks as such rather than as a location; (b) TCP round-trip times from two or more probe sites in known places, compared with the physical minimum (light in fibre ≈ 100 km per ms of round trip) for the geolocated point. Results are published per node (`location`: `verdict` = `match` | `same_region` | `mismatch` | `cdn` | `inconsistent` | `unknown`, the server's country and network, per-site RTTs) and, in search results, under `jurisdiction.location`. A jurisdiction filter (§5) MUST exclude an offering whose server was found outside the requested jurisdiction (unless behind a CDN, or its geolocation is contradicted by latency). These checks are evidence, not proof: a front server in one country forwarding requests elsewhere defeats both, which is why attested residency (§7) remains the strong guarantee. The reference registry checks registered nodes after admission and all candidates for jurisdiction filters daily, from Nuremberg (DE) and Helsinki (FI).
+
+### 6.5 Ranking
 Each registry computes `rank` however it wants **but MUST publish, in `GET /v0/health`, the component list and weights** (e.g. `uptime:0.3, price:0.2, attested_quality:0.3, latency:0.2`) and per-result `rank_explanation` with component values. Undisclosed ranking inputs are non-conformant. Paid placement, if any, MUST be labeled `sponsored` and excluded from `rank`.
 
 ## 7. Attestations
@@ -200,4 +206,4 @@ Vertical registries (medical-only, EU-only, on-prem enterprise) and OS-vendor re
 
 ## 9. Registry monetization hooks (informative)
 
-The protocol is fee-neutral. Expected models, in ascending ambition: free/foundation-funded root (MCP-Registry style); listing fees for `verified` tier processing; attestation services; **settlement operation** (ONP-5 §4 — the OpenRouter-proven ~5% take on prepaid credits); sponsored placement (mandatory labeling per §6.4). Ad-financed inference and token exchanges are deliberately out of Draft 0.1 (no market precedent).
+The protocol is fee-neutral. Expected models, in ascending ambition: free/foundation-funded root (MCP-Registry style); listing fees for `verified` tier processing; attestation services; **settlement operation** (ONP-5 §4 — the OpenRouter-proven ~5% take on prepaid credits); sponsored placement (mandatory labeling per §6.5). Ad-financed inference and token exchanges are deliberately out of Draft 0.1 (no market precedent).

@@ -3,11 +3,15 @@
 // editor MCP hosts (Cursor, VS Code, Claude Desktop): one command, no HTTP setup.
 import readline from 'node:readline';
 import { readFileSync } from 'node:fs';
+import { totalmem } from 'node:os';
 import { extractFeatures, MCP_TOOLS, MCP_INSTRUCTIONS, summarizeNode } from '@opennodes/core';
 
 export { summarizeNode };
 
 const { version: VERSION } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+
+/** What a local model could use here: 75% of RAM, leaving the rest to the system (a GPU's VRAM may be less). */
+export const machineMemoryGb = () => Math.max(1, Math.floor((totalmem() / 1e9) * 0.75));
 
 export function createStdioMcp({ registry, input = process.stdin, output = process.stdout }) {
   const base = registry.replace(/\/$/, '');
@@ -15,6 +19,9 @@ export function createStdioMcp({ registry, input = process.stdin, output = proce
   async function runTool(name, args = {}) {
     switch (name) {
       case 'recommend': {
+        // This server runs on the user's machine: it can tell how much memory a local model could use.
+        const assumed = args.policy?.local_memory_gb == null;
+        if (assumed) args = { ...args, policy: { ...args.policy, local_memory_gb: machineMemoryGb() } };
         // Privacy by construction: extract features here, send only those.
         const features = extractFeatures(String(args.task ?? ''), { est_output_tokens: args.est_output_tokens ?? null });
         const res = await fetch(`${base}/v0/recommend`, {
@@ -23,6 +30,7 @@ export function createStdioMcp({ registry, input = process.stdin, output = proce
         });
         const body = await res.json();
         if (!res.ok) throw new Error(body.detail ?? `status ${res.status}`);
+        if (assumed) body.local_memory = { gb: args.policy.local_memory_gb, basis: "75% of this machine's RAM; pass policy.local_memory_gb to override (a GPU's VRAM may be smaller)" };
         return body;
       }
       case 'search_offerings': {

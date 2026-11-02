@@ -248,3 +248,107 @@ test('admin delist hides a node, survives re-import, and relist / re-registratio
   assert.equal(back.state, 'community');
   assert.equal((await post('/v0/admin/nodes/nope.none/delist')).status, 404);
 });
+
+test('catalog cache: reused between reads, rebuilt after any store write, ranks never leak', async (t) => {
+  const { collectOfferings, searchOfferingsPaged } = await import('../packages/registry/src/search.js');
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  t.after(() => registry.close());
+  const { store } = registry;
+  const catalog = (name) => ({ acmecloud: { id: 'acmecloud', name, api: 'https://api.acmecloud.example/v1',
+    models: { a: { id: 'a', name: 'A', cost: { input: 0.1, output: 0.2 } }, b: { id: 'b', name: 'B', cost: { input: 1, output: 2 } } } } });
+  const post = (body) => fetch(`${registry.origin}/v0/import/models-dev`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  await post({ catalog: catalog('Acme') });
+  const first = await collectOfferings(store);
+  assert.equal(await collectOfferings(store), first, 'second read reuses the cached array');
+  const [p1, p2] = await Promise.all([collectOfferings(store), collectOfferings(store)]);
+  assert.equal(p1, p2, 'concurrent reads share one result');
+
+  // a write through the store marks the catalog stale: the next read sees it
+  await store.setState('import.modelsdev.acmecloud', 'delisted', 'test');
+  assert.equal((await collectOfferings(store)).length, 0);
+  await store.setState('import.modelsdev.acmecloud', 'indexed', 'test');
+  assert.equal((await collectOfferings(store)).length, 2);
+
+  // ranking annotates copies: the cached offerings stay clean
+  const { offerings } = await searchOfferingsPaged(store, new URLSearchParams('sort=price'));
+  assert.ok(offerings.every((o) => typeof o.rank === 'number'));
+  assert.ok((await collectOfferings(store)).every((o) => o.rank === undefined));
+});
+
+test('catalog listing: paging, price scored by position, meaningful tie order, pass rate survives liveness churn', async (t) => {
+  const { searchOfferingsPaged } = await import('../packages/registry/src/search.js');
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  t.after(() => registry.close());
+  const { store } = registry;
+  const model = (id, input, context) => ({ id, name: id.toUpperCase(), cost: { input, output: input * 2 }, ...(context ? { limit: { context } } : {}) });
+  await fetch(`${registry.origin}/v0/import/models-dev`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ catalog: { acmecloud: { id: 'acmecloud', name: 'Acme', api: 'https://api.acmecloud.example/v1', models: {
+      cheap: model('cheap', 0.1), mid: model('mid', 1), outlier: model('outlier', 150),
+      'tie-small': model('tie-small', 0.5, 8192), 'tie-big': model('tie-big', 0.5, 131072),
+    } } } }),
+  });
+
+  // Paging: offset walks the whole result set without overlap.
+  const page = async (qs) => (await (await fetch(`${registry.origin}/v0/offerings?${qs}`)).json());
+  const first = await page('limit=2'), second = await page('limit=2&offset=2'), third = await page('limit=2&offset=4');
+  assert.equal(first.total, 5);
+  const ids = [...first.offerings, ...second.offerings, ...third.offerings].map((o) => o.offering_id);
+  assert.equal(new Set(ids).size, 5, 'every offering exactly once across pages');
+  assert.equal(second.offset, 2);
+
+  // One very expensive outlier no longer flattens every other price score into a tie.
+  const { offerings } = await searchOfferingsPaged(store, new URLSearchParams('limit=10'));
+  const rank = Object.fromEntries(offerings.map((o) => [o.offering_id, o.rank]));
+  assert.ok(rank.cheap > rank.mid && rank.mid > rank.outlier, JSON.stringify(rank));
+  // Equal rank: larger context first, not import order.
+  const order = offerings.map((o) => o.offering_id);
+  assert.ok(order.indexOf('tie-big') < order.indexOf('tie-small'), order.join(','));
+
+  // A verified node's pass rate counts continuous checks too: liveness churn must not zero it.
+  const node = await startFixtureNode();
+  t.after(() => node.close());
+  await registerAndVerify(registry, node);
+  for (let i = 0; i < 120; i++) await store.recordProbe('org.opennodes.fixture', null, 'C', 'liveness', i !== 7);
+  const fixture = (await searchOfferingsPaged(store, new URLSearchParams('q=org.opennodes.fixture'))).offerings[0];
+  assert.equal(fixture.observed.probes, 100);
+  assert.ok(fixture.observed.probe_success >= 0.98, String(fixture.observed.probe_success));
+});
+
+test('prices: missing is "not published", subscription plans carry no per-token price, only real zeros are free', async (t) => {
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  t.after(() => registry.close());
+  await fetch(`${registry.origin}/v0/import/models-dev`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ catalog: {
+      acme: { id: 'acme', name: 'Acme', api: 'https://api.acme.example/v1', models: {
+        unpriced: { id: 'unpriced', name: 'Unpriced' },
+        gratis: { id: 'gratis', name: 'Gratis', cost: { input: 0, output: 0 } },
+        paid: { id: 'paid', name: 'Paid', cost: { input: 1, output: 2 } },
+      } },
+      'acme-token-plan': { id: 'acme-token-plan', name: 'Acme plan', api: 'https://plan.acme.example/v1', models: {
+        planned: { id: 'planned', name: 'Planned', cost: { input: 0, output: 0 } },
+      } },
+      'acme-coding-plan-cn': { id: 'acme-coding-plan-cn', name: 'Acme coding plan', api: 'https://code.acme.example/v1', models: {
+        coder: { id: 'coder', name: 'Coder', cost: { input: 0, output: 0 } },
+      } },
+    } }),
+  });
+  const get = async (qs) => (await (await fetch(`${registry.origin}/v0/offerings?${qs}`)).json()).offerings;
+  const byId = Object.fromEntries((await get('limit=10')).map((o) => [o.offering_id, o]));
+  assert.equal(byId.unpriced.pricing.input_per_mtok, undefined, 'no price invented');
+  assert.equal(byId.planned.pricing.input_per_mtok, undefined, 'subscription plan: no per-token price');
+  assert.equal(byId.coder.pricing.input_per_mtok, undefined, 'coding plans are subscriptions too');
+  assert.equal(byId.gratis.pricing.input_per_mtok, 0);
+  assert.deepEqual((await get('max_input_price=0')).map((o) => o.offering_id), ['gratis'], 'only real zeros count as free');
+  assert.equal(byId.unpriced.rank_explanation.components.price, 0, 'no price points without a price');
+
+  const est = await (await fetch(`${registry.origin}/v0/estimate`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ steps: [{ offering: `${byId.unpriced.node_id}/unpriced`, est_input_tokens: 1000, est_output_tokens: 500 },
+      { offering: `${byId.paid.node_id}/paid`, est_input_tokens: 1000, est_output_tokens: 500 }] }),
+  })).json();
+  assert.equal(est.steps[0].cost.price_published, false);
+  assert.equal(est.total.incomplete, true, 'a total with an unpriced step is marked incomplete');
+});

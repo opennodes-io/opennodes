@@ -67,6 +67,14 @@ A **Scenario** is a declarative JSON document a client executes; it is how "use 
 Key semantics:
 - `roles.*.select` is an ONP-3 §5 search query, resolved at run time against the user's registries — scenarios name *requirements*, not vendors (though `node_id` pinning is allowed). This is late binding: the same scenario gets cheaper/better as the registry does.
 - `steps` is deliberately minimal (sequence, condition, role, tools on/off, variable piping). Scenarios are not a workflow language; anything beyond this belongs in application code driving the client SDK.
+- **Conditions** (`if`) use a fixed, non-Turing-complete grammar, so a scenario received from anyone can be run safely:
+  ```
+  condition  := comparison ( ("and" | "or") comparison )*
+  comparison := ref ( "==" | "!=" ) literal  |  ref "in" "[" literal ( "," literal )* "]"
+  ref        := step_id "." field            ; e.g. classify.route — a field of an earlier step's output
+  literal    := '…' | "…" | number | true | false
+  ```
+  No parentheses, function calls, arithmetic or assignment; `and` binds tighter than `or`. A reference to a missing step or field evaluates the comparison to false. Clients MUST evaluate conditions with a parser for this grammar and MUST NOT pass them to a general-purpose evaluator (`eval`, `new Function`, a shell or template engine); a scenario whose condition does not parse is rejected.
 - `policy` composes with (never overrides) the user's client-level spend/trust policy.
 
 ## 6. Agent-driven composition

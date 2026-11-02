@@ -47,6 +47,9 @@ export async function collectSites(store, seeds = []) {
     if (HIDDEN.includes(node.state)) continue;
     const card = await store.latestCard(node.id);
     if (!card) continue;
+    // The registry's server-location check (location.js, ONP-3 §6.4) covers the node's API host,
+    // not each site: shown beside the declared sites, never turning one into `measured` by itself.
+    const check = (await store.getObservations(node.id, '_node')).location ?? null;
     const base = {
       node_id: node.id,
       provider: card.node?.name ?? node.id,
@@ -54,6 +57,10 @@ export async function collectSites(store, seeds = []) {
       operator_country: card.node?.operator?.country ?? null,
       tier: node.state === 'indexed' ? 'unverified' : node.state,
       source: node.source ?? 'registration',
+      server_check: check ? {
+        verdict: check.verdict, server_country: check.server?.country ?? null,
+        latency: check.latency?.verdict ?? 'unknown', checked_at: check.checked_at ?? null,
+      } : null,
     };
     for (const loc of card.node?.locations ?? []) siteFor(base, loc);
     for (const o of card.offerings) {
@@ -84,6 +91,7 @@ export async function collectSites(store, seeds = []) {
         operator_country: p.operator?.country ?? null,
         tier: 'unverified',
         source: 'seed',
+        server_check: null,
       };
       for (const s of p.sites ?? []) siteFor(base, siteLocation(s)).models_note = p.models_note ?? 'Models not published';
     }

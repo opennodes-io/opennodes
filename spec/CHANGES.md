@@ -11,6 +11,9 @@ No public catalogue says which models run in which country's datacentres, or how
 | L3 | ONP-3 §5 | Residency (`region=`) covers pinned regions **and** live serving locations; new `location_basis=` and `exclude_lineage=` filters; offering summaries carry `locations` and `residency` |
 | L4 | ONP-3 §5c, §2 | New `GET /v0/locations`: serving sites by country with evidence and models, from cards and curated seeds, with JSON and CSV output and an `unlocated_offerings` count |
 | L5 | ONP-2 §3a, ONP-3 §5c, schema | GIS: optional location `geo` point (`lat`, `lon`, `precision` facility/city/region/country; no finer than the city unless the address is public); registries mark derived region or country points; `/v0/locations` adds `near=` / `within_km=` distance queries and `format=geojson` (RFC 7946) |
+| L6 | ONP-1 §5, ONP-2 §3, §5, §9, ONP-3 §4a, §5, §6, ONP-5 §5 | Merged with the Draft 0.1 errata of 2026-10-23 ([KNOWN-ISSUES.md](KNOWN-ISSUES.md)). Revision 2's versioning rules (accept higher minors, open vocabularies) sit beside the errata's draft and major-version rules. `operator.country` keeps its errata meaning (the operator's jurisdiction); `locations` now delivers the per-offering execution location the errata planned for Draft 0.2. ONP-3 §6 is numbered 6.1–6.5 with the errata's server-location checks as §6.4 and ranking as §6.5. `jurisdiction=` and `region=` both filter search: the operator's country, and where requests are served |
+
+The registry's server-location check (§6.4) and site evidence are kept apart: `/v0/locations` shows the check result for a registered node's API host as `server_check` beside its declared sites, and a passing check does not by itself make a site `measured`.
 
 ### Reference implementation changes
 
@@ -23,7 +26,9 @@ No public catalogue says which models run in which country's datacentres, or how
   - GIS: points on every site (city points for the 18 named Canadian seed sites, derived points otherwise), `near=` / `within_km=`, `format=geojson`, and an interactive map on the "Where models run" page (Leaflet 1.9.4 from cdnjs with subresource integrity, loaded only on that page; basemap from `/v0/health` `map`, OpenStreetMap by default, `ONP_MAP_TILES` to change or `off` to disable).
 - `@opennodes/core`: `geo.js` with `pointFor`, `distanceKm`, `parsePoint`, `REGION_POINTS`, `GEO_PRECISIONS`; `find_locations` takes `near` and `within_km`.
 - `@opennodes/cli`: the stdio MCP server proxies `find_locations`.
-- Not built yet: the `measured` basis. It needs probe points inside each region under test; the hosted registry probes from the EU. With `geo` in place, a probe's round-trip time can now be checked against the distance to the claimed site.
+- Shared with the server-location check: one great-circle distance (`distanceKm` in core; `location.js` keeps `haversineKm` as an alias); `/v0/locations` sites carry `server_check`.
+- Not built yet: the `measured` basis for sites. It needs probe points inside each region under test (the server-location check now runs from Nuremberg and Helsinki). With `geo` in place, a probe's round-trip time can be checked against the distance to the claimed site.
+- Versions: core 0.1.18, registry 0.1.41, cli 0.1.27, ollama-router 0.1.21. `deploy/registry/Dockerfile` still pins the published registry 0.1.40; move it when 0.1.41 is published.
 - Tests: `impl/test/locations.test.js` (8 tests).
 
 ## Draft 0.1, revision 2 — 2026-10-31

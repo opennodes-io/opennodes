@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // onp CLI (REQ-002 subset): search | estimate | invoke | card | health
 import { OnpClient } from './src/client.js';
-import { startGateway } from './src/gateway.js';
+import { startGateway, TIERS, credentialsFrom } from './src/gateway.js';
+import { checkOffering, saveCheck, DEFAULT_CHECKS_PATH } from './src/check.js';
+import { DEFAULT_REPUTATION_PATH } from './src/reputation.js';
 import { createStdioMcp } from './src/mcpserver.js';
 
 const [cmd, ...args] = process.argv.slice(2);
@@ -89,6 +91,8 @@ try {
           keys[args[i].slice(0, eq)] = args[i].slice(eq + 1);
         }
       }
+      const minTier = flag('min-tier');
+      if (minTier && !TIERS.includes(minTier)) throw new Error(`--min-tier must be one of ${TIERS.join(', ')}`);
       const gw = await startGateway({
         registry,
         port: Number(flag('port', 4141)),
@@ -96,6 +100,10 @@ try {
         aliases,
         virtuals,
         keys,
+        policy: minTier ? { min_tier: minTier } : {},
+        reputationPath: args.includes('--no-reputation') ? null : flag('reputation', DEFAULT_REPUTATION_PATH),
+        // embeddings go to the local Ollama's embedding models first (not OLLAMA_HOST: that may be the router)
+        ollama: args.includes('--no-ollama') ? null : flag('ollama', 'http://127.0.0.1:11434'),
         ledgerPath: flag('ledger', null),
         env: args.includes('--no-env-keys') ? {} : process.env,
       });
@@ -109,6 +117,39 @@ try {
       await new Promise(() => {}); // run until Ctrl+C
       break;
     }
+    case 'check': {
+      // Your own quick verification of an offering, with your key and a spend cap (default $0.02).
+      const target = args[0] && !args[0].startsWith('--') ? args[0] : null;
+      let offering;
+      if (flag('url')) {
+        offering = { endpoints: { openai: flag('url') }, binding: { model_id: flag('model') }, pricing: {}, serving: {} };
+        if (!flag('model')) throw new Error('--url needs --model <model id>');
+      } else {
+        if (!target) throw new Error('usage: onp check <node_id>/<offering_id>  or  onp check --url <base>/v1 --model <id>');
+        const [nodeId, offeringId] = target.split('/');
+        const res = await fetch(`${registry}/v0/offerings/${encodeURIComponent(nodeId)}/${encodeURIComponent(offeringId)}`);
+        if (!res.ok) throw new Error(`offering not found in registry: ${target}`);
+        offering = await res.json();
+      }
+      const keys = {};
+      for (let i = 0; i < args.length; i++) if (args[i] === '--key') { const eq = args[++i].indexOf('='); keys[args[i].slice(0, eq)] = args[i].slice(eq + 1); }
+      const host = new URL(offering.endpoints.openai).hostname;
+      const key = credentialsFrom(keys, args.includes('--no-env-keys') ? {} : process.env)[host] ?? null;
+      const maxUsd = Number(flag('max-usd', 0.02));
+      const context = flag('context', '8192');
+      const marks = { pass: '✓', warn: '!', fail: '✗', skip: '–' };
+      if (!args.includes('--json')) console.log(`checking ${offering.node_id ? `${offering.node_id}/${offering.offering_id}` : offering.binding.model_id} at ${offering.endpoints.openai}${key ? '' : ' (no key)'} · spend cap $${maxUsd}`);
+      const result = await checkOffering(offering, {
+        key, maxUsd, contextTokens: context === 'full' ? 'full' : Number(context),
+        log: args.includes('--json') ? () => {} : (name, status, detail) => console.log(`  ${marks[status]} ${name.padEnd(15)} ${detail}`),
+      });
+      if (!args.includes('--no-save')) saveCheck(result, flag('checks', DEFAULT_CHECKS_PATH));
+      if (args.includes('--json')) { console.log(JSON.stringify(result, null, 2)); break; }
+      console.log(`${result.ok ? 'passed' : result.usable ? `usable, with issues: ${result.failed.join(', ')}` : 'not usable'} · spent ≈ $${result.spent_usd} (${result.price_basis})`);
+      if (!args.includes('--no-save')) console.log(`saved for the gateway: onp/auto ${result.usable ? 'uses your measurements for it' : 'will skip it'} for 7 days`);
+      if (!result.usable) process.exitCode = 2;
+      break;
+    }
     case 'health': {
       console.log(JSON.stringify(await (await fetch(`${registry}/v0/health`)).json(), null, 2));
       break;
@@ -120,7 +161,9 @@ usage:
   onp estimate --offering <node_id>/<offering_id> [--in 1000] [--out 500]
   onp invoke --offering <node_id>/<offering_id> [--prompt "..."]
   onp card <node-origin-url>
-  onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--no-env-keys] [--ledger receipts.jsonl]
+  onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--no-env-keys] [--min-tier unverified|community|verified] [--no-reputation] [--ollama http://127.0.0.1:11434 | --no-ollama] [--ledger receipts.jsonl]
+  onp check <node_id>/<offering_id> [--key host=KEY] [--max-usd 0.02] [--context 8192|full] [--json] [--no-save]
+  onp check --url https://api.example.com/v1 --model <id>    # any OpenAI-compatible endpoint
   onp mcp [--print-config]    # stdio MCP server for Cursor / VS Code / Claude Desktop
   onp health
 env: ONP_REGISTRY (default https://registry.opennodes.io; a local registry runs at http://127.0.0.1:4300)`);

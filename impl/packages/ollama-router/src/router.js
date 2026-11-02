@@ -3,22 +3,25 @@
 //   lan    : other machines (plain Ollama servers or ONP nodes), static peers + mDNS
 //   public : OpenNodes registry offerings (verified providers, pinned prices, signed receipts)
 // Routes: Ollama native API (/api/*) with streaming translation, OpenAI /v1, and advisor
-// models auto | auto-cheap | auto-fast | auto-quality | auto-private (never leaves the LAN).
+// models auto | auto-cheap | auto-fast | auto-quality | auto-private (never leaves the LAN) | auto-eu.
 import { appendFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import {
   createApp, listen, closeApp, sendJson, problem, readJson,
-  verifyJws, keyFromJwk, costForUsage, estimateBounds, round6, extractFeatures, recommend,
+  verifyJws, keyFromJwk, costForUsage, estimateBounds, round6, extractFeatures, recommend, parseAutoModel, AUTO_MODEL_NAMES,
+  responseBudgetMs, fetchWithin,
 } from '@opennodes/core';
 import { OnpClient } from '@opennodes/cli';
+import { Reputation } from '@opennodes/cli/src/reputation.js';
 import {
   ollamaChatToOpenAI, ollamaGenerateToOpenAI, parseSse, parseNdjson, OllamaChunker,
   capabilitiesToSupports, parseParamsB, contextFromModelInfo,
 } from './translate.js';
 import { probePeer, browseMdns } from './discovery.js';
 
-const AUTO = { auto: null, 'auto-cheap': 'cheap', 'auto-fast': 'fast', 'auto-quality': 'quality', 'auto-private': 'private' };
+// auto, auto-cheap|fast|quality|private, and auto-<where> (eu, or a country code such as ca): your own
+// machines plus public operators in that jurisdiction. Parsed by @opennodes/core.
 const LOCAL_TTL = 30_000, PUBLIC_TTL = 60_000;
 const VERSION = '0.1.0';
 // Ollama clients slice digest[:12] for display: synthesized entries need a real-looking one.
@@ -35,6 +38,7 @@ export async function startOllamaRouter({
   policy = {},                // { min_tier: 'community', max_request_usd: 0.05, region }
   keys = {},                  // BYOK upstream credentials by hostname (imported catalogs)
   ledgerPath = null,
+  reputationPath = null,      // passive reputation of each offering, from real calls (null = this run only)
   mdns = true,
   log = console.log,
 } = {}) {
@@ -46,6 +50,7 @@ export async function startOllamaRouter({
   let localCache = { at: 0, entries: [] };
   let publicCache = { at: 0, entries: [] };
   let lastAdvice = null;
+  const reputation = new Reputation(reputationPath);
 
   /* ------------------------------------------------------------ catalogs */
 
@@ -141,18 +146,20 @@ export async function startOllamaRouter({
   };
 
   /** Resolve a requested model name to an ordered list of catalog entries. */
-  async function resolve(name, { messages = [], prompt = null, maxTokens = null } = {}) {
-    if (name in AUTO) {
-      const preset = AUTO[name];
+  async function resolve(name, { messages = [], prompt = null, maxTokens = null, request = null } = {}) {
+    const auto = parseAutoModel(name);
+    if (auto) {
+      const { preset } = auto;
       const text = prompt ?? lastUserText(messages);
-      const features = extractFeatures(text, { messages: prompt ? [] : messages.slice(0, -1), est_output_tokens: maxTokens });
+      const features = extractFeatures(text, { messages: prompt ? [] : messages.slice(0, -1), est_output_tokens: maxTokens, request });
       const pool = preset === 'private' ? await localEntries() : await catalog();
-      const result = recommend(pool.map((e) => e.offering), features, {
+      const result = recommend(reputation.apply(pool.map((e) => e.offering)), features, {
         preset, limit: 5, prefer_local: true, max_total_usd: pol.max_request_usd, region: pol.region,
+        jurisdiction: auto.jurisdiction ?? pol.jurisdiction,
       });
       const byKey = new Map(pool.map((e) => [`${e.offering.node_id}/${e.offering.offering_id}`, e]));
       const chosen = result.recommendations.map((r) => byKey.get(r.offering)).filter(Boolean);
-      lastAdvice = { model: name, features, recommendations: result.recommendations.map((r) => ({ offering: r.offering, tier: r.tier, score: r.score, reasons: r.reasons })) };
+      lastAdvice = { model: name, features, recommendations: result.recommendations.map((r) => { const seen = reputation.describe(r.offering); return { offering: r.offering, tier: r.tier, score: r.score, reasons: seen ? [...r.reasons, seen] : r.reasons }; }) };
       return chosen;
     }
     const all = await catalog();
@@ -171,7 +178,16 @@ export async function startOllamaRouter({
   }
 
   async function verifyReceipt(entry, receiptJws) {
-    if (receiptJws.startsWith('http')) receiptJws = (await (await fetch(receiptJws, { signal: AbortSignal.timeout(10_000) })).text()).trim();
+    if (receiptJws.startsWith('http')) {
+      // Published by URL once a stream ends: only from the node's own origin, brief retry while it materializes.
+      if (new URL(receiptJws).origin !== new URL(entry.offering.endpoints.openai).origin) throw new Error(`receipt URL outside the node's origin: ${receiptJws}`);
+      for (let i = 0; ; i++) {
+        const r = await fetch(receiptJws, { signal: AbortSignal.timeout(10_000) });
+        if (r.ok) { receiptJws = (await r.text()).trim(); break; }
+        if (r.status !== 404 || i >= 4) throw new Error(`receipt ${r.status}`);
+        await new Promise((ok) => setTimeout(ok, 250 * (i + 1)));
+      }
+    }
     const origin = entry.origin;
     if (!jwksCache.has(origin)) jwksCache.set(origin, await (await fetch(`${origin}/.well-known/jwks.json`)).json());
     const receipt = verifyJws(receiptJws, keyFromJwk(jwksCache.get(origin).keys[0]));
@@ -198,16 +214,24 @@ export async function startOllamaRouter({
   async function onpFetch(entry, openaiBody) {
     const o = entry.offering;
     const upstreamKey = keys[new URL(o.endpoints.openai).hostname];
-    const res = await fetch(`${o.endpoints.openai}/chat/completions`, {
+    // Move on to the next candidate if this node hasn't started answering within a budget built
+    // from its measured latency and the request size. LAN nodes are rarely measured: longer floor.
+    const { models: _fallbacks, ...forwarded } = openaiBody;
+    const budgetMs = responseBudgetMs(o, {
+      stream: Boolean(openaiBody.stream),
+      promptTokens: Math.ceil(JSON.stringify(openaiBody.messages ?? openaiBody.prompt ?? '').length / 4),
+      maxTokens: openaiBody.max_tokens ?? openaiBody.max_completion_tokens ?? 512,
+      ...(entry.tier === 'public' ? {} : { floorMs: 60_000, ceilMs: 300_000 }),
+    });
+    const res = await fetchWithin(`${o.endpoints.openai}/chat/completions`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         ...(entry.tier === 'public' || entry.kind === 'onp' ? { 'onp-offering': `${o.node_id}/${o.offering_id}`, 'onp-card-revision': o.card_revision } : {}),
         ...(upstreamKey ? { authorization: `Bearer ${upstreamKey}` } : {}),
       },
-      body: JSON.stringify({ ...openaiBody, model: entry.upstreamModel }),
-      signal: AbortSignal.timeout(300_000),
-    });
+      body: JSON.stringify({ ...forwarded, model: entry.upstreamModel }),
+    }, budgetMs);
     return res;
   }
 
@@ -216,6 +240,7 @@ export async function startOllamaRouter({
     const t0 = performance.now();
     const openaiBody = mode === 'chat' ? ollamaChatToOpenAI(body, entry.upstreamModel) : ollamaGenerateToOpenAI(body, entry.upstreamModel);
     const upstream = await onpFetch(entry, openaiBody);
+    const firstMs = Math.round(performance.now() - t0);
     if (!upstream.ok) return { failed: `upstream ${upstream.status}: ${(await upstream.text()).slice(0, 200)}` };
     const receiptHeader = upstream.headers.get('onp-receipt');
     const chunker = new OllamaChunker({ model: requested, mode, startedAt: t0 });
@@ -237,7 +262,7 @@ export async function startOllamaRouter({
     if (stream) { res.end(JSON.stringify(chunker.final(counts)) + '\n'); }
     else sendJson(res, 200, chunker.whole(counts));
     record(entry, requested, receipt, Math.round(performance.now() - t0), { usage: chunker.usage });
-    return { done: true };
+    return { done: true, ...(stream ? { first_ms: firstMs } : {}) };
   }
 
   /** Ollama-native request passed through to an Ollama server (local or LAN), model name rewritten. */
@@ -247,6 +272,7 @@ export async function startOllamaRouter({
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ...body, model: entry.upstreamModel }), signal: AbortSignal.timeout(600_000),
     });
+    const firstMs = Math.round(performance.now() - t0);
     if (!upstream.ok) return { failed: `upstream ${upstream.status}: ${(await upstream.text()).slice(0, 200)}` };
     let usage = null;
     if (body.stream !== false) {
@@ -262,7 +288,7 @@ export async function startOllamaRouter({
       sendJson(res, 200, { ...obj, model: requested });
     }
     record(entry, requested, null, Math.round(performance.now() - t0), { usage });
-    return { done: true };
+    return { done: true, ...(body.stream !== false ? { first_ms: firstMs } : {}) };
   }
 
   /** Try candidates in order; the first that answers wins. */
@@ -270,11 +296,15 @@ export async function startOllamaRouter({
     if (!candidates.length) return oerr(res, 404, `model '${requested}' not found locally, on the LAN, or in the registry`);
     const errors = [];
     for (const entry of candidates) {
+      const id = entry.offering ? `${entry.offering.node_id}/${entry.offering.offering_id}` : entry.name;
+      const t0 = performance.now();
+      const ms = () => Math.round(performance.now() - t0);
       try {
         const r = await attemptFn(entry);
-        if (r.done) return;
+        if (r.done) { reputation.record(id, { ok: true, ms: ms(), first_ms: r.first_ms }); return; }
+        if (!r.policy) reputation.record(id, { ok: false, ms: ms(), why: r.failed });
         errors.push(`${entry.name}: ${r.failed}`);
-      } catch (err) { errors.push(`${entry.name}: ${err.message}`); }
+      } catch (err) { reputation.record(id, { ok: false, ms: ms(), why: err.message }); errors.push(`${entry.name}: ${err.message}`); }
       if (res.headersSent) return;   // a stream started and broke: nothing more we can send
     }
     oerr(res, 502, `all candidates failed: ${errors.join(' | ')}`);
@@ -294,11 +324,18 @@ export async function startOllamaRouter({
         hardware: o.hardware ?? null, measured: { ttft_ms: o.observed?.ttft_ms?.p50 ?? null, tps: o.observed?.tps ?? null }, context: o.serving?.context_window ?? null },
     };
   }
-  const autoTags = () => Object.keys(AUTO).map((name) => ({
+  const autoNote = (name) => {
+    const a = parseAutoModel(name);
+    if (a?.preset === 'private') return 'routes only to local and LAN models';
+    if (a?.jurisdiction) return `routes to local, LAN and ${a.jurisdiction === 'eea' ? 'EU/EEA' : a.jurisdiction} operators only`;
+    return 'routes by the OpenNodes advisor';
+  };
+  const autoTag = (name) => ({
     name, model: name, modified_at: STARTED_AT, size: 0, digest: digestOf(name),
     details: { parent_model: '', format: 'onp', family: 'advisor', families: ['advisor'], parameter_size: '', quantization_level: '' },
-    onp: { tier: 'advisor', note: name === 'auto-private' ? 'routes only to local and LAN models' : 'routes by the OpenNodes advisor' },
-  }));
+    onp: { tier: 'advisor', note: autoNote(name) },
+  });
+  const autoTags = () => AUTO_MODEL_NAMES.map(autoTag);
 
   async function proxyLocal(req, res, path) {
     const body = req.method === 'GET' ? undefined : await readJson(req, 50_000_000);
@@ -321,8 +358,8 @@ export async function startOllamaRouter({
       const body = await readJson(req);
       const name = body.model ?? body.name;
       const [entry] = await resolve(name);
-      if (!entry) return name in AUTO
-        ? sendJson(res, 200, { modelfile: '', parameters: '', template: '', details: autoTags().find((t) => t.name === name).details, capabilities: ['completion', 'tools'], model_info: {} })
+      if (!entry) return parseAutoModel(name)
+        ? sendJson(res, 200, { modelfile: '', parameters: '', template: '', details: autoTag(name).details, capabilities: ['completion', 'tools'], model_info: {} })
         : oerr(res, 404, `model '${name}' not found`);
       if (entry.kind === 'ollama') {
         const r = await fetch(`${entry.origin}/api/show`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: entry.upstreamModel, verbose: body.verbose ?? false }) });
@@ -337,18 +374,18 @@ export async function startOllamaRouter({
 
     ['POST', '/api/chat', async (req, res) => {
       const body = await readJson(req, 50_000_000);
-      const candidates = await resolve(body.model, { messages: body.messages, maxTokens: body.options?.num_predict });
+      const candidates = await resolve(body.model, { messages: body.messages, maxTokens: body.options?.num_predict, request: { tools: body.tools, json: Boolean(body.format) } });
       await dispatch(res, body.model, candidates, async (entry) => {
-        const over = checkBudget(entry, body); if (over) return { failed: over };
+        const over = checkBudget(entry, body); if (over) return { failed: over, policy: true };
         return entry.kind === 'ollama' ? viaOllama(entry, body, res, body.model, '/api/chat') : viaOnp(entry, body, res, body.model, 'chat');
       });
     }],
 
     ['POST', '/api/generate', async (req, res) => {
       const body = await readJson(req, 50_000_000);
-      const candidates = await resolve(body.model, { prompt: body.prompt ?? '', maxTokens: body.options?.num_predict });
+      const candidates = await resolve(body.model, { prompt: body.prompt ?? '', maxTokens: body.options?.num_predict, request: { tools: [], json: Boolean(body.format) } });
       await dispatch(res, body.model, candidates, async (entry) => {
-        const over = checkBudget(entry, body); if (over) return { failed: over };
+        const over = checkBudget(entry, body); if (over) return { failed: over, policy: true };
         return entry.kind === 'ollama' ? viaOllama(entry, body, res, body.model, '/api/generate') : viaOnp(entry, body, res, body.model, 'generate');
       });
     }],
@@ -358,16 +395,28 @@ export async function startOllamaRouter({
     ['DELETE', '/api/delete', (req, res) => proxyLocal(req, res, '/api/delete')],
 
     // OpenAI-compatible surface.
-    ['GET', '/v1/models', async (req, res) => sendJson(res, 200, { object: 'list', data: [...Object.keys(AUTO), ...(await catalog()).map((e) => e.name)].map((id) => ({ id, object: 'model', owned_by: 'opennodes-ollama-router' })) })],
+    ['GET', '/v1/models', async (req, res) => sendJson(res, 200, { object: 'list', data: [...AUTO_MODEL_NAMES, ...(await catalog()).map((e) => e.name)].map((id) => ({ id, object: 'model', owned_by: 'opennodes-ollama-router' })) })],
     ['POST', '/v1/chat/completions', async (req, res) => {
       const body = await readJson(req, 50_000_000);
-      const candidates = await resolve(body.model, { messages: body.messages, maxTokens: body.max_tokens });
+      const want = { messages: body.messages, maxTokens: body.max_tokens, request: { tools: body.tools, json: ['json_object', 'json_schema'].includes(body.response_format?.type) } };
+      const candidates = await resolve(body.model, want);
+      // OpenRouter-compatible fallback list: `models: [...]` adds further models to try, in order.
+      if (Array.isArray(body.models)) {
+        const keyOf = (e) => `${e.tier}|${e.origin ?? ''}|${e.offering ? `${e.offering.node_id}/${e.offering.offering_id}` : e.name}`;
+        const seen = new Set(candidates.map(keyOf));
+        for (const m of body.models.slice(0, 10)) {
+          if (typeof m !== 'string' || m === body.model) continue;
+          for (const e of await resolve(m, want)) if (!seen.has(keyOf(e))) { seen.add(keyOf(e)); candidates.push(e); }
+        }
+      }
+      const { models: _fallbacks, ...forwarded } = body;
       await dispatch(res, body.model, candidates, async (entry) => {
-        const over = checkBudget(entry, body); if (over) return { failed: over };
+        const over = checkBudget(entry, body); if (over) return { failed: over, policy: true };
         const t0 = performance.now();
         const upstream = entry.kind === 'ollama'
-          ? await fetch(`${entry.origin}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, model: entry.upstreamModel }), signal: AbortSignal.timeout(600_000) })
-          : await onpFetch(entry, body);
+          ? await fetch(`${entry.origin}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...forwarded, model: entry.upstreamModel }), signal: AbortSignal.timeout(600_000) })
+          : await onpFetch(entry, forwarded);
+        const firstMs = Math.round(performance.now() - t0);
         if (!upstream.ok) return { failed: `upstream ${upstream.status}` };
         const receiptHeader = upstream.headers.get('onp-receipt');
         res.writeHead(200, { 'content-type': upstream.headers.get('content-type') ?? 'application/json' });
@@ -375,13 +424,14 @@ export async function startOllamaRouter({
         let receipt = null;
         try { if (receiptHeader) receipt = await verifyReceipt(entry, receiptHeader); } catch (err) { log(`[onp-ollama] receipt: ${err.message}`); }
         record(entry, body.model, receipt, Math.round(performance.now() - t0));
-        return { done: true };
+        return { done: true, ...(body.stream ? { first_ms: firstMs } : {}) };
       });
     }],
 
     // Router introspection.
     ['GET', '/router/catalog', async (req, res) => sendJson(res, 200, { local_ollama: ollama, peers: [...peerMap.values()].map((p) => ({ name: p.name, kind: p.kind, origin: p.origin })), registry, policy: pol, models: (await catalog()).map((e) => ({ name: e.name, tier: e.tier, kind: e.kind, origin: e.origin })) })],
     ['GET', '/router/advice', (req, res) => sendJson(res, 200, lastAdvice ?? { model: null, recommendations: [] })],
+    ['GET', '/router/reputation', (req, res) => sendJson(res, 200, { note: 'outcome and timing of your own calls through this router; no prompts or answers are kept', offerings: reputation.report() })],
     ['GET', '/router/receipts', (req, res) => sendJson(res, 200, { total_cost: round6(receipts.reduce((s, r) => s + (r.cost ?? 0), 0)), count: receipts.length, entries: receipts.slice(-100) })],
     ['POST', '/router/peers', async (req, res) => { const { origin } = await readJson(req); const peer = await addPeer(String(origin)); peer ? sendJson(res, 200, { name: peer.name, kind: peer.kind, origin: peer.origin }) : oerr(res, 422, `peer unreachable: ${origin}`); }],
   ], { cors: true });
@@ -393,6 +443,7 @@ export async function startOllamaRouter({
   return {
     port: actualPort, origin: `http://${host}:${actualPort}`, receipts, addPeer,
     get peers() { return [...peerMap.values()]; },
-    close: async () => { stopMdns(); await closeApp(app); },
+    reputation,
+    close: async () => { stopMdns(); reputation.flush(); await closeApp(app); },
   };
 }

@@ -1,5 +1,8 @@
 // Offering search + transparent ranking (ONP-3 §5–6).
-import { residencyWithin, residencyCodes, servingLocations, basisRank } from '@opennodes/core';
+import {
+  residencyWithin, residencyCodes, servingLocations, basisRank,
+  inJurisdiction, localSizes, pullsOf, specialtyOf, isEmbedder,
+} from '@opennodes/core';
 
 /** BCP 47 prefix match (ONP-3 §5): `fr` matches `fr` and `fr-CA`; `fr-CA` matches only itself. */
 export const langMatches = (tag, wanted) => {
@@ -11,18 +14,67 @@ export const langMatches = (tag, wanted) => {
 export const RANK_COMPONENTS = { price: 0.35, tier: 0.35, probe_success: 0.30 };
 const TIER_SCORE = { unverified: 0, community: 0.4, verified: 0.8, attested: 1.0 };
 
-/** Flatten indexed nodes into searchable offering summaries. */
+// The assembled catalog (10k+ offerings, ~one store read each) is kept in memory per store and
+// rebuilt only after a write (see watchStoreWrites) or after MAX_AGE_MS as a safety net. Concurrent
+// requests share one rebuild. Callers must not mutate the returned offerings.
+const MAX_AGE_MS = 60_000;
+const catalogs = new WeakMap();   // store -> { items, at, stale, building }
+
+/** Mark the cached catalog stale: the next read rebuilds it. */
+export function markCatalogStale(store) {
+  const entry = catalogs.get(store);
+  if (entry) entry.stale = true;
+}
+
+/** Wrap the store's write methods so any change to nodes, cards, probes or observations marks the catalog stale. */
+export function watchStoreWrites(store) {
+  for (const name of ['upsertNode', 'setState', 'saveRevision', 'recordProbe', 'addFingerprints', 'setObservation']) {
+    const write = store[name];
+    if (typeof write !== 'function' || write.__marksCatalogStale) continue;
+    const wrapped = async function (...args) {
+      try { return await write.apply(this, args); } finally { markCatalogStale(store); }
+    };
+    wrapped.__marksCatalogStale = true;
+    store[name] = wrapped;
+  }
+  return store;
+}
+
+/** Searchable offering summaries, from memory when nothing has changed. */
 export async function collectOfferings(store) {
+  let entry = catalogs.get(store);
+  if (entry?.items && !entry.stale && Date.now() - entry.at < MAX_AGE_MS) return entry.items;
+  if (entry?.building) return entry.building;
+  if (!entry) { entry = {}; catalogs.set(store, entry); }
+  entry.stale = false;   // a write landing during the rebuild sets it again, so the next read rebuilds
+  entry.building = buildOfferings(store).then(
+    (items) => { entry.items = items; entry.at = Date.now(); entry.building = null; return items; },
+    (err) => { entry.building = null; throw err; });
+  return entry.building;
+}
+
+/** Flatten indexed nodes into searchable offering summaries. */
+async function buildOfferings(store) {
   const out = [];
   for (const node of await store.allNodes()) {
     if (['delisted', 'suspended', 'submitted', 'challenged', 'disputed', 'claimed'].includes(node.state)) continue;
     const card = await store.latestCard(node.id);
     if (!card) continue;
     const probes = await store.probesFor(node.id);
-    const stageA = probes.filter((p) => p.stage === 'A');
-    const probeSuccess = stageA.length ? stageA.filter((p) => p.ok).length / stageA.length : 0;
+    // Pass rate over the recent window of conformance (A) and continuous (C) checks. Stage A
+    // alone runs every 6 h and is pushed out of the window by liveness checks within hours,
+    // which left healthy verified nodes showing 0 probes and a 0 pass rate.
+    const checks = probes.filter((p) => p.stage === 'A' || p.stage === 'C');
+    const probeSuccess = checks.length ? checks.filter((p) => p.ok).length / checks.length : 0;
     const tier = node.state === 'indexed' ? 'unverified' : node.state;
-    const availability = (await store.getObservations(node.id, '_node')).availability ?? null;
+    const nodeObs = await store.getObservations(node.id, '_node');
+    const availability = nodeObs.availability ?? null;
+    const loc = nodeObs.location ?? null;
+    // Server-location check (location.js): what the registry found, next to what the operator declared.
+    const location = loc ? {
+      verdict: loc.verdict, server_country: loc.server?.country ?? null, network: loc.server?.network ?? null,
+      cdn: Boolean(loc.server?.cdn), latency: loc.latency?.verdict ?? 'unknown', checked_at: loc.checked_at,
+    } : null;
     for (const offering of card.offerings) {
       const obs = await store.getObservations(node.id, offering.offering_id);
       // Measured values override claims (DS-ADM-03/04): cap the advertised context to
@@ -48,11 +100,19 @@ export async function collectOfferings(store) {
         pricing: offering.pricing,
         data_policy: offering.data_policy ?? null,
         node_regions: card.node?.regions ?? [],
-        // Live serving sites with their evidence basis (ONP-2 §3a), and the codes a
-        // residency check must cover (pins + sites, else node regions).
+        // Where the operator is (ONP-2 node.operator.country, node.regions).
+        // Registered nodes declare it in their signed card; imports get it from the importer's list of
+        // known providers, labeled inferred. `location` is the registry's own server-location check.
+        jurisdiction: {
+          country: card.node?.operator?.country ?? null,
+          regions: card.node?.regions ?? [],
+          basis: card.node?.operator?.country ? (node.source === 'import' ? 'inferred' : 'declared') : null,
+          location,
+        },
+        // Where requests are served: live sites with their evidence basis (ONP-2 §3a), and the
+        // codes a residency check must cover (pins + sites, else node regions).
         locations: servingLocations(offering, card),
         residency: residencyCodes(offering, card),
-        operator_country: card.node?.operator?.country ?? null,
         // Allocated hardware for THIS offering (offering-level override wins over the
         // node-level description) — same artifact on different vendors runs on different
         // silicon, and clients deserve to see which. Always basis-labeled, never measured.
@@ -60,7 +120,7 @@ export async function collectOfferings(store) {
         benchmarks: offering.benchmarks ?? null,
         observed: {
           probe_success: round2(probeSuccess),
-          probes: stageA.length,
+          probes: checks.length,
           ttft_ms: obs.ttft_ms ?? null,
           tps: obs.tps ?? null,
           availability,
@@ -73,6 +133,9 @@ export async function collectOfferings(store) {
   }
   return out;
 }
+
+/** Whether an offering publishes a per-token price (imports with no known price leave it out). */
+export const pricePublished = (pricing) => pricing?.input_per_mtok != null || pricing?.output_per_mtok != null;
 
 /** Search returning the page plus the total number of matches (before `limit`). */
 export async function searchOfferingsPaged(store, query) {
@@ -90,6 +153,7 @@ export async function searchOfferingsPaged(store, query) {
   }
   if (q('max_input_price')) items = items.filter((o) => (o.pricing.input_per_mtok ?? Infinity) <= Number(q('max_input_price')));
   if (q('scheme')) items = items.filter((o) => o.pricing.schemes.includes(q('scheme')));
+  if (q('jurisdiction')) items = items.filter((o) => inJurisdiction(o, q('jurisdiction')));
   if (q('region')) {
     // Residency: every pinned region and live serving site (else the node's regions) inside.
     items = items.filter((o) => residencyWithin(o.residency, q('region')));
@@ -120,11 +184,44 @@ export async function searchOfferingsPaged(store, query) {
     items = items.filter((o) => JSON.stringify(o.model).toLowerCase().includes(needle)
       || o.offering_id.includes(needle) || o.node_id.includes(needle));
   }
+  // Local models (the Ollama library) have no server: they run on the visitor's own machine and are
+  // listed apart from hosted offerings. `memory_gb` keeps the local models with a size that fits.
+  if (q('memory_gb')) {
+    const gb = Number(q('memory_gb'));
+    items = items.filter((o) => !o.local || !localSizes(o).length || localSizes(o)[0].memory_gb <= gb);
+  }
+  const counts = { hosted: items.filter((o) => !o.local).length, local: items.filter((o) => o.local).length };
+  if (q('local') === 'true') items = items.filter((o) => o.local);
+  if (q('local') === 'false') items = items.filter((o) => !o.local);
+  // `ids`: offering or model ids, comma-separated (the registry UI sends the models installed in the
+  // visitor's own Ollama, which the browser read from it directly)
+  if (q('ids') != null) {
+    const ids = new Set(q('ids').split(',').map((s) => s.trim()).filter(Boolean));
+    items = items.filter((o) => ids.has(o.offering_id) || ids.has(o.binding?.model_id));
+  }
 
-  const maxPrice = Math.max(...items.map((o) => o.pricing.input_per_mtok ?? 0), 0.000001);
+  // Rank depends on the filtered set: annotate copies, never the shared cached offerings.
+  items = items.map((o) => ({ ...o }));
+  // Price scores by position among the results (cheapest 1, dearest 0), not against the single
+  // most expensive offering: one outlier made almost everything "cheap" and every import tie.
+  const prices = items.map((o) => o.pricing.input_per_mtok).filter((p) => p != null).sort((a, b) => a - b);
+  const cheaperThan = (p) => { let lo = 0, hi = prices.length; while (lo < hi) { const m = (lo + hi) >> 1; if (prices[m] < p) lo = m + 1; else hi = m; } return lo; };
+  // Local models rank by popularity among the listed local models (log of Ollama pulls): price, trust
+  // tier and checks describe a server, and a local model has none.
+  const maxPulls = Math.max(1, ...items.filter((o) => o.local).map(pullsOf));
   for (const o of items) {
+    if (o.local) {
+      const sizes = localSizes(o);
+      o.local = { ...o.local, sizes_memory: sizes.map(({ tag, memory_gb }) => ({ tag, memory_gb })) };
+      o.specialty = isEmbedder(o) ? 'embedding' : specialtyOf(o);
+      const popularity = pullsOf(o) > 1 ? Math.log10(pullsOf(o)) / Math.log10(Math.max(10, maxPulls)) : 0;
+      o.rank = round2(popularity);
+      o.rank_explanation = { basis: 'local', weights: { popularity: 1 }, components: { popularity: round2(popularity) }, pulls: o.local.pulls ?? null };
+      continue;
+    }
+    const p = o.pricing.input_per_mtok;
     const components = {
-      price: 1 - (o.pricing.input_per_mtok ?? maxPrice) / maxPrice,
+      price: p == null ? 0 : prices.length > 1 ? 1 - cheaperThan(p) / (prices.length - 1) : 1,
       tier: TIER_SCORE[o.tier] ?? 0,
       probe_success: o.observed.probe_success,
     };
@@ -137,15 +234,29 @@ export async function searchOfferingsPaged(store, query) {
   const ttftOf = (o) => o.observed.ttft_ms?.p50 ?? o.serving?.expected_ttft_ms?.p50 ?? Infinity;
   const tpsOf = (o) => (o.observed.tps > 0 ? o.observed.tps : null) ?? o.serving?.expected_tps?.p50 ?? -Infinity;
   const sort = q('sort') ?? 'rank';
+  const minMemory = (o) => o.local?.sizes_memory?.[0]?.memory_gb ?? Infinity;
   items.sort((a, b) => {
+    // hosted before local in a mixed list: their scores measure different things
+    if (Boolean(a.local) !== Boolean(b.local)) return Number(Boolean(a.local)) - Number(Boolean(b.local));
+    if (a.local) {
+      if (sort === 'size') return minMemory(a) - minMemory(b) || b.rank - a.rank || a.offering_id.localeCompare(b.offering_id);
+      if (sort === 'name') return a.offering_id.localeCompare(b.offering_id);
+      return b.rank - a.rank || pullsOf(b) - pullsOf(a) || a.offering_id.localeCompare(b.offering_id);
+    }
     if (sort === 'price') return (a.pricing.input_per_mtok ?? Infinity) - (b.pricing.input_per_mtok ?? Infinity);
     if (sort === 'ttft') return ttftOf(a) - ttftOf(b);
     if (sort === 'tps') return tpsOf(b) - tpsOf(a);
-    return b.rank - a.rank;
+    // Equal rank: callable before listing-only, larger context first, then by name — a stable,
+    // meaningful order instead of whatever order the catalogs were imported in.
+    return b.rank - a.rank || Number(b.invocable) - Number(a.invocable)
+      || (b.serving?.context_window ?? 0) - (a.serving?.context_window ?? 0)
+      || String(a.model?.name ?? '').localeCompare(String(b.model?.name ?? ''))
+      || `${a.node_id}/${a.offering_id}`.localeCompare(`${b.node_id}/${b.offering_id}`);
   });
 
   const limit = Math.min(Number(q('limit') ?? 50), 200);
-  return { offerings: items.slice(0, limit), total: items.length };
+  const offset = Math.max(0, Math.floor(Number(q('offset') ?? 0)) || 0);
+  return { offerings: items.slice(offset, offset + limit), total: items.length, offset, counts };
 }
 
 export async function searchOfferings(store, query) {
