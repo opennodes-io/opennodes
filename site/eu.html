@@ -92,6 +92,13 @@
 </style>
 <style>
   section ul { padding-left: 1.2rem; } section li { margin: 0.3rem 0; }
+  /* where models run in Europe: a live map of known serving sites, fed by the registry */
+  .sitemap { height: 380px; margin-top: 1.2rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); }
+  .sitemap[hidden] { display: none; }
+  .sitemap .leaflet-popup-content { font-family: "Archivo", "Helvetica Neue", Arial, sans-serif; font-size: 0.82rem; line-height: 1.4; }
+  .sitemap .leaflet-popup-content .site + .site { border-top: 1px solid #D6DEE3; margin-top: 0.4rem; padding-top: 0.4rem; }
+  .where-sum { margin: 0.7rem 0 0; font-family: "Archivo", sans-serif; font-size: 0.85rem; color: var(--muted); }
+  @media (max-width: 560px) { .sitemap { height: 300px; } }
 </style>
 <style>
   /* shared layer: browser surfaces follow the theme; states for links, buttons and focus; the site menu */
@@ -133,6 +140,20 @@
   <p>Europe is building inference capacity in many places at once — EuroHPC AI Factories and Antennas, national centres, sovereign and regional clouds — but there is <b>no open, vendor-neutral way to discover and compare it</b>. The usual shortcut is a commercial broker in the middle of every request: prompts pass through a third party, often outside the EEA, and trust rests on the broker's own claims. ONP standardizes discovery and verification as an open layer, and leaves invocation (OpenAI-compatible), tools (MCP) and payment to existing standards.</p>
 </div></section>
 
+<section id="where"><div class="wrap">
+  <h2>Where models run in Europe</h2>
+  <p>Every known serving site in the EU/EEA, Switzerland and the UK, with the models each one serves in-region and how far its location can be trusted: <b>claimed</b> by the provider or the press, <b>documented</b> on the provider's own pages, <b>measured</b> by the registry's probes, or <b>attested</b> in a signed card. Curated from public sources; corrections are welcome by pull request.</p>
+  <div class="sitemap" role="region" aria-label="Map of known serving sites in Europe" hidden
+    data-label="Europe" data-view="52,10,4"
+    data-countries="AT,BE,BG,HR,CY,CZ,DK,EE,FI,FR,DE,GR,HU,IE,IT,LV,LT,LU,MT,NL,PL,PT,RO,SK,SI,ES,SE,IS,LI,NO,CH,GB,EU"></div>
+  <p class="where-sum" data-where-sum>Registry snapshot, 2 Nov 2026: 73 sites in 15 countries in Europe (62 live, 11 planned) — Germany, 14 sites from 12 providers; France, 10 from 9; Switzerland, 8 from 6; United Kingdom, 8 from 6; Italy, 6 from 5; Finland, 6 from 6; and nine more countries.</p>
+  <div class="actions">
+    <a class="btn primary" href="https://registry.opennodes.io/#/where">Open the full map</a>
+    <a class="btn secondary" href="https://registry.opennodes.io/v0/locations?format=geojson">GeoJSON</a>
+    <a class="btn secondary" href="https://registry.opennodes.io/v0/locations?format=csv">CSV</a>
+  </div>
+</div></section>
+
 <section><div class="wrap">
   <h2>How it maps to European requirements</h2>
   <div class="tablewrap"><table class="map"><thead><tr><th>Need</th><th>How ONP addresses it</th><th>Status</th></tr></thead><tbody><tr><td><b>Keep prompts with the chosen processor (GDPR, transfer minimisation)</b></td><td>Discovery is metadata only; clients call the provider directly. The hosted registry never receives prompts (one documented exception: the web advisor box).</td><td><span class="tag live">Live</span></td></tr><tr><td><b>Choose providers by jurisdiction</b></td><td>Registered nodes declare the operator's country in their signed card; for imported listings of known European providers it is inferred and labeled as such. An <b>EU/EEA filter</b> works in registry search, the advisor, the MCP tools, the OpenAI-compatible gateway (<code>onp/auto-eu</code>) and the Ollama router (<code>auto-eu</code>). No country counts as outside. The registry also <b>checks where each server is</b> (IP geolocation and network, round-trip times from Nuremberg and Helsinki) and drops a server found outside the EEA from the filter — evidence, not proof.</td><td><span class="tag live">Live</span></td></tr><tr><td><b>Know what you are using (AI Act transparency, deployer due diligence)</b></td><td>Signed, versioned Node Cards: model, operator, country, hardware, data policy (retention, training on inputs).</td><td><span class="tag live">Live</span></td></tr><tr><td><b>Evidence instead of claims</b></td><td>Automated verification: serves the claimed model, context window holds (or is capped), measured latency and throughput under load, continuous blind probes. Claimed, measured and attested values are labeled and never blended.</td><td><span class="tag live">Live</span></td></tr><tr><td><b>Auditability of use and cost</b></td><td>Every response carries a provider-signed receipt (usage × price pinned to a card revision); silent repricing is rejected.</td><td><span class="tag live">Live</span></td></tr><tr><td><b>No lock-in, easy switching (EU Data Act)</b></td><td>OpenAI-compatible invocation; registries are a protocol, self-hostable, with a signed export feed for mirroring; open licences.</td><td><span class="tag live">Live</span></td></tr><tr><td><b>Independent third-party assurance</b></td><td>Attestations as verifiable credentials: audits, benchmark runs, residency.</td><td><span class="tag soon">Planned</span></td></tr><tr><td><b>Federation across institutions</b></td><td>Several registries exchanging signed feeds (the feed itself is live).</td><td><span class="tag soon">Draft</span></td></tr></tbody></table></div>
@@ -163,5 +184,6 @@
 </main>
 
 <footer><div class="wrap">OpenNodes Protocol · spec CC-BY-4.0, code Apache-2.0 · <a href="https://github.com/opennodes-io/opennodes">github.com/opennodes-io/opennodes</a> · <a href="/about">About &amp; privacy</a></div></footer>
+<script src="/media/where-map.js" defer></script>
 </body>
 </html>
