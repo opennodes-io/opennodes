@@ -406,3 +406,199 @@ export async function importOpenRouter(store, catalog) {
   if (err) return { providers: 0, offerings: 0, skipped: [err] };
   return { providers: 1, offerings: offeringList.length, skipped: [] };
 }
+
+/* ------------------------------------------------------------------ locations (ONP-2 §3a) */
+
+/** Save a listing-only card: like saveImportedCard, but without invocation endpoints. */
+async function saveListingCard(store, nodeId, origin, sourceRef, card) {
+  const errors = validateCard(card)
+    .filter((e) => !/^\/endpoints must have required property '(openai|health)'$/.test(e));
+  if (errors.length) return errors[0];
+  await store.upsertNode(nodeId, origin, sourceRef, 'indexed', 'import');
+  await store.saveRevision(nodeId, card.revision, card, false);
+  return null;
+}
+
+export const OPENROUTER_PROVIDERS_URL = 'https://openrouter.ai/api/v1/providers';
+
+/**
+ * Region segments seen in OpenRouter endpoint tags (`amazon-bedrock/eu-west-1`,
+ * `baseten/fp4/us`) -> ONP region codes. `global` means the provider may serve anywhere.
+ */
+export const CLOUD_REGIONS = {
+  us: 'US', eu: 'EU', europe: 'EU', global: null,
+  'us-east-1': 'US-VA', 'us-east-2': 'US-OH', 'us-west-2': 'US-OR', 'us-east5': 'US-OH', 'us-central1': 'US-IA',
+  'eu-west-1': 'IE', 'eu-central-1': 'DE', swedencentral: 'SE',
+  'ca-central-1': 'CA-QC', 'ca-west-1': 'CA-AB', canadacentral: 'CA-ON', canadaeast: 'CA-QC',
+  'northamerica-northeast1': 'CA-QC', 'northamerica-northeast2': 'CA-ON',
+};
+
+/** Fetch every model's endpoint list (`links.details`), a few at a time. Returns Map(model id -> endpoints). */
+export async function fetchOpenRouterEndpoints(getJson, models, concurrency = 4) {
+  const out = new Map();
+  const queue = [...models];
+  const worker = async () => {
+    for (let m = queue.shift(); m; m = queue.shift()) {
+      const path = m.links?.details ?? `/api/v1/models/${m.id}/endpoints`;
+      try { out.set(m.id, (await getJson(new URL(path, 'https://openrouter.ai').href))?.data?.endpoints ?? []); }
+      catch { out.set(m.id, []); } // a model can vanish between the two calls
+    }
+  };
+  await Promise.all(Array.from({ length: concurrency }, worker));
+  return out;
+}
+
+/**
+ * Import OpenRouter per provider, with the locations providers declare to OpenRouter:
+ * `headquarters` -> operator country, `datacenters` -> node locations, and a region segment
+ * in the endpoint tag -> that offering's location. All are `claimed`. Only endpoints with
+ * some location become offerings (listing-only, node `import.openrouter.p.{provider}`); the
+ * rest are counted as `unlocated`, which is the size of the gap.
+ */
+export async function importOpenRouterProviders(store, providers, models, endpointsById, { checked = today() } = {}) {
+  const bySlug = new Map((providers ?? []).map((p) => [p.slug, p]));
+  const byName = new Map((providers ?? []).map((p) => [p.name, p]));
+  const groups = new Map(); // provider slug -> offerings[]
+  let unlocated = 0;
+
+  for (const model of models ?? []) {
+    const author = vendorSlug(model.id.split('/')[0] || 'unknown');
+    const inputs = model.architecture?.input_modalities ?? ['text'];
+    const outputs = model.architecture?.output_modalities ?? ['text'];
+    for (const ep of endpointsById.get(model.id) ?? []) {
+      const [tagSlug, ...rest] = String(ep.tag ?? '').split('/');
+      const provider = bySlug.get(tagSlug) ?? byName.get(ep.provider_name);
+      if (!provider) { unlocated++; continue; }
+      const regionSeg = rest.find((s) => s in CLOUD_REGIONS);
+      const declared = provider.datacenters ?? [];
+      if (regionSeg === 'global' || (!regionSeg && !declared.length)) { unlocated++; continue; }
+
+      const supports = ['streaming'];
+      const params = ep.supported_parameters ?? model.supported_parameters ?? [];
+      if (params.includes('tools')) supports.push('tool_calls');
+      if (params.includes('response_format') || params.includes('structured_outputs')) supports.push('json_mode');
+      if (inputs.includes('image') && outputs.includes('text')) supports.push('vision');
+      const offering = {
+        offering_id: slug([model.id.replace('/', '-'), ...rest].join('-')),
+        modality: mapModalities(inputs, outputs),
+        modalities: { input: inputs, output: outputs },
+        model: {
+          name: model.name ?? model.id,
+          family: author,
+          artifact: model.hugging_face_id
+            ? `hf:${model.hugging_face_id}`
+            : `urn:proprietary:${author}:${slug(model.id.split('/').slice(1).join('-') || model.id)}`,
+          ...(ep.quantization && ep.quantization !== 'unknown' ? { quantization: ep.quantization } : {}),
+        },
+        serving: {
+          supports,
+          ...(ep.context_length ? { context_window: Math.floor(ep.context_length) } : {}),
+          ...(ep.max_completion_tokens ? { max_output_tokens: Math.floor(ep.max_completion_tokens) } : {}),
+        },
+        binding: { profile: 'onp.openai.chat/v1', model_id: model.id },
+        pricing: {
+          currency: 'USD',
+          input_per_mtok: perMtok(ep.pricing?.prompt),
+          output_per_mtok: perMtok(ep.pricing?.completion),
+          schemes: ['prepaid'],
+        },
+        ...(regionSeg ? { locations: [{
+          region: CLOUD_REGIONS[regionSeg], basis: 'claimed', note: `OpenRouter endpoint tag ${ep.tag}`,
+        }] } : {}),
+      };
+      if (!groups.has(provider.slug)) groups.set(provider.slug, []);
+      const list = groups.get(provider.slug);
+      if (list.some((o) => o.offering_id === offering.offering_id)) offering.offering_id = slug(`${offering.offering_id}-${list.length}`);
+      list.push(offering);
+    }
+  }
+
+  let count = 0, offerings = 0;
+  const skipped = [];
+  for (const [providerSlug, offeringList] of groups) {
+    const p = bySlug.get(providerSlug);
+    const nodeId = `import.openrouter.p.${vendorSlug(providerSlug)}`;
+    const declared = (p.datacenters ?? []).filter((c) => /^[A-Z]{2}$/.test(c));
+    const card = {
+      onp: '0.1',
+      revision: new Date().toISOString(),
+      node: {
+        id: nodeId,
+        name: `${p.name} (via OpenRouter)`,
+        description: 'Imported from the OpenRouter provider and endpoint APIs. Locations are what the provider declares to OpenRouter (claimed). Listing only: call it through OpenRouter with provider routing.',
+        operator: { name: p.name, ...(/^[A-Z]{2}$/.test(p.headquarters ?? '') ? { country: p.headquarters } : {}) },
+        ...(declared.length ? {
+          regions: declared,
+          locations: declared.map((c) => ({ region: c, basis: 'claimed', source: OPENROUTER_PROVIDERS_URL, checked })),
+        } : {}),
+      },
+      endpoints: { docs: `https://openrouter.ai/provider/${encodeURIComponent(providerSlug)}` },
+      offerings: offeringList,
+      payment: { schemes: [{ scheme: 'prepaid', signup: 'https://openrouter.ai/keys' }] },
+    };
+    const err = await saveListingCard(store, nodeId, 'https://openrouter.ai', `import:openrouter-provider:${providerSlug}`, card);
+    if (err) { skipped.push(`${providerSlug}: ${err}`); continue; }
+    count++;
+    offerings += offeringList.length;
+  }
+  return { providers: count, offerings, unlocated, skipped };
+}
+
+/**
+ * Import a curated location seed (src/data/locations-*.json): providers, their sites with
+ * evidence, and the models each site serves. A provider with listed models becomes a
+ * listing-only node `import.seed.{seed}.{id}`; one without (models not published) stays
+ * site-only and is served by /v0/locations straight from the seed.
+ */
+export async function importLocationSeed(store, seed) {
+  let providers = 0, offerings = 0, siteOnly = 0;
+  const skipped = [];
+  for (const p of seed?.providers ?? []) {
+    if (!p.models?.length) { siteOnly++; continue; }
+    const sites = new Map((p.sites ?? []).map((s) => [s.id, siteLocation(s)]));
+    const offeringList = p.models.map((m) => {
+      const family = vendorSlug(m.family ?? p.id);
+      return {
+        offering_id: slug(m.id ?? m.name),
+        modality: m.modality ?? 'text',
+        model: {
+          name: m.name,
+          family,
+          artifact: m.artifact ?? `urn:proprietary:${family}:${slug(m.id ?? m.name).replace(/\//g, '-')}`,
+          ...(m.lineage_origins ? { lineage_origins: m.lineage_origins } : {}),
+        },
+        serving: {},
+        binding: { profile: m.modality === 'embedding' ? 'onp.openai.embeddings/v1' : 'onp.openai.chat/v1', model_id: m.model_id ?? m.name },
+        pricing: { currency: 'USD', schemes: ['contract'] },
+        ...(m.sites ? { locations: m.sites.map((id) => sites.get(id)).filter(Boolean) } : {}),
+      };
+    });
+    const nodeId = `import.seed.${vendorSlug(seed.seed)}.${vendorSlug(p.id)}`;
+    const card = {
+      onp: '0.1',
+      revision: new Date().toISOString(),
+      node: {
+        id: nodeId,
+        name: p.name,
+        description: [p.note, seed.note].filter(Boolean).join(' ').slice(0, 4000),
+        operator: { name: p.operator?.name ?? p.name, ...(p.operator?.country ? { country: p.operator.country } : {}), ...(p.operator?.url ? { url: p.operator.url } : {}) },
+        locations: [...sites.values()],
+      },
+      endpoints: { ...(p.operator?.url ? { docs: p.operator.url } : {}) },
+      offerings: offeringList,
+      payment: { schemes: [{ scheme: 'contract' }] },
+    };
+    const err = await saveListingCard(store, nodeId, p.operator?.url ? new URL(p.operator.url).origin : 'https://opennodes.io', `import:seed:${seed.seed}:${p.id}`, card);
+    if (err) { skipped.push(`${p.id}: ${err}`); continue; }
+    providers++;
+    offerings += offeringList.length;
+  }
+  return { providers, offerings, site_only: siteOnly, skipped };
+}
+
+/** A seed site -> an ONP location (drops the seed-local `id`). */
+export function siteLocation({ id, ...location }) {
+  return location;
+}
+
+const today = () => new Date().toISOString().slice(0, 10);

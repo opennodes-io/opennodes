@@ -1,0 +1,208 @@
+{
+  "seed": "ca",
+  "title": "Where AI models run in Canada",
+  "checked": "2026-11-02",
+  "note": "Curated by the OpenNodes project from public sources (ONP-2 §3a). documented = the provider's own dated page; claimed = provider statements or news reports. Corrections by pull request.",
+  "providers": [
+    {
+      "id": "aws-bedrock",
+      "name": "Amazon Bedrock (Canadian regions)",
+      "operator": { "name": "Amazon Web Services", "country": "US", "url": "https://docs.aws.amazon.com/bedrock/latest/userguide/models-region-compatibility.html" },
+      "note": "In-region processing only. Newer models (recent Claude, GPT, Grok, Nova, Kimi) reach the Canadian regions only through Geo or Global cross-region routing and are not listed.",
+      "sites": [
+        { "id": "mtl", "region": "CA-QC", "site": "Montréal (ca-central-1)", "status": "live", "basis": "documented", "source": "https://docs.aws.amazon.com/bedrock/latest/userguide/models-region-compatibility.html", "checked": "2026-11-02", "geo": { "lat": 45.5019, "lon": -73.5674, "precision": "city" } },
+        { "id": "yyc", "region": "CA-AB", "site": "Calgary (ca-west-1)", "status": "live", "basis": "documented", "source": "https://docs.aws.amazon.com/bedrock/latest/userguide/models-region-compatibility.html", "checked": "2026-11-02", "note": "No model is processed in-region here", "geo": { "lat": 51.0447, "lon": -114.0719, "precision": "city" } }
+      ],
+      "models": [
+        { "name": "Claude 3 Haiku", "family": "anthropic", "lineage_origins": ["US"], "sites": ["mtl"] },
+        { "name": "Llama 3 8B Instruct", "family": "meta", "lineage_origins": ["US"], "sites": ["mtl"] },
+        { "name": "Llama 3 70B Instruct", "family": "meta", "lineage_origins": ["US"], "sites": ["mtl"] },
+        { "name": "Mistral 7B Instruct", "family": "mistral", "lineage_origins": ["FR"], "sites": ["mtl"] },
+        { "name": "Mixtral 8x7B Instruct", "family": "mistral", "lineage_origins": ["FR"], "sites": ["mtl"] },
+        { "name": "Mistral Large", "family": "mistral", "lineage_origins": ["FR"], "sites": ["mtl"] },
+        { "name": "Cohere Embed English v3", "family": "cohere", "modality": "embedding", "lineage_origins": ["CA"], "sites": ["mtl"] },
+        { "name": "Cohere Embed Multilingual v3", "family": "cohere", "modality": "embedding", "lineage_origins": ["CA"], "sites": ["mtl"] },
+        { "name": "Cohere Rerank 3.5", "family": "cohere", "modality": "rerank", "lineage_origins": ["CA"], "sites": ["mtl"] },
+        { "name": "Amazon Rerank", "family": "amazon", "modality": "rerank", "lineage_origins": ["US"], "sites": ["mtl"] },
+        { "name": "Titan Text Embeddings V2", "family": "amazon", "modality": "embedding", "lineage_origins": ["US"], "sites": ["mtl"] },
+        { "name": "Titan Multimodal Embeddings G1", "family": "amazon", "modality": "embedding", "lineage_origins": ["US"], "sites": ["mtl"] }
+      ]
+    },
+    {
+      "id": "google-vertex",
+      "name": "Google Vertex AI (Montréal)",
+      "operator": { "name": "Google Cloud", "country": "US", "url": "https://cloud.google.com/vertex-ai/generative-ai/docs/learn/data-residency" },
+      "note": "Only Google models are processed in Canada; partner and open models on Vertex AI are not. Toronto (northamerica-northeast2) is not listed for generative AI.",
+      "sites": [
+        { "id": "mtl", "region": "CA-QC", "site": "Montréal (northamerica-northeast1)", "status": "live", "basis": "documented", "source": "https://cloud.google.com/vertex-ai/generative-ai/docs/learn/data-residency", "checked": "2026-11-02", "geo": { "lat": 45.5019, "lon": -73.5674, "precision": "city" } }
+      ],
+      "models": [
+        { "name": "Gemini 3.5 Flash", "family": "google", "modality": "multimodal", "lineage_origins": ["US"] },
+        { "name": "Gemini 2.5 Flash", "family": "google", "modality": "multimodal", "lineage_origins": ["US"] },
+        { "name": "Gemini 2.5 Pro", "family": "google", "modality": "multimodal", "lineage_origins": ["US"] },
+        { "name": "text-embedding-004", "family": "google", "modality": "embedding", "lineage_origins": ["US"] },
+        { "name": "text-multilingual-embedding-002", "family": "google", "modality": "embedding", "lineage_origins": ["US"] }
+      ]
+    },
+    {
+      "id": "azure-openai",
+      "name": "Azure OpenAI in Foundry (Canadian regions)",
+      "operator": { "name": "Microsoft", "country": "US", "url": "https://learn.microsoft.com/en-us/azure/ai-foundry/openai/concepts/models" },
+      "note": "OpenAI models only; no Canada data zone. Standard deployments in Canada East; the rest is provisioned (reserved) capacity. Region tables not re-checked on Microsoft's page, so claimed.",
+      "sites": [
+        { "id": "yqb", "region": "CA-QC", "site": "Québec City (Canada East)", "status": "live", "basis": "claimed", "source": "https://learn.microsoft.com/en-us/azure/ai-foundry/openai/concepts/models", "checked": "2026-11-02", "geo": { "lat": 46.8139, "lon": -71.208, "precision": "city" } },
+        { "id": "yyz", "region": "CA-ON", "site": "Toronto (Canada Central)", "status": "live", "basis": "claimed", "source": "https://learn.microsoft.com/en-us/azure/ai-foundry/openai/concepts/models", "checked": "2026-11-02", "geo": { "lat": 43.6532, "lon": -79.3832, "precision": "city" } }
+      ],
+      "models": [
+        { "name": "gpt-4o", "family": "openai", "modality": "multimodal", "lineage_origins": ["US"], "sites": ["yqb", "yyz"] },
+        { "name": "gpt-4o-mini", "family": "openai", "modality": "multimodal", "lineage_origins": ["US"], "sites": ["yqb", "yyz"] },
+        { "name": "gpt-4.1", "family": "openai", "lineage_origins": ["US"], "sites": ["yyz"] },
+        { "name": "gpt-4.1-mini", "family": "openai", "lineage_origins": ["US"], "sites": ["yqb"] },
+        { "name": "gpt-5", "family": "openai", "lineage_origins": ["US"], "sites": ["yqb"] },
+        { "name": "gpt-5-mini", "family": "openai", "lineage_origins": ["US"], "sites": ["yqb"] },
+        { "name": "gpt-5.1", "family": "openai", "lineage_origins": ["US"], "sites": ["yqb"] },
+        { "name": "gpt-5.2", "family": "openai", "lineage_origins": ["US"], "sites": ["yqb", "yyz"] },
+        { "name": "o3-mini", "family": "openai", "lineage_origins": ["US"], "sites": ["yqb"] },
+        { "name": "text-embedding-3-large", "family": "openai", "modality": "embedding", "lineage_origins": ["US"], "sites": ["yqb"] },
+        { "name": "text-embedding-3-small", "family": "openai", "modality": "embedding", "lineage_origins": ["US"], "sites": ["yqb"] },
+        { "name": "text-embedding-ada-002", "family": "openai", "modality": "embedding", "lineage_origins": ["US"], "sites": ["yqb"] }
+      ]
+    },
+    {
+      "id": "cohere",
+      "name": "Cohere",
+      "operator": { "name": "Cohere", "country": "CA", "url": "https://docs.cohere.com/docs/models" },
+      "note": "Cohere's hosted API runs in the US (Trust Center: no servers outside the US). Canadian serving needs Model Vault Canada, a partner such as Bell, or self-hosted weights.",
+      "sites": [
+        { "id": "us-central", "region": "US", "site": "Google Cloud US-Central (hosted API)", "status": "live", "basis": "documented", "source": "https://trustcenter.cohere.com", "checked": "2026-11-02", "geo": { "lat": 41.2619, "lon": -95.8608, "precision": "region" } },
+        { "id": "vault-ca", "region": "CA", "site": "Model Vault, Canadian region (not named)", "status": "live", "basis": "claimed", "note": "Secondary source, Sep 2026; models served there not published" }
+      ],
+      "models": [
+        { "name": "Command A+", "family": "cohere", "modality": "multimodal", "artifact": "hf:CohereLabs/command-a-plus-05-2026", "lineage_origins": ["CA"], "sites": ["us-central"] },
+        { "name": "Command A", "family": "cohere", "lineage_origins": ["CA"], "sites": ["us-central"] },
+        { "name": "Command A Reasoning", "family": "cohere", "lineage_origins": ["CA"], "sites": ["us-central"] },
+        { "name": "Command A Vision", "family": "cohere", "modality": "multimodal", "lineage_origins": ["CA"], "sites": ["us-central"] },
+        { "name": "Command A Translate", "family": "cohere", "lineage_origins": ["CA"], "sites": ["us-central"] },
+        { "name": "Command R7B", "family": "cohere", "lineage_origins": ["CA"], "sites": ["us-central"] },
+        { "name": "North Mini Code", "family": "cohere", "sites": ["us-central"] },
+        { "name": "Embed 4", "family": "cohere", "modality": "embedding", "lineage_origins": ["CA"], "sites": ["us-central"] },
+        { "name": "Rerank 3.5", "family": "cohere", "modality": "rerank", "lineage_origins": ["CA"], "sites": ["us-central"] }
+      ]
+    },
+    {
+      "id": "denvr-dataworks",
+      "name": "Denvr Dataworks",
+      "operator": { "name": "Denvr Dataworks", "country": "CA", "url": "https://www.denvr.com/ai-inference" },
+      "note": "Dedicated endpoints in Canadian and US data centres; the customer chooses the site, so each listing covers both countries.",
+      "sites": [
+        { "id": "ca", "region": "CA", "site": "Canadian data centres (not named)", "status": "live", "basis": "documented", "source": "https://www.denvr.com/ai-inference", "checked": "2026-11-02" },
+        { "id": "us", "region": "US", "site": "US data centres (not named)", "status": "live", "basis": "documented", "source": "https://www.denvr.com/ai-inference", "checked": "2026-11-02" }
+      ],
+      "models": [
+        { "name": "Llama 3.3 70B", "family": "meta", "lineage_origins": ["US"] },
+        { "name": "gpt-oss-120b", "family": "openai", "lineage_origins": ["US"] },
+        { "name": "Gemma 3", "family": "google", "lineage_origins": ["US"] },
+        { "name": "DeepSeek R1", "family": "deepseek", "lineage_origins": ["CN"] },
+        { "name": "Qwen3 Coder Next", "family": "qwen", "lineage_origins": ["CN"] }
+      ]
+    },
+    {
+      "id": "cerebras",
+      "name": "Cerebras Inference",
+      "operator": { "name": "Cerebras Systems", "country": "US", "url": "https://inference-docs.cerebras.ai/models/overview" },
+      "note": "Which site serves which model is not stated, so each listing covers both countries.",
+      "sites": [
+        { "id": "yul", "region": "CA-QC", "site": "Saint-Jérôme (MTL-3)", "status": "live", "basis": "claimed", "facility_operator": "Enovum / WhiteFiber", "note": "Operating since Oct 2025 (secondary sources)", "geo": { "lat": 45.7804, "lon": -74.0036, "precision": "city" } },
+        { "id": "us", "region": "US", "site": "US data centres", "status": "live", "basis": "claimed" }
+      ],
+      "models": [
+        { "name": "gpt-oss-120b", "family": "openai", "lineage_origins": ["US"] },
+        { "name": "Qwen 3.8 27B", "family": "qwen", "lineage_origins": ["CN"] }
+      ]
+    },
+    {
+      "id": "telus-sovereign-ai-factory",
+      "name": "TELUS Sovereign AI Factory",
+      "operator": { "name": "TELUS", "country": "CA", "url": "https://www.telus.com/business/medium-large/sovereign-ai-factory" },
+      "sites": [
+        { "id": "rimouski", "region": "CA-QC", "site": "Rimouski", "status": "live", "basis": "claimed", "source": "https://www.rcrwireless.com/20260512/carriers/telus-ai-data-centers", "checked": "2026-11-02", "note": "Live since Sep 2025; reported sold out (news report)", "geo": { "lat": 48.4489, "lon": -68.523, "precision": "city" } },
+        { "id": "kamloops", "region": "CA-BC", "site": "Kamloops", "status": "planned", "basis": "claimed", "source": "https://www.rcrwireless.com/20260512/carriers/telus-ai-data-centers", "checked": "2026-11-02", "note": "Expected later in 2026", "geo": { "lat": 50.6745, "lon": -120.3273, "precision": "city" } },
+        { "id": "vancouver", "region": "CA-BC", "site": "Vancouver", "status": "planned", "basis": "claimed", "source": "https://www.rcrwireless.com/20260512/carriers/telus-ai-data-centers", "checked": "2026-11-02", "note": "Expected end of 2026", "geo": { "lat": 49.2827, "lon": -123.1207, "precision": "city" } }
+      ],
+      "models": [],
+      "models_note": "Pay-per-token open models; TELUS has not published which models each site serves."
+    },
+    {
+      "id": "bell-ai-fabric",
+      "name": "Bell AI Fabric",
+      "operator": { "name": "Bell Canada", "country": "CA" },
+      "sites": [
+        { "id": "kamloops", "region": "CA-BC", "site": "Kamloops", "status": "live", "basis": "claimed", "facility_operator": "Groq", "source": "https://groq.com/blog/groq-becomes-exclusive-inference-provider-for-bell-canadas-sovereign-ai-network", "checked": "2026-11-02", "note": "Groq inference site", "geo": { "lat": 50.6745, "lon": -120.3273, "precision": "city" } },
+        { "id": "merritt", "region": "CA-BC", "site": "Merritt", "status": "planned", "basis": "claimed", "facility_operator": "BUZZ HPC, Hypertec", "note": "For Cohere; expected late 2026 to early 2027 (news report)", "geo": { "lat": 50.1113, "lon": -120.7862, "precision": "city" } }
+      ],
+      "models": [],
+      "models_note": "Kamloops models not disclosed. GroqCloud's public catalogue is not site-specific."
+    },
+    {
+      "id": "thinkon",
+      "name": "ThinkOn",
+      "operator": { "name": "ThinkOn", "country": "CA", "url": "https://thinkon.com" },
+      "sites": [
+        { "id": "ca", "region": "CA", "site": "Canadian data centres (not named)", "status": "live", "basis": "documented", "source": "https://thinkon.com/blogs/selected-to-power-canadas-sovereign-ai-platform/", "checked": "2026-11-02" }
+      ],
+      "models": [],
+      "models_note": "Hosts the federal GC AI Platform and CANChat; models not published."
+    },
+    {
+      "id": "oracle-oci",
+      "name": "Oracle OCI Generative AI (Canadian regions)",
+      "operator": { "name": "Oracle", "country": "US", "url": "https://docs.oracle.com/en-us/iaas/Content/generative-ai/regions-without-local-on-demand-model-hosting.htm" },
+      "sites": [
+        { "id": "yyz", "region": "CA-ON", "site": "Toronto", "status": "live", "basis": "documented", "source": "https://docs.oracle.com/en-us/iaas/Content/generative-ai/regions-without-local-on-demand-model-hosting.htm", "checked": "2026-11-02", "geo": { "lat": 43.6532, "lon": -79.3832, "precision": "city" } },
+        { "id": "yul", "region": "CA-QC", "site": "Montréal", "status": "live", "basis": "documented", "source": "https://docs.oracle.com/en-us/iaas/Content/generative-ai/regions-without-local-on-demand-model-hosting.htm", "checked": "2026-11-02", "geo": { "lat": 45.5019, "lon": -73.5674, "precision": "city" } }
+      ],
+      "models": [],
+      "models_note": "No local on-demand model hosting: requests from these regions are processed in other regions."
+    },
+    {
+      "id": "ovhcloud",
+      "name": "OVHcloud (Beauharnois)",
+      "operator": { "name": "OVHcloud", "country": "FR", "url": "https://help.ovhcloud.com/csm/en-public-cloud-ai-endpoints-capabilities?id=kb_article_view" },
+      "sites": [
+        { "id": "bhs", "region": "CA-QC", "site": "Beauharnois", "status": "live", "basis": "documented", "source": "https://help.ovhcloud.com/csm/en-public-cloud-ai-endpoints-capabilities?id=kb_article_view", "checked": "2026-11-02", "note": "General cloud region", "geo": { "lat": 45.3151, "lon": -73.8724, "precision": "city" } }
+      ],
+      "models": [],
+      "models_note": "No models served here: AI Endpoints runs in Gravelines, France."
+    },
+    {
+      "id": "isaic",
+      "name": "ISAIC (University of Alberta)",
+      "operator": { "name": "University of Alberta", "country": "CA", "url": "https://isaic.ca" },
+      "sites": [
+        { "id": "edmonton", "region": "CA-AB", "site": "Edmonton", "status": "live", "basis": "documented", "source": "https://isaic.ca", "checked": "2026-11-02", "geo": { "lat": 53.5461, "lon": -113.4938, "precision": "city" } }
+      ],
+      "models": [],
+      "models_note": "GPU rental (L40S, A100, H100); no hosted models."
+    },
+    {
+      "id": "coreweave-cambridge",
+      "name": "CoreWeave (Cambridge, Ontario)",
+      "operator": { "name": "CoreWeave", "country": "US" },
+      "sites": [
+        { "id": "cambridge", "region": "CA-ON", "site": "Cambridge", "status": "live", "basis": "claimed", "note": "Cohere is the anchor tenant (news report)", "geo": { "lat": 43.3616, "lon": -80.3144, "precision": "city" } }
+      ],
+      "models": [],
+      "models_note": "Private workloads; no public model API."
+    },
+    {
+      "id": "qscale",
+      "name": "QScale (Lévis)",
+      "operator": { "name": "QScale" },
+      "sites": [
+        { "id": "levis", "region": "CA-QC", "site": "Lévis", "status": "live", "basis": "claimed", "note": "Bought by Goldman Sachs Alternatives in May 2026 (news report)", "geo": { "lat": 46.8033, "lon": -71.1779, "precision": "city" } }
+      ],
+      "models": [],
+      "models_note": "Colocation only; no model service."
+    }
+  ]
+}

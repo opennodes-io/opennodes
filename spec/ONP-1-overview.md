@@ -1,6 +1,6 @@
 ﻿# ONP-1: Overview, Terminology, Architecture, Conformance
 
-**OpenNodes Protocol — Draft 0.1 — 2026-08-20 (errata 2026-10-23; open items: [KNOWN-ISSUES.md](KNOWN-ISSUES.md))**
+**OpenNodes Protocol — Draft 0.1 — 2026-08-20 (errata 2026-10-23; revisions 2 and 3, 2026-10-31 and 2026-11-02: [CHANGES.md](CHANGES.md); open items: [KNOWN-ISSUES.md](KNOWN-ISSUES.md))**
 
 The key words MUST, MUST NOT, REQUIRED, SHOULD, SHOULD NOT, MAY are to be interpreted as described in RFC 2119.
 
@@ -90,8 +90,11 @@ The registry's own probes are the primary evidence; attestations add to them and
 
 ## 5. Versioning
 
-Every ONP document and every Node Card carries an `"onp"` version string (`"0.1"` today). Registries advertise the versions they accept in `GET /v0/health`. Unknown fields MUST be ignored (must-ignore semantics).
+Every ONP document and every Node Card carries an `"onp"` version string (`"0.1"` today). Registries advertise the versions they accept in `GET /v0/health`. The JSON Schema enforces structure; ONP prose is normative for semantics.
 
+- **Unknown fields** MUST be ignored (must-ignore semantics).
+- **Higher minor versions** MUST be accepted: a registry or client implementing 0.1 accepts a card that says `"0.2"` and processes the fields it knows. A different *major* version MAY be rejected.
+- **Unknown vocabulary values** are not errors. The vocabulary fields are `modality`, `serving.supports`, payment `scheme` and `data_policy.retention`. Each is an open token list with core values defined in this suite; profiles (e.g. sovereign or vertical profiles) MAY register more. Consumers apply the safe default for that field: an unknown capability is treated as absent, an unknown scheme as unusable, an unknown modality as not matching any search filter, and an unknown retention as `logged`.
 - **Drafts (`0.x`)** may change incompatibly between drafts; each draft lists its changes, and registries SHOULD keep accepting cards of the previous draft for at least 6 months after a new draft is published.
 - **From `1.0`**, changes within a major version are additive only. A change that would make a conforming card, request or receipt invalid, or change the meaning of an existing field, requires a new major version.
 - **Major-version transitions:** registries SHOULD accept both the old and the new major version for at least 12 months after the new one is published, and SHOULD label which version each listing uses; nodes keep publishing a card the registries they rely on accept, and move when ready. Each major version's documents include a migration section.

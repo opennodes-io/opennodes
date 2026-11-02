@@ -46,7 +46,7 @@ test('MCP handshake, tools/list, and discovery tool calls', async (t) => {
 
   // tools/list exposes the discovery tools plus the advisor
   const tools = (await rpc(registry.origin, 'tools/list')).body.result.tools.map((tl) => tl.name);
-  assert.deepEqual(tools.sort(), ['estimate', 'get_node', 'get_offering', 'recommend', 'search_offerings']);
+  assert.deepEqual(tools.sort(), ['estimate', 'find_locations', 'get_node', 'get_offering', 'recommend', 'search_offerings']);
 
   // search_offerings
   const search = await rpc(registry.origin, 'tools/call', {

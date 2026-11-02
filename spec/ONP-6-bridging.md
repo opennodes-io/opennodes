@@ -1,6 +1,6 @@
 ﻿# ONP-6: Bridging — MCP, WebMCP, Web Data, and Scenarios
 
-**OpenNodes Protocol — Draft 0.1 — 2026-08-20**
+**OpenNodes Protocol — Draft 0.1, revision 2 — 2026-10-31** ([changes](CHANGES.md))
 
 The AI Node Client is where discovery becomes useful: the user (or an app on their behalf) picks discovered offerings and wires them to tools and data. This part specifies the client-side contracts so that a scenario built in one client runs in another.
 

@@ -9,7 +9,7 @@
 
 - **Browse:** [registry.opennodes.io](https://registry.opennodes.io) — 10,000+ offerings from about 250 providers, with trust tiers and measured results
 - **Learn:** [opennodes.io](https://opennodes.io) · [Integrations](https://opennodes.io/integrations) (one-click install for Cursor and VS Code; Claude, Kiro, Open WebUI, OpenAI SDKs, agents)
-- **Status:** ONP Draft 0.1, a working proposal not affiliated with any standards body yet; reference stack live, with project-run reference nodes in Germany and Finland. Operators: [list your endpoint](node-kit/README.md) or write to operators@opennodes.io.
+- **Status:** ONP Draft 0.1 with errata (2026-10-23) and revisions 2 and 3 (2026-10-31, 2026-11-02; [changes](spec/CHANGES.md)), a working proposal not affiliated with any standards body yet; reference stack live, with project-run reference nodes in Germany and Finland. Operators: [list your endpoint](node-kit/README.md) or write to operators@opennodes.io.
 
 ## Quick start
 

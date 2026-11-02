@@ -3,6 +3,7 @@
 // client-side (gateway, stdio MCP, SDK) as well as in the registry; a client can send
 // only the extracted *features* to a registry and never the prompt (privacy by design).
 import { estimateBounds, round6 } from './pricing.js';
+import { residencyWithin } from './regions.js';
 
 /* ------------------------------------------------------------------ features */
 
@@ -486,8 +487,10 @@ export function recommend(offerings, features, policy = {}) {
       if (!dp || dp.training_on_inputs === true || (dp.retention && dp.retention !== 'none')) return reject('data_policy');
     }
     if (policy.region) {
-      const pins = o.data_policy?.region_pinning ?? [];
-      if (pins.length && !pins.includes(policy.region)) return reject('region');
+      // Offerings with neither pinning nor known locations (e.g. local/LAN models) pass;
+      // the others must lie entirely inside the required region (ONP-2 §3 containment).
+      const codes = [...(o.data_policy?.region_pinning ?? []), ...(o.locations ?? []).map((l) => l.region)];
+      if (codes.length && !residencyWithin(codes, policy.region)) return reject('region');
     }
     if (policy.jurisdiction && !o.local && !inJurisdiction(o, policy.jurisdiction)) return reject('jurisdiction');
     if (features.locality === 'required' && !o.local) return reject('not_local');

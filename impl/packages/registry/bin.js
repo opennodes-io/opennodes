@@ -15,6 +15,11 @@ const registry = await startRegistry({
   admitCooldownMs: Number(process.env.ONP_ADMIT_COOLDOWN_MS ?? 30 * 60_000),  // Stage B per node
   trustProxy: process.env.ONP_TRUST_PROXY === '1',                            // behind Caddy / a CDN
   adminToken: process.env.ONP_ADMIN_TOKEN ?? null,
+  locationSeeds: process.env.ONP_LOCATION_SEEDS !== '0',                      // curated "where models run" seeds
+  // Basemap for the locations map: unset = OpenStreetMap, "off" = no map, else an XYZ tile URL template.
+  ...(process.env.ONP_MAP_TILES ? { mapTiles: process.env.ONP_MAP_TILES === 'off' ? null : {
+    tiles: process.env.ONP_MAP_TILES, attribution: process.env.ONP_MAP_ATTRIBUTION ?? '', max_zoom: 19,
+  } } : {}),
   stageC: process.env.ONP_STAGE_C === '0' ? null : {
     livenessIntervalMs: Number(process.env.ONP_LIVENESS_MS ?? 300_000),
     blindIntervalMs: Number(process.env.ONP_BLIND_MS ?? 3_600_000),

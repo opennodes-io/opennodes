@@ -3,7 +3,8 @@
 import {
   importModelsDev, importHuggingFace, importOpenRouter,
   importOllamaLibrary, parseOllamaLibrary,
-  HF_ROUTER_URL, HF_HUB_URL, OPENROUTER_URL, OLLAMA_LIBRARY_URL,
+  importOpenRouterProviders, fetchOpenRouterEndpoints,
+  HF_ROUTER_URL, HF_HUB_URL, OPENROUTER_URL, OPENROUTER_PROVIDERS_URL, OLLAMA_LIBRARY_URL,
 } from './importers.js';
 
 export const MODELS_DEV_URL = 'https://models.dev/api.json';
@@ -28,6 +29,12 @@ export function startReimport(store, {
           let hub = [];
           try { hub = await json(HF_HUB_URL); } catch { /* enrichment optional */ }
           results[source] = await importHuggingFace(store, router, hub);
+        } else if (source === 'openrouter-providers') {
+          // One call per model for its endpoint list (~450): prefer a long interval for this source.
+          const models = (await json(OPENROUTER_URL)).data;
+          const providers = (await json(OPENROUTER_PROVIDERS_URL)).data;
+          results[source] = await importOpenRouterProviders(store, providers, models,
+            await fetchOpenRouterEndpoints((url) => json(url, 30_000), models));
         } else if (source === 'models-dev') {
           results[source] = await importModelsDev(store, await json(MODELS_DEV_URL));
         } else if (source === 'ollama') {

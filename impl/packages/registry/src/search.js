@@ -1,5 +1,15 @@
 // Offering search + transparent ranking (ONP-3 §5–6).
-import { inJurisdiction, localSizes, pullsOf, specialtyOf, isEmbedder } from '@opennodes/core';
+import {
+  residencyWithin, residencyCodes, servingLocations, basisRank,
+  inJurisdiction, localSizes, pullsOf, specialtyOf, isEmbedder,
+} from '@opennodes/core';
+
+/** BCP 47 prefix match (ONP-3 §5): `fr` matches `fr` and `fr-CA`; `fr-CA` matches only itself. */
+export const langMatches = (tag, wanted) => {
+  const t = String(tag).toLowerCase();
+  const w = String(wanted).toLowerCase();
+  return t === w || t.startsWith(`${w}-`);
+};
 
 export const RANK_COMPONENTS = { price: 0.35, tier: 0.35, probe_success: 0.30 };
 const TIER_SCORE = { unverified: 0, community: 0.4, verified: 0.8, attested: 1.0 };
@@ -89,15 +99,20 @@ async function buildOfferings(store) {
         binding: offering.binding,
         pricing: offering.pricing,
         data_policy: offering.data_policy ?? null,
+        node_regions: card.node?.regions ?? [],
         // Where the operator is (ONP-2 node.operator.country, node.regions).
         // Registered nodes declare it in their signed card; imports get it from the importer's list of
-        // known providers, labeled inferred.
+        // known providers, labeled inferred. `location` is the registry's own server-location check.
         jurisdiction: {
           country: card.node?.operator?.country ?? null,
           regions: card.node?.regions ?? [],
           basis: card.node?.operator?.country ? (node.source === 'import' ? 'inferred' : 'declared') : null,
           location,
         },
+        // Where requests are served: live sites with their evidence basis (ONP-2 §3a), and the
+        // codes a residency check must cover (pins + sites, else node regions).
+        locations: servingLocations(offering, card),
+        residency: residencyCodes(offering, card),
         // Allocated hardware for THIS offering (offering-level override wins over the
         // node-level description) — same artifact on different vendors runs on different
         // silicon, and clients deserve to see which. Always basis-labeled, never measured.
@@ -139,6 +154,20 @@ export async function searchOfferingsPaged(store, query) {
   if (q('max_input_price')) items = items.filter((o) => (o.pricing.input_per_mtok ?? Infinity) <= Number(q('max_input_price')));
   if (q('scheme')) items = items.filter((o) => o.pricing.schemes.includes(q('scheme')));
   if (q('jurisdiction')) items = items.filter((o) => inJurisdiction(o, q('jurisdiction')));
+  if (q('region')) {
+    // Residency: every pinned region and live serving site (else the node's regions) inside.
+    items = items.filter((o) => residencyWithin(o.residency, q('region')));
+  }
+  if (q('location_basis')) {
+    // Evidence: the offering has serving sites and every one is at least this well supported.
+    const min = basisRank(q('location_basis'));
+    items = items.filter((o) => o.locations.length && o.locations.every((l) => basisRank(l.basis) >= min));
+  }
+  if (q('exclude_lineage')) {
+    // Origin policy on declared lineage; offerings that declare none are kept (unknown).
+    const banned = q('exclude_lineage').toUpperCase().split(',');
+    items = items.filter((o) => !(o.model.lineage_origins ?? []).some((c) => banned.includes(c)));
+  }
   if (q('tier')) {
     const order = ['unverified', 'community', 'verified', 'attested'];
     const min = order.indexOf(q('tier'));
@@ -148,7 +177,7 @@ export async function searchOfferingsPaged(store, query) {
     const [lang, minGrade = 'basic'] = q('lang').split(':');
     const grades = ['basic', 'strong', 'native'];
     items = items.filter((o) => (o.serving?.languages ?? []).some(
-      (l) => l.lang === lang && grades.indexOf(l.grade) >= grades.indexOf(minGrade)));
+      (l) => langMatches(l.lang, lang) && grades.indexOf(l.grade) >= grades.indexOf(minGrade)));
   }
   if (q('q')) {
     const needle = q('q').toLowerCase();

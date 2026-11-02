@@ -1,9 +1,18 @@
 // DS-MCP-01: the registry as an MCP server (streamable HTTP, stateless).
 // Minimal JSON-RPC handler covering initialize / tools/list / tools/call so any
-// MCP host gets ONP discovery (recommend, search_offerings, get_offering, get_node, estimate) for free.
+// MCP host gets ONP discovery (recommend, search_offerings, get_offering, get_node, estimate,
+// find_locations) for free.
 import { readFileSync } from 'node:fs';
 import { readJson, sendJson, problem, estimateBounds, round6, extractFeatures, recommend, MCP_TOOLS, MCP_INSTRUCTIONS, summarizeNode } from '@opennodes/core';
 import { searchOfferingsPaged, searchOfferings, collectOfferings, pricePublished } from './search.js';
+import { buildLocations } from './locations.js';
+
+/** Tool arguments -> the query string the REST routes take (null/undefined dropped). */
+const toQuery = (args = {}) => {
+  const query = new URLSearchParams();
+  for (const [k, v] of Object.entries(args)) if (v !== undefined && v !== null) query.set(k, String(v));
+  return query;
+};
 
 const PROTOCOL_VERSION = '2025-06-18';
 const { version: VERSION } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
@@ -29,7 +38,7 @@ const TOOLS = MCP_TOOLS.map((tool) => {
   };
 });
 
-async function runTool(store, name, args = {}) {
+async function runTool(store, seeds, name, args = {}) {
   switch (name) {
     case 'recommend': {
       const features = args.features ?? (args.task != null
@@ -37,11 +46,10 @@ async function runTool(store, name, args = {}) {
       if (!features) throw new Error('recommend needs "task" or "features"');
       return recommend((await collectOfferings(store)).filter((o) => o.invocable), features, args.policy ?? {});
     }
-    case 'search_offerings': {
-      const query = new URLSearchParams();
-      for (const [k, v] of Object.entries(args)) if (v !== undefined && v !== null) query.set(k, String(v));
-      return searchOfferingsPaged(store, query);
-    }
+    case 'search_offerings':
+      return searchOfferingsPaged(store, toQuery(args));
+    case 'find_locations':
+      return buildLocations(store, seeds, toQuery(args));
     case 'get_offering': {
       const found = (await collectOfferings(store)).find(
         (o) => o.node_id === args.node_id && o.offering_id === args.offering_id);
@@ -69,9 +77,7 @@ async function runTool(store, name, args = {}) {
           offering = all.find((o) => o.node_id === nodeId && o.offering_id === offeringId);
           if (!offering) throw new Error(`unknown offering: ${step.offering}`);
         } else if (step.select) {
-          const query = new URLSearchParams();
-          for (const [k, v] of Object.entries(step.select)) query.set(k, String(v));
-          offering = (await searchOfferings(store, query))[0];
+          offering = (await searchOfferings(store, toQuery(step.select)))[0];
           if (!offering) throw new Error(`no offering matches select: ${JSON.stringify(step.select)}`);
         } else {
           throw new Error('each step needs "offering" or "select"');
@@ -94,7 +100,7 @@ async function runTool(store, name, args = {}) {
   }
 }
 
-async function handleRpc(store, msg) {
+async function handleRpc(store, seeds, msg) {
   const { id, method, params } = msg;
   const reply = (result) => ({ jsonrpc: '2.0', id, result });
   const rpcError = (code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
@@ -113,7 +119,7 @@ async function handleRpc(store, msg) {
       return reply({ tools: TOOLS });
     case 'tools/call':
       try {
-        const result = await runTool(store, params?.name, params?.arguments);
+        const result = await runTool(store, seeds, params?.name, params?.arguments);
         return reply({
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
           structuredContent: result,
@@ -132,13 +138,13 @@ async function handleRpc(store, msg) {
   }
 }
 
-/** Routes to mount into the registry app. */
-export function mcpRoutes(store) {
+/** Routes to mount into the registry app. `seeds` = the curated location seeds (find_locations). */
+export function mcpRoutes(store, seeds = []) {
   return [
     ['POST', '/mcp', async (req, res) => {
       const body = await readJson(req, 5_000_000);
       const messages = Array.isArray(body) ? body : [body];
-      const replies = (await Promise.all(messages.map((m) => handleRpc(store, m)))).filter(Boolean);
+      const replies = (await Promise.all(messages.map((m) => handleRpc(store, seeds, m)))).filter(Boolean);
       if (replies.length === 0) { res.writeHead(202); res.end(); return; }
       sendJson(res, 200, Array.isArray(body) ? replies : replies[0]);
     }],

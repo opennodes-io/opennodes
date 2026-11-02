@@ -1,4 +1,4 @@
-// Server-location checks (ONP-1 §6 threat 5, ONP-3 §6.5): where a node's API host actually is,
+// Server-location checks (ONP-1 §6 threat 5, ONP-3 §6.4): where a node's API host actually is,
 // compared with the operator's declared country. Two signals, both evidence rather than proof:
 //  (a) IP geolocation + network owner of the endpoint host (RIPE NCC RIPEstat, no key needed);
 //      CDN / anycast networks are reported as such, never as a location.
@@ -10,7 +10,7 @@
 // (an auditor's credential) is the strong guarantee, planned for Draft 0.2.
 import net from 'node:net';
 import dns from 'node:dns/promises';
-import { EEA_COUNTRIES } from '@opennodes/core';
+import { EEA_COUNTRIES, distanceKm } from '@opennodes/core';
 import { isPrivateHost } from './namespace.js';
 
 const RIPESTAT = 'https://stat.ripe.net/data';
@@ -25,12 +25,8 @@ export const CDN_ASNS = new Map([
 
 const EEA = new Set(EEA_COUNTRIES);
 
-export function haversineKm(a, b) {
-  const rad = (d) => (d * Math.PI) / 180;
-  const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
-  return 2 * 6371 * Math.asin(Math.sqrt(h));
-}
+/** Great-circle distance in km; one implementation, shared with /v0/locations (core geo.js). */
+export const haversineKm = distanceKm;
 
 /**
  * Judge measured RTTs against a claimed point. vantages: [{site, lat, lon, rtt_ms}].
