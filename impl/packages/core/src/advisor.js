@@ -54,6 +54,9 @@ const CUES = {
   // answering from a document collection: an embedding model to index it, a generator to answer
   rag: /\b(rag|retrieval[- ]augmented|knowledge ?base|vector (store|db|database|index|search)|semantic search|embeddings?|(chat with|talk to|ask) (my|our|your|the) (\d[\d,.]*k? )?([a-z-]+ ){0,2}(documents|docs|pdfs|files|data|wiki|tickets|notes|manuals|contracts|records)|(questions?|q&a|answers?|search) (over|across|about|from|on|in) (about |around |roughly |~)?(my|our|the|these|\d[\d,.]*k?|thousands of|hundreds of) ([a-z-]+ ){0,2}(documents|docs|pdfs|files|pages|manuals|contracts|notes|articles|records|tickets))\b/i,
   corpus: /(\d[\d,.]*\s*k?|thousands of|hundreds of|millions of)\s+(?:[a-z-]+\s+){0,2}(documents|docs|pdfs|files|pages|manuals|contracts|notes|articles|records|tickets)\b/i,
+  // where it should run: "on my laptop" prefers the user's own machine; "offline" requires it
+  wants_local: /\b(on my (own )?(laptop|machine|computer|pc|mac|desktop|workstation|server|hardware|gpu)|on (this|our own|our) (machine|computer|server|hardware)|locally|run (it )?local(ly)?|local (model|llm|only)|self[- ]hosted|on[- ]prem(ise|ises)?)\b/i,
+  local_only: /\b(offline|air[- ]?gapped|no (cloud|internet)|without (the )?(cloud|internet)|(must|should|can) ?not leave (my|our|this|the) (machine|network|computer|laptop|premises)|never leaves? (my|our|this|the) (machine|network|computer|laptop|premises))\b/i,
   private_corpus: /\b(internal|private|confidential|proprietary|company|our|my|in-house|customers?)\b/i,   // their own documents: private by default
   writing_long: /\b(essay|article|blog post|report|white ?paper|documentation|chapter|story|long[- ]form|detailed (guide|explanation)|cover letter|proposal)\b/i,
   short_output: /\b(one word|yes or no|single (word|number|line)|just the (answer|number)|briefly|in one sentence)\b/i,
@@ -150,6 +153,8 @@ export function extractFeatures(task, { attachments = [], est_output_tokens = nu
       retrieval,
     },
     corpus,
+    // a real routed call states placement with its model name (auto-private), not in its prompt words
+    locality: request ? null : CUES.local_only.test(text) ? 'required' : CUES.wants_local.test(text) ? 'preferred' : null,
     latency: CUES.batch.test(text) ? 'batch' : 'interactive',
     privacy: CUES.sensitive.test(text) ? 'sensitive' : 'normal',
   };
@@ -444,6 +449,7 @@ export function recommend(offerings, features, policy = {}) {
       if (pins.length && !pins.includes(policy.region)) return reject('region');
     }
     if (policy.jurisdiction && !o.local && !inJurisdiction(o, policy.jurisdiction)) return reject('jurisdiction');
+    if (features.locality === 'required' && !o.local) return reject('not_local');
     if (policy.local_memory_gb && o.local) {
       const sizes = localSizes(o);
       if (sizes.length && !sizes.some((x) => x.memory_gb <= policy.local_memory_gb)) return reject('memory');
@@ -472,6 +478,7 @@ export function recommend(offerings, features, policy = {}) {
     };
     let score = Object.entries(w).reduce((s, [k, wk]) => s + wk * components[k], 0);
     if (policy.prefer_local && o.local && (policy.preset !== 'private' || isLight(features))) score += 0.1;
+    if (features.locality === 'preferred' && o.local) score += 0.15;   // the task asked to run on the user's own machine
     const bounds = estimateBounds(o.pricing ?? {}, features.est_input_tokens, features.est_output_tokens);
     const local_fit = sizes.length ? { sizes: sizes.map(({ tag, memory_gb }) => ({ tag, memory_gb })), pick: pick?.tag ?? null,
       ...(pick ? { run: `ollama run ${o.binding?.model_id ?? o.model?.name}:${pick.tag}` } : {}), basis: '4-bit estimate' } : null;
@@ -534,6 +541,7 @@ function rankEmbedders(offerings, features, policy, minTier, limit = 3) {
   const docs = features.corpus?.documents ?? null;
   const tokens = docs ? docs * TOKENS_PER_DOCUMENT : null;
   const pool = offerings.filter((o) => isEmbedder(o)
+    && (features.locality !== 'required' || o.local)
     && tierRank(o.tier) >= minTier
     && !(policy.local_memory_gb && o.local && localSizes(o).length && !localSizes(o).some((x) => x.memory_gb <= policy.local_memory_gb))
     && (o.pricing?.input_per_mtok ?? 0) <= (policy.max_input_per_mtok ?? Infinity)
@@ -542,7 +550,8 @@ function rankEmbedders(offerings, features, policy, minTier, limit = 3) {
   const multilingual = features.language !== 'en';
   const ranked = pool.map((o) => {
     const local = Boolean(o.local);
-    const fit = 0.5 + (multilingual && MULTILINGUAL_EMBED.test(nameOf(o)) ? 0.3 : 0) + (features.corpus?.private && local ? 0.2 : 0);
+    const fit = 0.5 + (multilingual && MULTILINGUAL_EMBED.test(nameOf(o)) ? 0.3 : 0) + (features.corpus?.private && local ? 0.2 : 0)
+      + (features.locality && local ? 0.2 : 0);
     const components = {
       fit: round2(Math.min(1, fit)),
       quality: embedQuality(o),
@@ -589,6 +598,7 @@ function explain(c, features, w, policy = {}) {
       ? `runs on your machine: ${pick.tag} needs ~${pick.memory_gb} GB RAM/VRAM, within ${policy.local_memory_gb} GB (4-bit estimate)`
       : `runs on your machine — memory needed (4-bit estimate): ${sizesLine(c.local_fit.sizes)}`);
   }
+  if (o.local && features.locality) r.push(features.locality === 'required' ? 'runs offline on your own machine, as the task requires' : 'runs on your own machine, as the task asked');
   if (c.rag_tuned) r.push('described as built for answering from retrieved documents (RAG)');
   if (o.source === 'import') r.push('imported catalog listing — unprobed');
   return r;

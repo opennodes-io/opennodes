@@ -337,3 +337,26 @@ test('hardware fit: local sizes carry a memory estimate; a memory budget picks t
   assert.equal(tiny.recommendations[0].local_fit.pick, '3b');
   assert.equal(tiny.rejected.memory, 1, 'a model with no size that fits is left out');
 });
+
+test('locality: "on my laptop" prefers the own machine; "offline" requires it', () => {
+  assert.equal(extractFeatures('RAG over our documents, running privately on my laptop').locality, 'preferred');
+  assert.equal(extractFeatures('self-hosted chatbot for the team').locality, 'preferred');
+  assert.equal(extractFeatures('air-gapped document search').locality, 'required');
+  assert.equal(extractFeatures('summarize this, it must not leave my machine').locality, 'required');
+  assert.equal(extractFeatures('private cloud deployment in the EU').locality, null, 'a private cloud is not the own machine');
+  assert.equal(extractFeatures('run it locally', { request: {} }).locality, null, 'a routed call says it with auto-private, not prompt words');
+
+  const hosted = { node_id: 'import.hf.baseten', offering_id: 'gpt-oss-120b', tier: 'unverified', source: 'import', modality: 'text',
+    model: { name: 'gpt-oss-120b', params_b: 117 }, binding: { model_id: 'gpt-oss-120b' }, pricing: { currency: 'USD', input_per_mtok: 0.05, output_per_mtok: 0.2 },
+    serving: { context_window: 131072, expected_ttft_ms: { p50: 600 }, expected_tps: { p50: 120 } }, observed: {} };
+  const local = { node_id: 'import.ollama.library', offering_id: 'granite4.1', tier: 'unverified', source: 'import', modality: 'text',
+    model: { name: 'granite4.1', params_b: 30 }, binding: { model_id: 'granite4.1' }, pricing: { currency: 'USD', input_per_mtok: 0, output_per_mtok: 0 },
+    serving: {}, local: { runtime: 'ollama', run: 'ollama run granite4.1', sizes: ['3b', '8b', '30b'] }, observed: {} };
+  const laptop = recommend([hosted, local], extractFeatures('summarize this note on my laptop'), { local_memory_gb: 16 });
+  assert.equal(laptop.recommendations[0].offering, 'import.ollama.library/granite4.1');
+  assert.ok(laptop.recommendations[0].reasons.includes('runs on your own machine, as the task asked'));
+  assert.equal(laptop.recommendations.length, 2, 'preferred, not required: hosted stays as an option');
+  const offline = recommend([hosted, local], extractFeatures('summarize this note offline'), {});
+  assert.deepEqual(offline.recommendations.map((r) => r.offering), ['import.ollama.library/granite4.1']);
+  assert.equal(offline.rejected.not_local, 1);
+});
