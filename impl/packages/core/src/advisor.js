@@ -185,6 +185,21 @@ const nameOf = (o) => `${o.model?.name ?? ''} ${o.binding?.model_id ?? ''} ${o.o
 export const isEmbedder = (o) => o.modality === 'embedding' || (o.modality !== 'image' && EMBED_NAME.test(nameOf(o)) && !RERANK_NAME.test(nameOf(o)));
 const isRetrievalModel = (o) => isEmbedder(o) || RERANK_NAME.test(nameOf(o));
 
+/**
+ * Embedder quality from size: very small models (tens of millions of parameters) retrieve noticeably
+ * worse; ~0.1–1B is the usual sweet spot; multi-billion ones are a little better and slower.
+ */
+function embedQuality(o) {
+  const p = o.model?.params_b;
+  if (!p) return 0.6;
+  return p < 0.05 ? 0.3 : p < 0.1 ? 0.5 : p <= 1.5 ? 0.8 : 0.9;
+}
+/** Ollama library pull count ("95.1M", "300.4K") as a number: a tie-break, never a score. */
+function pullsOf(o) {
+  const m = String(o.local?.pulls ?? '').match(/^([\d.]+)\s*([KMB]?)/i);
+  return m ? parseFloat(m[1]) * ({ K: 1e3, M: 1e6, B: 1e9 }[m[2].toUpperCase()] ?? 1) : 0;
+}
+
 /** Generators described or named as built for answering from retrieved passages. */
 const RAG_TUNED = /\b(rag|retrieval[- ]augmented|grounded generation|citations?)\b|chatqa|command[- ]?r\b|command-r/i;
 const ragTuned = (o) => RAG_TUNED.test(`${nameOf(o)} ${o.model?.description ?? ''}`);
@@ -210,6 +225,8 @@ function diversify(scored, limit) {
 
 /** Quality prior of a ~8B model: enough for light work (see isLight). */
 const LIGHT_ENOUGH = 0.33;
+/** Quality prior of a ~50B model: answering from retrieved passages gains little beyond it. */
+const RAG_ENOUGH = 0.6;
 
 /** Quick, simple work a small model on the user's own machine handles well. */
 export function isLight(features) {
@@ -412,13 +429,15 @@ export function recommend(offerings, features, policy = {}) {
   const w = weightsFor(features, policy.preset ?? null);
   // auto-private, simple request: a mid-size model (~8B) is good enough, so a bigger one earns
   // nothing more and the user's own machine wins; demanding work still goes to the strongest.
-  const qualityCap = policy.preset === 'private' && isLight(features) ? LIGHT_ENOUGH : 1;
+  // RAG: past ~50B a bigger model earns nothing more; price, speed, trust and RAG tuning decide.
+  const qualityCap = policy.preset === 'private' && isLight(features) ? LIGHT_ENOUGH
+    : features.task_class === 'rag' ? RAG_ENOUGH : 1;
   const maxPrice = Math.max(...candidates.map((o) => o.pricing?.input_per_mtok ?? 0), 0.000001);
   const scored = candidates.map((o) => {
     const prior = qualityPrior(o, features);
     const tuned = features.task_class === 'rag' && ragTuned(o);
     const components = {
-      quality: round2(Math.min(qualityCap, Math.min(1, prior.q + (tuned ? 0.1 : 0)) * languageFit(o, features.language))),
+      quality: round2(Math.min(1, Math.min(qualityCap, prior.q) * languageFit(o, features.language) + (tuned ? 0.1 : 0))),
       price: round2(1 - (o.pricing?.input_per_mtok ?? maxPrice) / maxPrice),
       trust: round2(0.7 * (TIER_SCORE[o.tier] ?? 0) + 0.3 * (o.observed?.probe_success ?? 0)),
       perf: round2(perfScore(o, features)),
@@ -489,10 +508,11 @@ function rankEmbedders(offerings, features, policy, minTier) {
     const fit = 0.5 + (multilingual && MULTILINGUAL_EMBED.test(nameOf(o)) ? 0.3 : 0) + (features.corpus?.private && local ? 0.2 : 0);
     const components = {
       fit: round2(Math.min(1, fit)),
+      quality: embedQuality(o),
       price: round2(1 - (o.pricing?.input_per_mtok ?? maxPrice) / maxPrice),
       trust: round2(0.7 * (TIER_SCORE[local ? 'local' : o.tier] ?? 0) + 0.3 * (o.observed?.probe_success ?? 0)),
     };
-    const score = round2(0.45 * components.fit + 0.35 * components.price + 0.2 * components.trust);
+    const score = round2(0.35 * components.fit + 0.2 * components.quality + 0.3 * components.price + 0.15 * components.trust);
     const reasons = [];
     if (local) reasons.push(`runs on your machine${o.local.run ? ` (${o.local.run})` : ''}${o.local.sizes ? `, ${o.local.sizes.join(' / ')}` : ''} — documents never leave it`);
     else reasons.push(`hosted by ${o.node_id}${o.jurisdiction?.country ? ` (${o.jurisdiction.country})` : ''}`);
@@ -501,9 +521,11 @@ function rankEmbedders(offerings, features, policy, minTier) {
     const indexing = local ? { usd: 0, basis: 'your own hardware' }
       : tokens && o.pricing?.input_per_mtok != null ? { usd: round6(tokens * o.pricing.input_per_mtok / 1e6), basis: `${docs.toLocaleString('en-US')} documents × ~${TOKENS_PER_DOCUMENT} tokens at the listed price` }
       : o.pricing?.input_per_mtok == null ? { usd: null, basis: 'price not published' } : null;
+    if (o.local?.pulls) reasons.push(`${o.local.pulls} Ollama pulls`);
     return { offering: `${o.node_id}/${o.offering_id}`, model: o.model?.name, node_id: o.node_id, tier: o.tier, model_id: o.binding?.model_id ?? null,
-      endpoint: o.endpoints?.openai ?? null, score, components, reasons, ...(indexing ? { indexing_estimate: indexing } : {}) };
-  }).sort((a, b) => b.score - a.score || a.offering.localeCompare(b.offering));
+      endpoint: o.endpoints?.openai ?? null, score, components, reasons, ...(indexing ? { indexing_estimate: indexing } : {}), popularity: pullsOf(o) };
+  }).sort((a, b) => b.score - a.score || b.popularity - a.popularity || a.offering.localeCompare(b.offering))
+    .map(({ popularity: _p, ...r }) => r);
   return ranked.slice(0, 3);
 }
 
@@ -512,7 +534,7 @@ function explain(c, features, w) {
   const r = [];
   const dominant = Object.entries(c.components).sort((a, b) => (w[b[0]] * b[1]) - (w[a[0]] * a[1]))[0]?.[0];
   if (dominant === 'price') r.push(`price-led: ${fmtPrice(o.pricing)}`);
-  if (dominant === 'quality') r.push(`quality-led for ${features.task_class} — basis: ${c.basis}${o.model?.params_b ? `, ${o.model.params_b}B` : ''}`);
+  if (dominant === 'quality') r.push(`quality-led for ${features.task_class} — basis: ${c.basis}${o.model?.params_b ? `, ${o.model.params_b}B` : ''}${features.task_class === 'rag' && (o.model?.params_b ?? 0) > 50 ? ' (size counted up to ~50B for RAG)' : ''}`);
   if (dominant === 'trust') r.push(`${o.tier} tier with ${Math.round((o.observed?.probe_success ?? 0) * 100)}% probe pass`);
   if (dominant === 'perf') r.push(o.observed?.ttft_ms?.p50 != null ? `measured ${o.observed.ttft_ms.p50}ms TTFT` : 'best claimed latency (unmeasured)');
   if (features.language !== 'en') {

@@ -205,10 +205,13 @@ export async function importHuggingFace(store, router, hub = []) {
             ? { expected_tps: { p50: Math.round(p.throughput), basis: 'claimed' } } : {}),
         },
         binding: { profile: 'onp.openai.chat/v1', model_id: `${model.id}:${p.provider}` },
+        // ~a third of HF provider entries carry no pricing: unknown, not free (as for models.dev)
         pricing: {
           currency: 'USD',
-          input_per_mtok: perMtok(p.pricing?.input),
-          output_per_mtok: perMtok(p.pricing?.output),
+          ...(p.pricing && (p.pricing.input != null || p.pricing.output != null) ? {
+            input_per_mtok: perMtok(p.pricing.input),
+            output_per_mtok: perMtok(p.pricing.output),
+          } : {}),
           schemes: p.is_free ? ['free'] : ['prepaid'],
         },
       };

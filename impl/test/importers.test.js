@@ -18,6 +18,7 @@ const HF_ROUTER_FIXTURE = {
           supports_structured_output: false, first_token_latency_ms: 1161.6, throughput: 36.1,
           context_length: 131072, pricing: { input: 0.35, output: 1.4 } },
         { provider: 'deepinfra', status: 'staging', is_free: false },
+        { provider: 'novita', status: 'live', is_free: false, context_length: 131072 },
       ],
     },
     {
@@ -77,12 +78,14 @@ test('HF importer: per-provider nodes, live-only, params_b, perf as claimed, ima
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ router: HF_ROUTER_FIXTURE, hub: HF_HUB_FIXTURE }),
   })).json();
-  assert.equal(result.providers, 2);          // zai-org + fal-ai; deepinfra staging excluded
-  assert.equal(result.offerings, 2);
+  assert.equal(result.providers, 3);          // zai-org + novita + fal-ai; deepinfra staging excluded
+  assert.equal(result.offerings, 3);
 
   const text = (await (await fetch(`${registry.origin}/v0/offerings?modality=text`)).json()).offerings;
-  assert.equal(text.length, 1);
-  const glm = text[0];
+  assert.equal(text.length, 2);
+  const glm = text.find((o) => o.node_id === 'import.hf.zai-org');
+  const unpriced = text.find((o) => o.node_id === 'import.hf.novita');
+  assert.equal(unpriced.pricing.input_per_mtok, undefined, 'no pricing from HF: not published, not free');
   assert.equal(glm.node_id, 'import.hf.zai-org');
   assert.equal(glm.model.artifact, 'hf:zai-org/GLM-5.3-Flash');
   assert.equal(glm.model.params_b, 28.5);     // from safetensors

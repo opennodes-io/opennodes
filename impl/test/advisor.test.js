@@ -288,6 +288,22 @@ test('RAG: recognised from the task, answered with an embedder and a generator',
   assert.equal(recommend(pool, extractFeatures('hello'), {}).roles, undefined, 'no roles outside RAG');
 });
 
+test('RAG ranking: size counts up to ~50B; embedders by size and popularity', () => {
+  const f = extractFeatures('RAG over our 2,000 internal documents');
+  const gen = (node, name, params, extra = {}) => ({ node_id: node, offering_id: name, tier: 'unverified', source: 'import', modality: 'text',
+    model: { name, params_b: params, ...extra }, binding: { model_id: name }, pricing: { currency: 'USD', input_per_mtok: 0.3, output_per_mtok: 1.2 },
+    serving: { context_window: 131072 }, observed: {} });
+  const r = recommend([gen('a', 'Giant', 750), gen('b', 'Mid-RAG', 35, { description: 'Built for retrieval-augmented generation with citations' })], f, { limit: 2 });
+  assert.equal(r.recommendations[0].offering, 'b/Mid-RAG', 'a RAG-tuned 35B beats a 750B giant at the same price');
+  assert.ok(r.recommendations[1].reasons.some((x) => /size counted up to ~50B for RAG/.test(x)));
+
+  const emb = (id, params, pulls) => ({ node_id: 'import.ollama.library', offering_id: id, tier: 'unverified', source: 'import', modality: 'embedding',
+    model: { name: id, params_b: params }, binding: { model_id: id }, pricing: { currency: 'USD', input_per_mtok: 0, output_per_mtok: 0 },
+    local: { run: `ollama pull ${id}`, pulls }, observed: {} });
+  const e = recommend([emb('all-minilm', 0.03, '3.8M'), emb('bge-large', 0.34, '300.4K'), emb('mxbai-embed-large', 0.34, '16.5M'), emb('nomic-embed-text', null, '95.1M')], f, {}).roles.embed.map((x) => x.offering.split('/')[1]);
+  assert.deepEqual(e, ['mxbai-embed-large', 'bge-large', 'nomic-embed-text'], 'mid-size first, more pulls break the tie; the 22M model drops out of the top 3');
+});
+
 test('diversity: the shortlist offers different models and providers before repeats', () => {
   const O = (node, name, params) => ({ node_id: node, offering_id: name, tier: 'unverified', source: 'import', modality: 'text',
     model: { name, params_b: params }, binding: { model_id: name }, pricing: { currency: 'USD', input_per_mtok: 0.2, output_per_mtok: 0.8 },
