@@ -57,6 +57,8 @@ const CUES = {
   // where it should run: "on my laptop" prefers the user's own machine; "offline" requires it
   wants_local: /\b(on my (own )?(laptop|machine|computer|pc|mac|desktop|workstation|server|hardware|gpu)|on (this|our own|our) (machine|computer|server|hardware)|locally|run (it )?local(ly)?|local (model|llm|only)|self[- ]hosted|on[- ]prem(ise|ises)?)\b/i,
   local_only: /\b(offline|air[- ]?gapped|no (cloud|internet)|without (the )?(cloud|internet)|(must|should|can) ?not leave (my|our|this|the) (machine|network|computer|laptop|premises)|never leaves? (my|our|this|the) (machine|network|computer|laptop|premises))\b/i,
+  moderation: /\b(moderat\w*|content (filter|safety)|toxic\w*|jailbreak|harmful|unsafe (content|prompts?)|fact[- ]?check\w*|hallucination check)\b/i,
+  medical: /\b(medical|clinical|patients?|diagnos\w*|symptoms?|drugs?|medication|radiology|health ?care)\b/i,
   private_corpus: /\b(internal|private|confidential|proprietary|company|our|my|in-house|customers?)\b/i,   // their own documents: private by default
   writing_long: /\b(essay|article|blog post|report|white ?paper|documentation|chapter|story|long[- ]form|detailed (guide|explanation)|cover letter|proposal)\b/i,
   short_output: /\b(one word|yes or no|single (word|number|line)|just the (answer|number)|briefly|in one sentence)\b/i,
@@ -151,8 +153,10 @@ export function extractFeatures(task, { attachments = [], est_output_tokens = nu
       long_context: estInput > 16_000,
       reasoning,
       retrieval,
+      moderation: CUES.moderation.test(text),
     },
     corpus,
+    domain: CUES.medical.test(text) ? 'medical' : null,
     // a real routed call states placement with its model name (auto-private), not in its prompt words
     locality: request ? null : CUES.local_only.test(text) ? 'required' : CUES.wants_local.test(text) ? 'preferred' : null,
     latency: CUES.batch.test(text) ? 'batch' : 'interactive',
@@ -204,6 +208,41 @@ function pullsOf(o) {
   const m = String(o.local?.pulls ?? '').match(/^([\d.]+)\s*([KMB]?)/i);
   return m ? parseFloat(m[1]) * ({ K: 1e3, M: 1e6, B: 1e9 }[m[2].toUpperCase()] ?? 1) : 0;
 }
+
+/**
+ * Specialist models, told by name (catalogs rarely say): they excel at one job and are a poor general
+ * pick. Classifiers (safety guards, fact-checkers) never answer a chat unless the task is moderation;
+ * the others are scored down outside their field. Names checked against the Ollama library, 2026-11.
+ */
+const CLASSIFIER_NAME = /guard(ian)?\b|guard\d|safeguard|shieldgemma|minicheck|moderation/i;
+const SPECIALIST_NAME = [
+  ['coding', /cod(e|er|estral|egemma|eqwen|ellama|egeex|ebooga|eup)\b|coder|codestral|codegemma|codeqwen|codellama|codegeex|starcoder|devstral|opencoder|magicoder|sqlcoder|nsql|stable-code|granite-code/i],
+  ['math', /math/i],
+  ['medical', /medgemma|meditron|medllama|biomistral|medical|clinical/i],
+  ['translation', /translat/i],
+  ['extraction', /nuextract|reader-lm|extract/i],
+  ['document OCR', /\bocr\b|-ocr/i],
+  ['tool calling', /functiongemma|firefunction|tool-use/i],
+];
+export function specialtyOf(o) {
+  const name = nameOf(o);
+  if (CLASSIFIER_NAME.test(name)) return 'classifier';
+  return SPECIALIST_NAME.find(([, re]) => re.test(name))?.[0] ?? null;
+}
+/** Does the task fall in the specialist's field? */
+function specialtyFits(spec, features) {
+  switch (spec) {
+    case 'coding': return ['code', 'agentic'].includes(features.task_class);
+    case 'math': return features.task_class === 'reasoning';
+    case 'medical': return features.domain === 'medical';
+    case 'translation': return features.task_class === 'translation';
+    case 'extraction': return features.task_class === 'extraction';
+    case 'document OCR': return features.needs.vision;
+    case 'tool calling': return features.needs.tools || features.task_class === 'agentic';
+    default: return true;
+  }
+}
+const SPECIALIST_PENALTY = 0.6;   // quality multiplier outside the field
 
 /** Generators described or named as built for answering from retrieved passages. */
 const RAG_TUNED = /\b(rag|retrieval[- ]augmented|grounded generation|citations?)\b|chatqa|command[- ]?r\b|command-r/i;
@@ -434,13 +473,14 @@ export function recommend(offerings, features, policy = {}) {
   const candidates = offerings.filter((o) => {
     if (o.modality !== features.modality && !(features.modality === 'text' && o.modality === 'multimodal')) return reject('modality');
     if (features.modality !== 'embedding' && isRetrievalModel(o)) return reject('embedding_model');
+    if (specialtyOf(o) === 'classifier' && !features.needs.moderation) return reject('classifier');
     if (tierRank(o.tier) < minTier) return reject('tier');
     if ((o.pricing?.input_per_mtok ?? 0) > (policy.max_input_per_mtok ?? Infinity)) return reject('price');
     const ctx = o.serving?.context_window;
     if (ctx && ctx < needCtx) return reject('context');
     const sup = o.serving?.supports ?? [];
     if (required.some((r) => !sup.includes(r))) return reject('capabilities');
-    if (features.privacy === 'sensitive') {
+    if (features.privacy === 'sensitive' && !o.local) {   // on the user's own machine the data never leaves it
       const dp = o.data_policy;
       if (!dp || dp.training_on_inputs === true || (dp.retention && dp.retention !== 'none')) return reject('data_policy');
     }
@@ -470,8 +510,11 @@ export function recommend(offerings, features, policy = {}) {
     const pick = fits.at(-1) ?? null;
     const prior = qualityPrior(pick ? { ...o, model: { ...o.model, params_b: pick.params_b } } : o, features);
     const tuned = features.task_class === 'rag' && ragTuned(o);
+    const specialty = specialtyOf(o);
+    const offField = specialty && specialty !== 'classifier' && !specialtyFits(specialty, features);
+    const inField = specialty && !offField;   // a specialist doing its own job edges out a general model of the same size
     const components = {
-      quality: round2(Math.min(1, Math.min(qualityCap, prior.q) * languageFit(o, features.language) + (tuned ? 0.1 : 0))),
+      quality: round2(Math.min(1, Math.min(qualityCap, prior.q) * languageFit(o, features.language) * (offField ? SPECIALIST_PENALTY : 1) + (tuned ? 0.1 : 0) + (inField ? 0.05 : 0))),
       price: round2(1 - (o.pricing?.input_per_mtok ?? maxPrice) / maxPrice),
       trust: round2(0.7 * (TIER_SCORE[o.tier] ?? 0) + 0.3 * (o.observed?.probe_success ?? 0)),
       perf: round2(perfScore(o, features)),
@@ -482,7 +525,7 @@ export function recommend(offerings, features, policy = {}) {
     const bounds = estimateBounds(o.pricing ?? {}, features.est_input_tokens, features.est_output_tokens);
     const local_fit = sizes.length ? { sizes: sizes.map(({ tag, memory_gb }) => ({ tag, memory_gb })), pick: pick?.tag ?? null,
       ...(pick ? { run: `ollama run ${o.binding?.model_id ?? o.model?.name}:${pick.tag}` } : {}), basis: '4-bit estimate' } : null;
-    return { offering: o, score: round2(score), components, basis: prior.basis, rag_tuned: tuned, local_fit, estimate: { currency: o.pricing?.currency ?? 'USD', ...bounds } };
+    return { offering: o, score: round2(score), components, basis: prior.basis, rag_tuned: tuned, specialty, off_field: offField, local_fit, estimate: { currency: o.pricing?.currency ?? 'USD', ...bounds } };
   }).filter((c) => c.estimate.max <= (policy.max_total_usd ?? Infinity));
 
   // Deterministic order: score, then cheaper estimate, then larger model, then id.
@@ -599,6 +642,9 @@ function explain(c, features, w, policy = {}) {
       : `runs on your machine — memory needed (4-bit estimate): ${sizesLine(c.local_fit.sizes)}`);
   }
   if (o.local && features.locality) r.push(features.locality === 'required' ? 'runs offline on your own machine, as the task requires' : 'runs on your own machine, as the task asked');
+  if (c.specialty) r.push(c.off_field
+    ? `${c.specialty} specialist — scored down for a ${features.task_class} task`
+    : `${c.specialty === 'classifier' ? 'safety / fact-check classifier' : `${c.specialty} specialist`}, matching this task`);
   if (c.rag_tuned) r.push('described as built for answering from retrieved documents (RAG)');
   if (o.source === 'import') r.push('imported catalog listing — unprobed');
   return r;

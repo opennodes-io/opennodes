@@ -360,3 +360,23 @@ test('locality: "on my laptop" prefers the own machine; "offline" requires it', 
   assert.deepEqual(offline.recommendations.map((r) => r.offering), ['import.ollama.library/granite4.1']);
   assert.equal(offline.rejected.not_local, 1);
 });
+
+test('specialists: classifiers never chat, specialists score down outside their field and lead inside it', () => {
+  const lib = (id, size) => ({ node_id: 'import.ollama.library', offering_id: id, tier: 'unverified', source: 'import', modality: 'text',
+    model: { name: id, params_b: size }, binding: { model_id: id }, pricing: { currency: 'USD', input_per_mtok: 0, output_per_mtok: 0 },
+    serving: { supports: ['streaming'] }, local: { runtime: 'ollama', run: `ollama run ${id}`, sizes: [`${size}b`] }, observed: {} });
+  const pool = [lib('mistral-small', 22), lib('codestral', 22), lib('gpt-oss-safeguard', 20), lib('llama-guard3', 8), lib('mistral-medium-3.5', 22)];
+  const ids = (t) => recommend(pool, extractFeatures(t), { limit: 5 }).recommendations.map((r) => r.offering.split('/')[1]);
+
+  const rag = recommend(pool, extractFeatures('RAG over our 2,000 internal documents on my laptop'), { limit: 5 });
+  assert.equal(rag.rejected.classifier, 2, 'guard and safeguard models are classifiers');
+  assert.deepEqual(rag.recommendations.map((r) => r.offering.split('/')[1]).slice(0, 2).sort(), ['mistral-medium-3.5', 'mistral-small'], 'general models first');
+  assert.ok(rag.recommendations.find((r) => /codestral/.test(r.offering)).reasons.includes('coding specialist — scored down for a rag task'));
+  assert.equal(ids('Refactor this Python function')[0], 'codestral', 'in its field the specialist leads');
+  assert.equal(ids('Flag toxic comments in our forum')[0], 'gpt-oss-safeguard', 'moderation tasks may use classifiers');
+
+  // sensitive data on the user's own machine needs no published data policy
+  const sensitive = recommend(pool, extractFeatures('Summarize patient discharge notes on my machine'), {});
+  assert.equal(sensitive.features.privacy, 'sensitive');
+  assert.ok(sensitive.recommendations.length > 0);
+});
