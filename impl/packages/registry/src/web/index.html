@@ -138,6 +138,14 @@
     background: var(--panel); color: var(--muted); cursor: pointer; font-family: inherit; }
   .toggle.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
   .switchrow { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; user-select: none; }
+  .kindtabs { display: flex; gap: 1.4rem; border-bottom: 1px solid var(--line); margin: 0.6rem 0 0.7rem; }
+  .kindtabs button { font: inherit; font-size: 0.86rem; font-weight: 600; color: var(--muted); background: none; border: none;
+    border-bottom: 2px solid transparent; padding: 0.35rem 0 0.5rem; margin-bottom: -1px; cursor: pointer; }
+  .kindtabs button:hover { color: var(--ink); }
+  .kindtabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+  .kindtabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .kindtabs .counts { font-weight: 400; margin-left: 0.25rem; }
+  .runrow code { font-size: 0.78rem; }
   .switch { width: 30px; height: 17px; border-radius: 999px; background: var(--line); position: relative; transition: background 0.15s; flex: none; }
   .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--panel); transition: left 0.15s; }
   .switchrow.on .switch { background: var(--accent); } .switchrow.on .switch::after { left: 15px; }
@@ -247,20 +255,29 @@
     <h1>Models</h1>
     <span class="counts" id="m-counts"></span>
   </div>
-  <p class="sub">Search across registered AI nodes and imported catalogs — pick a model on the left, its full card is on the right. Claimed values are never blended with measured ones.</p>
+  <div class="kindtabs" id="m-kind" role="tablist" aria-label="Kind of listing">
+    <button role="tab" data-kind="hosted" aria-selected="true">Hosted <span class="counts" id="m-n-hosted"></span></button>
+    <button role="tab" data-kind="local" aria-selected="false">Runs on your machine <span class="counts" id="m-n-local"></span></button>
+  </div>
+  <p class="sub hostedonly">Search across registered AI nodes and imported catalogs — pick a model on the left, its full card is on the right. Claimed values are never blended with measured ones.</p>
+  <p class="sub localonly" hidden>Models you download and run yourself with Ollama: no server, no account, and your data stays on your machine. There is nothing to verify remotely, so they are ranked by popularity (Ollama pulls); memory needs are 4-bit estimates.</p>
   <div class="toolbar">
     <input type="text" id="f-q" placeholder="Search models, families, nodes…">
-    <span class="switchrow" id="f-verified" title="identity-fingerprinted · context-verified · continuously probed"><span class="switch"></span><b style="font-size:0.78rem">Verified only</b></span>
-    <span class="switchrow" id="f-eea" title="operators in the EU, Iceland, Liechtenstein or Norway — declared by registered nodes, inferred for imported listings of known European providers"><span class="switch"></span><b style="font-size:0.78rem">EU/EEA</b></span>
+    <span class="switchrow hostedonly" id="f-verified" title="identity-fingerprinted · context-verified · continuously probed"><span class="switch"></span><b style="font-size:0.78rem">Verified only</b></span>
+    <span class="switchrow hostedonly" id="f-eea" title="operators in the EU, Iceland, Liechtenstein or Norway — declared by registered nodes, inferred for imported listings of known European providers"><span class="switch"></span><b style="font-size:0.78rem">EU/EEA</b></span>
     <select id="f-modality">
       <option value="">any modality</option>
       <option>text</option><option>multimodal</option><option>image</option>
       <option>audio</option><option>video</option><option>embedding</option>
     </select>
-    <button class="toggle" data-sup="tool_calls">tools</button>
-    <button class="toggle" data-sup="vision">vision</button>
-    <button class="toggle" data-sup="json_mode">json</button>
-    <input type="number" id="f-price" placeholder="max $/MTok in" min="0" step="0.05">
+    <button class="toggle hostedonly" data-sup="tool_calls">tools</button>
+    <button class="toggle hostedonly" data-sup="vision">vision</button>
+    <button class="toggle hostedonly" data-sup="json_mode">json</button>
+    <input type="number" class="hostedonly" id="f-price" placeholder="max $/MTok in" min="0" step="0.05">
+    <select id="f-mem" class="localonly" hidden title="RAM (or GPU VRAM) you can give the model — keeps the models with a size that fits">
+      <option value="">fits: any memory</option><option value="4">fits in 4 GB</option><option value="8">fits in 8 GB</option>
+      <option value="16">fits in 16 GB</option><option value="24">fits in 24 GB</option><option value="32">fits in 32 GB</option><option value="64">fits in 64 GB</option>
+    </select>
     <select id="f-sort"><option value="rank">sort: rank</option><option value="price">sort: price</option><option value="ttft">sort: fastest first token</option><option value="tps">sort: throughput</option></select>
   </div>
   <details class="panel pad" id="advisor" style="margin:0.2rem 0 0.8rem">
@@ -295,7 +312,7 @@
   <div class="statstrip" id="md-stats"></div>
   <div id="md-score"></div>
   <div class="secnav" id="md-nav"></div>
-  <h2 id="sec-offerings">Offerings <span class="counts" id="md-count"></span></h2>
+  <h2 id="sec-offerings"><span id="md-offtitle">Offerings</span> <span class="counts" id="md-count"></span></h2>
   <div class="panel tablewrap" id="md-offerings"></div>
   <h2 id="sec-play">Playground <span class="counts">runs in your browser — your prompt goes straight to the node, never through this registry</span></h2>
   <div class="panel pad" style="max-width:56rem">
@@ -594,6 +611,29 @@ function route() {
 window.addEventListener('hashchange', route);
 
 /* ---------- catalog ---------- */
+// Hosted offerings and local models (no server: they run on the visitor's machine) are listed apart.
+let listKind = 'hosted';
+try { if (localStorage.getItem('onp-list-kind') === 'local') listKind = 'local'; } catch { /* storage blocked */ }
+const SORTS = {
+  hosted: [['rank', 'sort: rank'], ['price', 'sort: price'], ['ttft', 'sort: fastest first token'], ['tps', 'sort: throughput']],
+  local: [['rank', 'sort: most pulled'], ['size', 'sort: smallest first'], ['name', 'sort: name']],
+};
+function applyKind() {
+  document.querySelectorAll('#m-kind [data-kind]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.kind === listKind)));
+  document.querySelectorAll('#view-models .hostedonly').forEach((el) => { el.hidden = listKind !== 'hosted'; });
+  document.querySelectorAll('#view-models .localonly').forEach((el) => { el.hidden = listKind !== 'local'; });
+  const sel = $('#f-sort'), cur = sel.value;
+  sel.innerHTML = SORTS[listKind].map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  if (SORTS[listKind].some(([v]) => v === cur)) sel.value = cur;
+}
+applyKind();
+document.querySelectorAll('#m-kind [data-kind]').forEach((b) => b.addEventListener('click', () => {
+  if (b.dataset.kind === listKind) return;
+  listKind = b.dataset.kind;
+  try { localStorage.setItem('onp-list-kind', listKind); } catch { /* storage blocked */ }
+  applyKind();
+  search();
+}));
 const sup = new Set();
 document.querySelectorAll('.toggle').forEach((b) => b.addEventListener('click', () => {
   b.classList.toggle('on'); b.classList.contains('on') ? sup.add(b.dataset.sup) : sup.delete(b.dataset.sup); search();
@@ -602,7 +642,7 @@ $('#f-verified').addEventListener('click', () => { $('#f-verified').classList.to
 $('#f-eea').addEventListener('click', () => { $('#f-eea').classList.toggle('on'); search(); });
 let debounce;
 for (const id of ['f-q', 'f-price']) $('#' + id).addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(search, 250); });
-for (const id of ['f-modality', 'f-sort']) $('#' + id).addEventListener('change', search);
+for (const id of ['f-modality', 'f-sort', 'f-mem']) $('#' + id).addEventListener('change', search);
 
 function measuredBits(o) {
   const obs = o.observed || {};
@@ -663,7 +703,7 @@ let listQuery = '', listTotal = 0, listPage = 0;
 function updatePager() {
   const pages = Math.max(1, Math.ceil(listTotal / PAGE));
   const from = listTotal ? listPage * PAGE + 1 : 0, to = Math.min(listTotal, (listPage + 1) * PAGE);
-  $('#m-counts').textContent = fmtInt(listTotal) + ' offerings' + (pages > 1 ? ` · ${fmtInt(from)}–${fmtInt(to)}` : '');
+  $('#m-counts').textContent = fmtInt(listTotal) + (listKind === 'local' ? ' local models' : ' offerings') + (pages > 1 ? ` · ${fmtInt(from)}–${fmtInt(to)}` : '');
   const pager = $('#m-pager');
   if (pages <= 1) { pager.innerHTML = ''; return; }
   const btn = (label, page, title) => `<button class="pgbtn" data-page="${page}" title="${title}"${page < 0 || page >= pages || page === listPage ? ' disabled' : ''}>${label}</button>`;
@@ -704,15 +744,19 @@ async function search() {
   const p = new URLSearchParams({ limit: PAGE });
   if ($('#f-q').value) p.set('q', $('#f-q').value);
   if ($('#f-modality').value) p.set('modality', $('#f-modality').value);
-  if ($('#f-verified').classList.contains('on')) p.set('tier', 'verified');
-  if ($('#f-eea').classList.contains('on')) p.set('jurisdiction', 'eea');
-  if ($('#f-price').value) p.set('max_input_price', $('#f-price').value);
-  if (sup.size) p.set('supports', [...sup].join(','));
+  p.set('local', String(listKind === 'local'));
+  if (listKind === 'hosted') {   // trust, location, price and capabilities describe a server
+    if ($('#f-verified').classList.contains('on')) p.set('tier', 'verified');
+    if ($('#f-eea').classList.contains('on')) p.set('jurisdiction', 'eea');
+    if ($('#f-price').value) p.set('max_input_price', $('#f-price').value);
+    if (sup.size) p.set('supports', [...sup].join(','));
+  } else if ($('#f-mem').value) p.set('memory_gb', $('#f-mem').value);
   p.set('sort', $('#f-sort').value);
   listQuery = p.toString();
   try {
-    const { offerings, total } = await api('/v0/offerings?' + p);
+    const { offerings, total, counts } = await api('/v0/offerings?' + p);
     if (listQuery !== p.toString()) return;   // a newer search is under way
+    if (counts) { $('#m-n-hosted').textContent = fmtInt(counts.hosted); $('#m-n-local').textContent = fmtInt(counts.local); }
     lastResults = offerings;
     listTotal = total ?? offerings.length;
     listPage = 0;
@@ -780,7 +824,27 @@ function selectModel(el) {
 }
 
 let lastResults = [];
+/** "1b–27b · from ~1.6 GB" for a local model's sizes (4-bit memory estimates from the registry). */
+function sizesBit(o) {
+  const sz = o.local?.sizes_memory ?? [];
+  if (!sz.length) return '';
+  return (sz.length > 1 ? `${sz[0].tag}–${sz.at(-1).tag}` : sz[0].tag) + ` · from ~${sz[0].memory_gb} GB`;
+}
+function renderLocalItem(o) {
+  return `<div class="mitem" data-artifact="${esc(o.model.artifact)}" data-key="${esc(o.node_id + '/' + o.offering_id)}">
+    <div class="t">
+      <span class="nm">${esc(o.model.name)}</span>
+      ${o.specialty ? `<span class="chip">${esc(o.specialty)}</span>` : ''}
+      <span class="chip loc">LOCAL</span>
+    </div>
+    <div class="b">
+      ${sizesBit(o) ? `<span>${esc(sizesBit(o))}</span>` : ''}
+      ${o.local.pulls ? `<span>${esc(o.local.pulls)} pulls</span>` : ''}
+    </div>
+  </div>`;
+}
 function renderItem(o) {
+  if (o.local) return renderLocalItem(o);
   const obs = o.observed || {};
   return `<div class="mitem" data-artifact="${esc(o.model.artifact)}" data-key="${esc(o.node_id + '/' + o.offering_id)}">
     <div class="t">
@@ -890,6 +954,15 @@ function renderScore(artifact) {
   const host = $('#md-score');
   const o = listedOffering;
   if (!o?.rank_explanation || o.model.artifact !== artifact) { host.innerHTML = ''; return; }
+  if (o.rank_explanation.basis === 'local') {
+    host.innerHTML = `<details class="scorebox" open>
+      <summary>Popularity <b class="mono">${fmt(o.rank)}</b> <span class="sub">among the local models in the current list</span></summary>
+      <table><tr><td>Ollama pulls</td><td class="num mono">${esc(o.rank_explanation.pulls ?? '—')}</td><td class="num mono"><b>${fmt(o.rank)}</b></td>
+        <td class="sub">log scale against the most-pulled local model listed (1.00)</td></tr></table>
+      <p class="sub" style="margin:0.5rem 0 0; font-size:0.78rem">Local models are not scored on price, trust tier or checks: there is no server behind them, and they cost nothing per token. How well one runs depends on your machine.</p>
+    </details>`;
+    return;
+  }
   const { weights, components } = o.rank_explanation;
   const obs = o.observed || {};
   const why = {
@@ -931,6 +1004,7 @@ async function loadModel(artifact) {
     const tierOrder = { verified: 3, community: 2, unverified: 1 };
     list.sort((a, b) => (tierOrder[b.tier] ?? 0) - (tierOrder[a.tier] ?? 0) || (a.pricing.input_per_mtok ?? Infinity) - (b.pricing.input_per_mtok ?? Infinity));
     const first = list[0];
+    const isLocal = list.every((o) => o.local);   // an Ollama library model: no server, runs on the visitor's machine
     $('#md-title').textContent = first.model.name;
     // the artifact chip links to its authoritative home: Hugging Face for hf: artifacts
     $('#md-artifact').innerHTML = artifact.startsWith('hf:')
@@ -947,9 +1021,12 @@ async function loadModel(artifact) {
       first.model.params_b ? `<span class="chip">${first.model.params_b}B</span>` : '',
       `<span class="chip">${esc(first.modality)}</span>`,
       first.model.family ? `<span class="chip">${esc(first.model.family)}</span>` : '',
+      isLocal && first.specialty && first.specialty !== first.modality ? `<span class="chip">${esc(first.specialty)}</span>` : '',
+      isLocal ? '<span class="chip loc">LOCAL</span>' : '',
       ...extLinks,
     ].join('');
-    $('#md-count').textContent = list.length + ' node' + (list.length === 1 ? '' : 's');
+    $('#md-offtitle').textContent = isLocal ? 'Run it' : 'Offerings';
+    $('#md-count').textContent = isLocal ? 'with Ollama, on your own machine' : list.length + ' node' + (list.length === 1 ? '' : 's');
 
     // description (imported catalogs carry one; absent otherwise)
     const desc = list.map((o) => o.model.description).find(Boolean);
@@ -963,7 +1040,14 @@ async function loadModel(artifact) {
     const verified = list.filter((o) => o.tier === 'verified').length;
     const released = list.map((o) => o.model.released).find(Boolean);
     const stat = (v, l) => `<span class="stat"><span class="sv">${v}</span><span class="sl">${l}</span></span>`;
-    $('#md-stats').innerHTML = [
+    const sizes = first.local?.sizes_memory ?? [];
+    if (isLocal) $('#md-stats').innerHTML = [
+      stat('free', 'RUNS ON YOUR MACHINE'),
+      sizes.length ? stat(esc(sizes.map((x) => x.tag).join(' · ')), sizes.length === 1 ? 'SIZE' : 'SIZES') : '',
+      sizes.length ? stat(`~${sizes[0].memory_gb} GB`, 'SMALLEST NEEDS (4-BIT EST.)') : '',
+      first.local.pulls ? stat(esc(first.local.pulls), 'OLLAMA PULLS') : '',
+    ].filter(Boolean).join('');
+    else $('#md-stats').innerHTML = [
       stat(!prices.length ? priceStr(first.pricing, first.node_id) : minP === 0 && maxP === 0 ? 'free' : (minP === maxP ? '$' + fmt(minP) : '$' + fmt(minP) + '–' + fmt(maxP)), '$/MTOK IN ACROSS NODES'),
       ctxMax ? stat(fmtInt(ctxMax), 'MAX CONTEXT') : '',
       stat(`${verified}/${list.length}`, 'VERIFIED NODES'),
@@ -974,7 +1058,7 @@ async function loadModel(artifact) {
     renderScore(artifact);
 
     // section nav (anchors appear only for sections that render)
-    const navBits = [['#sec-offerings', 'OFFERINGS'], ['#sec-play', 'PLAYGROUND']];
+    const navBits = [['#sec-offerings', isLocal ? 'RUN IT' : 'OFFERINGS'], ['#sec-play', 'PLAYGROUND']];
 
     // playground targets: hosted offerings first, then the ones that run on the visitor's own computer,
     // then a custom endpoint
@@ -987,7 +1071,14 @@ async function loadModel(artifact) {
     pgUpdateNote();
     $('#pg-hosted').innerHTML = '';
     if (pgOfferings.length && pgOfferings.every(runsLocally)) showHostedAlternatives(first, artifact);
-    $('#md-offerings').innerHTML = `<table class="grid num"><thead><tr>
+    const runName = first.binding?.model_id ?? first.model.name;
+    const verb = first.modality === 'embedding' ? 'pull' : 'run';   // embedding models answer the API, not a chat prompt
+    if (isLocal) $('#md-offerings').innerHTML = `<table class="grid num"><thead><tr><th>SIZE</th><th>MEMORY NEEDED</th><th>COMMAND</th></tr></thead><tbody>`
+      + (sizes.length ? sizes.map((x) => `<tr class="runrow"><td><b>${esc(x.tag)}</b></td><td>~${x.memory_gb} GB <span class="micro m-claimed">4-BIT EST.</span></td>
+          <td><code class="mono">ollama ${verb} ${esc(runName)}:${esc(x.tag)}</code></td></tr>`).join('')
+        : `<tr class="runrow"><td>—</td><td>—</td><td><code class="mono">ollama ${verb} ${esc(runName)}</code></td></tr>`)
+      + `</tbody></table><p class="sub" style="margin:0.6rem 0.8rem; font-size:0.8rem">Install Ollama from <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com</a>, then run one command. Pick the largest size that fits the RAM (or GPU VRAM) you can spare; real use grows with the context length.</p>`;
+    else $('#md-offerings').innerHTML = `<table class="grid num"><thead><tr>
       <th>NODE</th><th>PRICE IN/OUT</th><th>HARDWARE</th><th>CONTEXT</th><th>TTFT</th><th>TOK/S</th><th>UP</th><th>CAPABILITIES</th><th>REVISION</th>
     </tr></thead><tbody>` + list.map((o) => {
       const obs = o.observed || {};
@@ -1055,7 +1146,12 @@ async function loadModel(artifact) {
     // FAQ — generated strictly from the data on this page
     const supports = [...new Set(list.flatMap((o) => o.serving?.supports || []))].filter((s) => s !== 'streaming');
     const capped = list.filter((o) => o.serving?.context_capped_from);
-    const faqs = [
+    const faqs = isLocal ? [
+      ['What is ' + first.model.name + '?', desc || `A ${first.modality} model from the Ollama library${first.model.family ? ` in the ${first.model.family} family` : ''}.`],
+      ['What does it cost?', 'Nothing per token: it runs on your own hardware with Ollama. The cost is your memory, compute and electricity.'],
+      ['How do I run it?', `Install Ollama, then run ${sizes.length ? `"ollama ${verb} ${runName}:${sizes.at(-1).tag}"${sizes.length > 1 ? ` (or a smaller size: ${sizes.map((x) => x.tag).join(', ')})` : ''}` : `"ollama ${verb} ${runName}"`}.${sizes.length ? ` The smallest size needs about ${sizes[0].memory_gb} GB at 4-bit.` : ''}${verb === 'pull' ? ' Embedding models are called through the API (as the playground below does), not chatted with.' : ''}`],
+      ['Is it verified?', 'There is no server to verify: the model runs on your machine, so how fast and how well depends on your hardware. The listing comes from the Ollama library. The playground on this page sends to your own Ollama and shows whether it answers.'],
+    ] : [
       ['What is ' + first.model.name + '?', desc
         ? desc
         : `A ${first.modality} model${first.model.params_b ? ` (${first.model.params_b}B parameters)` : ''}${first.model.family ? ` in the ${first.model.family} family` : ''}, served by ${list.length} node${list.length === 1 ? '' : 's'} listed in this registry. Artifact: ${artifact}.`],
@@ -1082,11 +1178,16 @@ function pgLabel(o) {
   if (!runsLocally(o)) return `${esc(o.node_id)} — ${priceStr(o.pricing, o.node_id)} [${esc(o.tier)}]`;
   return `your computer — ${esc(o.local?.runtime === 'ollama' ? 'Ollama' : 'local app')} at ${esc(localHost(o))} (no hosted server for this listing)`;
 }
+/** Embedding models answer /embeddings with a vector, not /chat/completions with text. */
+const isEmbedOffering = (o) => Boolean(o) && (o.modality === 'embedding' || /embeddings/.test(o.binding?.profile ?? ''));
 /** Says plainly where Send goes when the target is the visitor's own machine. */
 function pgUpdateNote() {
   const note = $('#pg-note');
   const v = $('#pg-target').value;
   const o = v === 'custom' ? null : pgOfferings[Number(v)];
+  const embed = isEmbedOffering(o);
+  $('#pg-prompt').placeholder = embed ? 'Text to embed — the answer is a vector of numbers…' : 'Try the model…';
+  $('#pg-send').textContent = embed ? 'Embed' : 'Send';
   note.hidden = !o || !runsLocally(o);
   if (note.hidden) return;
   const app = o.local?.runtime === 'ollama' ? 'Ollama' : 'the local app';
@@ -1146,6 +1247,27 @@ $('#pg-send').addEventListener('click', async () => {
   out.textContent = '…';
   meta.textContent = '';
   const t0 = performance.now();
+  if (isEmbedOffering(offering)) {
+    try {
+      const res = await fetch(base + '/embeddings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(useKey ? { authorization: 'Bearer ' + useKey } : {}) },
+        body: JSON.stringify({ model, input: prompt }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.detail ?? body?.error?.message ?? ('status ' + res.status));
+      const vec = body.data?.[0]?.embedding;
+      if (!Array.isArray(vec)) throw new Error('no embedding in the answer');
+      out.textContent = `A vector of ${vec.length} numbers: the text's position in the model's meaning space. Similar texts get nearby vectors; that is what document search (RAG) compares.\n\n[${vec.slice(0, 8).map((x) => Number(x).toFixed(4)).join(', ')}, …]`;
+      meta.textContent = [Math.round(performance.now() - t0) + 'ms', body.usage?.prompt_tokens != null ? `${body.usage.prompt_tokens} tokens in` : null, `${vec.length} dimensions`].filter(Boolean).join(' · ');
+    } catch (err) {
+      const notPulled = offering && runsLocally(offering) && /not found/i.test(err.message);
+      out.innerHTML = '<span class="err">' + esc(err.message) + '</span><br><span class="prov">' + (notPulled
+        ? `Your Ollama is running but does not have this model yet: <code class="mono">ollama pull ${esc(model)}</code>, then Embed again.`
+        : 'If this is a network/CORS error: for local Ollama set OLLAMA_ORIGINS to include this page&#39;s origin.') + '</span>';
+    } finally { $('#pg-send').disabled = false; }
+    return;
+  }
   try {
     const res = await fetch(base + '/chat/completions', {
       method: 'POST',

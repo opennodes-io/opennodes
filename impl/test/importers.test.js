@@ -260,6 +260,44 @@ test('Ollama library importer: parses tiles, maps to local offerings on a localh
   assert.equal(embed.binding.profile, 'onp.openai.embeddings/v1');
 });
 
+test('local models list apart: counts, popularity rank, memory fit, sizes with memory, decoded descriptions', async (t) => {
+  const { parseOllamaLibrary } = await import('@opennodes/registry/src/importers.js');
+  const tile = (name, desc, sizes, pulls, caps = []) => `<li><a href="/library/${name}"><h2><span>${name}</span></h2>
+    <p class="max-w-lg break-words">${desc}</p>
+    ${caps.map((c) => `<span class="inline-flex items-center">${c}</span>`).join('')}
+    ${sizes.map((s) => `<span class="inline-flex items-center">${s}</span>`).join('')}
+    <span >${pulls}</span> <span class="hidden sm:flex">&nbsp;Pulls</span></a></li>`;
+  const entries = parseOllamaLibrary(tile('llama3.2', 'Meta&#39;s Llama 3.2 goes small &amp; fast.', ['1b', '3b'], '86.8M')
+    + tile('codestral', 'Mistral AI&#39;s code model.', ['22b'], '600K')
+    + tile('llama3.1', 'Big one.', ['8b', '70b', '405b'], '120.8M'));
+  assert.equal(entries[0].description, "Meta's Llama 3.2 goes small & fast.", 'HTML entities decoded');
+
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  t.after(() => registry.close());
+  const post = (path, body) => fetch(`${registry.origin}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  await post('/v0/import/ollama', { entries });
+  await post('/v0/import/models-dev', { catalog: { acmecloud: { id: 'acmecloud', name: 'Acme', api: 'https://api.acmecloud.example/v1',
+    models: { 'llama-3.2-3b': { id: 'llama-3.2-3b', name: 'Llama 3.2 3B', cost: { input: 0.1, output: 0.2 } } } } } });
+  const get = async (qs) => (await fetch(`${registry.origin}/v0/offerings?${qs}`)).json();
+
+  const local = await get('local=true');
+  assert.deepEqual(local.counts, { hosted: 1, local: 3 });
+  assert.deepEqual(local.offerings.map((o) => o.offering_id), ['llama3.1', 'llama3.2', 'codestral'], 'most pulled first');
+  assert.equal(local.offerings[0].rank, 1);
+  assert.equal(local.offerings[0].rank_explanation.basis, 'local');
+  assert.deepEqual(local.offerings[1].local.sizes_memory, [{ tag: '1b', memory_gb: 1.2 }, { tag: '3b', memory_gb: 2.5 }]);
+  assert.equal(local.offerings[2].specialty, 'coding');
+
+  const hosted = await get('local=false');
+  assert.deepEqual(hosted.offerings.map((o) => o.offering_id), ['llama-3.2-3b']);
+  assert.equal(hosted.counts.local, 3, 'counts are taken before the local filter');
+
+  assert.deepEqual((await get('local=true&memory_gb=4')).offerings.map((o) => o.offering_id), ['llama3.2'], 'only models with a size that fits');
+  assert.deepEqual((await get('local=true&sort=size')).offerings.map((o) => o.offering_id), ['llama3.2', 'llama3.1', 'codestral'], 'smallest first');
+  const mixed = (await get('')).offerings;
+  assert.equal(mixed[0].offering_id, 'llama-3.2-3b', 'in a mixed list hosted comes before local: their scores measure different things');
+});
+
 test('registry serves the web app at /', async (t) => {
   const registry = await startRegistry({ allowPrivateTargets: true });
   t.after(() => registry.close());

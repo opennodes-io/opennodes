@@ -1,5 +1,5 @@
 // Offering search + transparent ranking (ONP-3 §5–6).
-import { inJurisdiction } from '@opennodes/core';
+import { inJurisdiction, localSizes, pullsOf, specialtyOf, isEmbedder } from '@opennodes/core';
 
 export const RANK_COMPONENTS = { price: 0.35, tier: 0.35, probe_success: 0.30 };
 const TIER_SCORE = { unverified: 0, community: 0.4, verified: 0.8, attested: 1.0 };
@@ -155,6 +155,15 @@ export async function searchOfferingsPaged(store, query) {
     items = items.filter((o) => JSON.stringify(o.model).toLowerCase().includes(needle)
       || o.offering_id.includes(needle) || o.node_id.includes(needle));
   }
+  // Local models (the Ollama library) have no server: they run on the visitor's own machine and are
+  // listed apart from hosted offerings. `memory_gb` keeps the local models with a size that fits.
+  if (q('memory_gb')) {
+    const gb = Number(q('memory_gb'));
+    items = items.filter((o) => !o.local || !localSizes(o).length || localSizes(o)[0].memory_gb <= gb);
+  }
+  const counts = { hosted: items.filter((o) => !o.local).length, local: items.filter((o) => o.local).length };
+  if (q('local') === 'true') items = items.filter((o) => o.local);
+  if (q('local') === 'false') items = items.filter((o) => !o.local);
 
   // Rank depends on the filtered set: annotate copies, never the shared cached offerings.
   items = items.map((o) => ({ ...o }));
@@ -162,7 +171,19 @@ export async function searchOfferingsPaged(store, query) {
   // most expensive offering: one outlier made almost everything "cheap" and every import tie.
   const prices = items.map((o) => o.pricing.input_per_mtok).filter((p) => p != null).sort((a, b) => a - b);
   const cheaperThan = (p) => { let lo = 0, hi = prices.length; while (lo < hi) { const m = (lo + hi) >> 1; if (prices[m] < p) lo = m + 1; else hi = m; } return lo; };
+  // Local models rank by popularity among the listed local models (log of Ollama pulls): price, trust
+  // tier and checks describe a server, and a local model has none.
+  const maxPulls = Math.max(1, ...items.filter((o) => o.local).map(pullsOf));
   for (const o of items) {
+    if (o.local) {
+      const sizes = localSizes(o);
+      o.local = { ...o.local, sizes_memory: sizes.map(({ tag, memory_gb }) => ({ tag, memory_gb })) };
+      o.specialty = isEmbedder(o) ? 'embedding' : specialtyOf(o);
+      const popularity = pullsOf(o) > 1 ? Math.log10(pullsOf(o)) / Math.log10(Math.max(10, maxPulls)) : 0;
+      o.rank = round2(popularity);
+      o.rank_explanation = { basis: 'local', weights: { popularity: 1 }, components: { popularity: round2(popularity) }, pulls: o.local.pulls ?? null };
+      continue;
+    }
     const p = o.pricing.input_per_mtok;
     const components = {
       price: p == null ? 0 : prices.length > 1 ? 1 - cheaperThan(p) / (prices.length - 1) : 1,
@@ -178,7 +199,15 @@ export async function searchOfferingsPaged(store, query) {
   const ttftOf = (o) => o.observed.ttft_ms?.p50 ?? o.serving?.expected_ttft_ms?.p50 ?? Infinity;
   const tpsOf = (o) => (o.observed.tps > 0 ? o.observed.tps : null) ?? o.serving?.expected_tps?.p50 ?? -Infinity;
   const sort = q('sort') ?? 'rank';
+  const minMemory = (o) => o.local?.sizes_memory?.[0]?.memory_gb ?? Infinity;
   items.sort((a, b) => {
+    // hosted before local in a mixed list: their scores measure different things
+    if (Boolean(a.local) !== Boolean(b.local)) return Number(Boolean(a.local)) - Number(Boolean(b.local));
+    if (a.local) {
+      if (sort === 'size') return minMemory(a) - minMemory(b) || b.rank - a.rank || a.offering_id.localeCompare(b.offering_id);
+      if (sort === 'name') return a.offering_id.localeCompare(b.offering_id);
+      return b.rank - a.rank || pullsOf(b) - pullsOf(a) || a.offering_id.localeCompare(b.offering_id);
+    }
     if (sort === 'price') return (a.pricing.input_per_mtok ?? Infinity) - (b.pricing.input_per_mtok ?? Infinity);
     if (sort === 'ttft') return ttftOf(a) - ttftOf(b);
     if (sort === 'tps') return tpsOf(b) - tpsOf(a);
@@ -192,7 +221,7 @@ export async function searchOfferingsPaged(store, query) {
 
   const limit = Math.min(Number(q('limit') ?? 50), 200);
   const offset = Math.max(0, Math.floor(Number(q('offset') ?? 0)) || 0);
-  return { offerings: items.slice(offset, offset + limit), total: items.length, offset };
+  return { offerings: items.slice(offset, offset + limit), total: items.length, offset, counts };
 }
 
 export async function searchOfferings(store, query) {

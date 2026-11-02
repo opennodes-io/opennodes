@@ -350,8 +350,9 @@ export async function startRegistry({
     }],
 
     ['GET', '/v0/offerings', async (req, res, { query }) => {
-      const { offerings, total, offset } = await searchOfferingsPaged(store, query);
-      sendJson(res, 200, { offerings, total, offset });   // total = matches before `offset`/`limit`
+      const { offerings, total, offset, counts } = await searchOfferingsPaged(store, query);
+      // total = matches before `offset`/`limit`; counts = hosted/local matches before the `local` filter
+      sendJson(res, 200, { offerings, total, offset, counts });
     }],
 
     ['GET', '/v0/offerings/:nodeId/:offeringId', async (req, res, { params }) => {

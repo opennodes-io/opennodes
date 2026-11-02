@@ -204,8 +204,8 @@ function embedQuality(o) {
   if (!p) return 0.6;
   return p < 0.05 ? 0.3 : p < 0.1 ? 0.5 : p <= 1.5 ? 0.8 : 0.9;
 }
-/** Ollama library pull count ("95.1M", "300.4K") as a number: a tie-break, never a score. */
-function pullsOf(o) {
+/** Ollama library pull count ("95.1M", "300.4K") as a number: popularity, never a quality score. */
+export function pullsOf(o) {
   const m = String(o.local?.pulls ?? '').match(/^([\d.]+)\s*([KMB]?)/i);
   return m ? parseFloat(m[1]) * ({ K: 1e3, M: 1e6, B: 1e9 }[m[2].toUpperCase()] ?? 1) : 0;
 }

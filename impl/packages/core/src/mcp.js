@@ -15,6 +15,8 @@ const FILTERS = {
   tier: { ...TIER, description: 'Minimum trust tier. unverified < community (passed automated checks) < verified (identity and context verified) < attested.' },
   lang: { type: 'string', description: 'Language with minimum grade, "<iso-code>[:basic|strong|native]", e.g. "pl:strong" or "de".' },
   q: { type: 'string', description: 'Free-text match against the model metadata, offering id, and node id, e.g. "bielik" or "coder".' },
+  local: { type: 'boolean', description: "true: only models that run on the user's own machine (the Ollama library: no server, free, ranked by Ollama pulls, with local.sizes_memory per size). false: only hosted offerings. Omit for both (hosted listed first). The result's counts give { hosted, local }." },
+  memory_gb: { type: 'number', minimum: 1, description: 'RAM/VRAM the user can give a local model, in GB: keeps local models with a size that fits (4-bit estimate). Hosted offerings are unaffected.' },
   jurisdiction: { type: 'string', description: 'Only operators that declare a country inside it: "eea" (EU + Iceland, Liechtenstein, Norway) or comma-separated ISO country codes, e.g. "DE,FI". Registered nodes declare their country; imported listings of known providers carry an inferred one (jurisdiction.basis = "inferred"); listings without a country are excluded.' },
 };
 
@@ -50,7 +52,7 @@ export const MCP_TOOLS = [
   {
     name: 'search_offerings',
     title: 'Search inference offerings',
-    description: "Search AI inference offerings in the OpenNodes registry — registered nodes AND imported catalogs (OpenRouter, Hugging Face Inference Providers, models.dev, local nodes). All filters are optional and combine with AND. Returns { offerings, total }: each offering has node_id, offering_id, model, pricing (USD per MTok), trust tier, serving capabilities, measured probe results, and a rank explanation. Use get_offering for one offering's full card, recommend to let the advisor choose.",
+    description: "Search AI inference offerings in the OpenNodes registry — registered nodes AND imported catalogs (OpenRouter, Hugging Face Inference Providers, models.dev, local nodes). All filters are optional and combine with AND. Returns { offerings, total, counts }: each offering has node_id, offering_id, model, pricing (USD per MTok), trust tier, serving capabilities, measured probe results, and a rank explanation. Use get_offering for one offering's full card, recommend to let the advisor choose.",
     inputSchema: {
       type: 'object', additionalProperties: false,
       properties: {

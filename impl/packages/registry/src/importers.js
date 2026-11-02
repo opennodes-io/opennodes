@@ -247,6 +247,11 @@ export async function importHuggingFace(store, router, hub = []) {
 
 export const OLLAMA_LIBRARY_URL = 'https://ollama.com/library';
 
+/** Text of an HTML fragment: the library page escapes apostrophes and ampersands (&#39; &amp;). */
+const decodeEntities = (t) => t.replace(/&(#(\d+)|#x([0-9a-f]+)|amp|lt|gt|quot|apos);/gi, (m, _, dec, hex) =>
+  dec ? String.fromCodePoint(Number(dec)) : hex ? String.fromCodePoint(parseInt(hex, 16))
+    : { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[m.slice(1, -1).toLowerCase()]);
+
 /** Parse ollama.com/library HTML into entries. Resilient to styling churn:
  *  anchors on /library/{name}, spans classified by content (sizes look like "27b"/"270m"). */
 export function parseOllamaLibrary(html) {
@@ -256,7 +261,8 @@ export function parseOllamaLibrary(html) {
     const name = block.match(/^([a-z0-9._-]+)"/)?.[1];
     if (!name) continue;
     const chunk = block.slice(0, 6000);
-    const description = chunk.match(/<p[^>]*class="[^"]*max-w-lg[^"]*"[^>]*>\s*([^<]{1,400}?)\s*<\/p>/)?.[1]?.trim() ?? null;
+    const rawDescription = chunk.match(/<p[^>]*class="[^"]*max-w-lg[^"]*"[^>]*>\s*([^<]{1,400}?)\s*<\/p>/)?.[1]?.trim();
+    const description = rawDescription ? decodeEntities(rawDescription) : null;
     const spans = [...chunk.matchAll(/<span[^>]*class="[^"]*inline-flex[^"]*"[^>]*>\s*([^<]{1,40}?)\s*<\/span>/g)].map((m) => m[1].trim());
     const sizes = spans.filter((s) => /^\d+(\.\d+)?[mb]$/i.test(s));
     const capabilities = spans.filter((s) => !/^\d+(\.\d+)?[mb]$/i.test(s));
