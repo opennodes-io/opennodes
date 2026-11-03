@@ -1,5 +1,24 @@
 # ONP specification changes
 
+## Draft 0.1, revision 5 — 2026-11-03: EU and EEA in region matching
+
+Revision 4 let a residency scope of `EU` or `EEA` cover the member states, but search still read `EU` as a plain code that contains only `EU-…`, so `region=EU` missed offerings served from Frankfurt or Paris. Revision 5 uses one containment rule for both.
+
+| # | Where | Change |
+|---|---|---|
+| E1 | ONP-2 §3 | `EEA` accepted as a region code. `EU` and `EEA` contain their member states and those states' subdivisions, and `EEA` contains `EU`: `EU` is met by `DE-HE`, not by `NO`, `CH` or `GB`; `EEA` is met by `NO`. Containment stays one-way: a requirement of `DE` is not met by `EU` |
+| E2 | ONP-3 §5, §5a, §5c | `region=EU` / `region=EEA` in search, the recommend policy and `/v0/locations` follow E1. Every listed location must still lie inside, so an offering also served from London or Zürich does not match `region=EU` |
+| E3 | ONP-2 §3b | Residency `scope` uses the §3 rule directly (no separate EU/EEA rule) |
+
+Cards that pin `EU` keep their meaning; offerings pinned to member states now also match `region=EU`. The `jurisdiction=` filter (the operator's country) is unchanged: there `EU` already meant every EEA country.
+
+### Reference implementation changes
+
+- `@opennodes/core`: `regionWithin` (and so `residencyWithin` and the advisor's region policy) applies EU and EEA membership; `scopeCovers` is the same test with its arguments the other way round. MCP `region` descriptions mention member states.
+- `@opennodes/registry`: `region=EU` and `region=EEA` match member-state offerings in `/v0/offerings`, `/v0/recommend` and `/v0/locations`. With the bundled seeds, `region=EU` goes from the legacy `eu-…` pins only to 117 offerings.
+- Tests: `impl/test/spec-rev2.test.js` (containment cases), `impl/test/locations.test.js` (search).
+- Versions: core 0.1.20, cli 0.1.29, registry 0.1.45, ollama-router 0.1.23.
+
 ## Draft 0.1, revision 4 — 2026-11-03: residency commitments
 
 Where a provider serves from (revision 3) is half the answer; the other half is what it promises about where data may go. Revision 4 makes that promise machine-readable, with its source. It is additive: no existing card changes meaning, and region matching in search is unchanged.
@@ -20,7 +39,7 @@ Where a provider serves from (revision 3) is half the answer; the other half is 
   - the Canada and Europe seed entries carry residency, directly or via `residency_of` (a cloud's Canadian and European regions share the cloud's commitments);
   - the "Where models run" page shows residency per site, a residency filter and a provider table; a collapsible legend and a countries table grouped by continent (sites live/planned, providers by name, models listed, processing promises; click to filter) replace the one-line country summary (registry 0.1.44).
 - `@opennodes/cli`: the stdio MCP server proxies `find_residency`.
-- Known gap: `region=EU` in search (§5) matches only codes inside `EU` (`EU-…`), not member states such as `DE`; residency scopes do cover member states. Aligning search is a separate change.
+- Known gap: `region=EU` in search (§5) matches only codes inside `EU` (`EU-…`), not member states such as `DE`; residency scopes do cover member states. Fixed in revision 5.
 
 ## Draft 0.1, revision 3 — 2026-11-02: where models run
 

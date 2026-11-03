@@ -81,7 +81,7 @@ Registration alone never grants a trust tier. Tiers above `unverified` are gated
 &supports=tool_calls,json_mode
 &lang=uk:strong               // language + minimum grade (ONP-2 §5)
 &max_input_price=1.00        // USD per MTok
-&region=EU                   // residency: pinned regions and live serving sites (else node regions) entirely within this code
+&region=EU                   // residency: pinned regions and live serving sites (else node regions) entirely within this code; EU and EEA include member states
 &location_basis=documented   // minimum evidence for every serving site (ONP-2 §3a)
 &exclude_lineage=CN          // drop offerings whose declared model lineage includes these countries
 &jurisdiction=eea            // operator country: eea (alias eu) or ISO 3166-1 codes, e.g. CA or DE,FI
@@ -95,7 +95,7 @@ Registration alone never grants a trust tier. Tiers above `unverified` are gated
 ```
 
 Matching rules:
-- `region=X` matches an offering when its residency codes are non-empty and **every** one lies within `X` under the containment rule of ONP-2 §3. The residency codes are all `data_policy.region_pinning` codes plus the regions of all live serving locations (ONP-2 §3a); when an offering has neither, the node's `regions`. A residency requirement is only met when no listed location falls outside it, so an offering served from Canada *and* the US does not match `region=CA`, and one whose `locations` is an empty list (unknown) matches no region.
+- `region=X` matches an offering when its residency codes are non-empty and **every** one lies within `X` under the containment rule of ONP-2 §3. The residency codes are all `data_policy.region_pinning` codes plus the regions of all live serving locations (ONP-2 §3a); when an offering has neither, the node's `regions`. A residency requirement is only met when no listed location falls outside it, so an offering served from Canada *and* the US does not match `region=CA`, one served from Frankfurt and Paris matches `region=EU` (ONP-2 §3: `EU` contains its member states) but one also served from London does not, and one whose `locations` is an empty list (unknown) matches no region.
 - `location_basis=B` matches an offering that has at least one live serving location and whose every live location has a basis at least as strong as `B` (`claimed` < `documented` < `measured` < `attested`).
 - `exclude_lineage=C1,C2` drops an offering when its `model.lineage_origins` contains any listed country. Offerings that declare no lineage are kept and MUST be shown as unknown, not as compliant.
 - `lang=fr` matches the tag `fr` and its subtags (`fr-CA`); `lang=fr-CA` matches only `fr-CA`.

@@ -56,6 +56,18 @@ test('region containment: a code contains its subdivisions, case-insensitively (
   assert.equal(regionWithin('uk-lnd', 'GB'), true);
   assert.equal(regionWithin('UKR', 'UK'), false, 'only the country part is renamed');
   assert.equal(regionWithin('CAN', 'CA'), false);
+  // EU and EEA contain their member states; the EEA contains the EU, not the other way round.
+  assert.equal(regionWithin('DE-HE', 'EU'), true);
+  assert.equal(regionWithin('fr', 'eu'), true);
+  assert.equal(regionWithin('NO-18', 'EU'), false);
+  assert.equal(regionWithin('NO-18', 'EEA'), true);
+  assert.equal(regionWithin('eu-central', 'EEA'), true);
+  assert.equal(regionWithin('EEA', 'EU'), false);
+  assert.equal(regionWithin('CH', 'EEA'), false);
+  assert.equal(regionWithin('GB', 'EU'), false);
+  assert.equal(regionWithin('EUR', 'EU'), false);
+  assert.equal(residencyWithin(['DE-HE', 'FR-IDF', 'eu-west'], 'EU'), true);
+  assert.equal(residencyWithin(['DE-HE', 'CH'], 'EU'), false);
   assert.equal(residencyWithin(['CA-QC', 'CA-ON'], 'CA'), true);
   assert.equal(residencyWithin(['CA-QC', 'US'], 'CA'), false, 'one location outside breaks residency');
   assert.equal(residencyWithin([], 'CA'), false, 'no declared location proves nothing');

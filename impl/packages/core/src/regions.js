@@ -1,16 +1,23 @@
 // Region containment (ONP-2 §3): case-insensitive codes where a code contains its own
-// subdivisions, so "CA" contains "CA-QC" and legacy "eu" contains "eu-central".
+// subdivisions, so "CA" contains "CA-QC" and legacy "eu" contains "eu-central"; "EU" and "EEA"
+// also contain their member states, and the EEA contains the EU.
 
 /** ISO 3166-1 alpha-2 for a country code; "UK" is the common name for GB (ISO reserves UK). */
 export const isoCountry = (c) => { const u = String(c).trim().toUpperCase(); return u === 'UK' ? 'GB' : u; };
 /** A region code with its country part in ISO form: "uk-lnd" -> "gb-lnd". */
 const isoRegion = (code) => String(code).trim().toLowerCase().replace(/^uk(?=-|$)/, 'gb');
 
-/** Is region `code` inside `required`? */
+const EU_STATES = new Set(['AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT',
+  'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE']);
+const EEA_STATES = new Set([...EU_STATES, 'IS', 'LI', 'NO']);
+const UNIONS = { eu: EU_STATES, eea: EEA_STATES };
+
+/** Is region `code` inside `required`? "DE-HE" is inside "DE", "EU" and "EEA"; "NO" only in "EEA". */
 export function regionWithin(code, required) {
   const c = isoRegion(code);
   const r = isoRegion(required);
-  return c === r || c.startsWith(`${r}-`);
+  if (c === r || c.startsWith(`${r}-`)) return true;
+  return Boolean(UNIONS[r]) && (UNIONS[r].has(countryOf(code)) || (r === 'eea' && regionWithin(code, 'EU')));
 }
 
 /**
@@ -58,18 +65,8 @@ export const commitmentRank = (c) => { const i = RESIDENCY_COMMITMENTS.indexOf(c
 /** Lower is wider: default 0, opt_in 1, enterprise (or unknown) 2. */
 export const availabilityRank = (a) => { const i = RESIDENCY_AVAILABILITY.indexOf(a ?? 'default'); return i < 0 ? 2 : i; };
 
-// A residency scope of "EU" or "EEA" covers its member states, which plain region containment
-// (where "EU" contains only "EU-…" codes) does not.
-const EU_STATES = new Set(['AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT',
-  'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE']);
-const EEA_STATES = new Set([...EU_STATES, 'IS', 'LI', 'NO']);
-
-/** Does residency `scope` (one code) cover `region`? Like regionWithin, plus EU and EEA membership. */
-export function scopeCovers(scope, region) {
-  const s = isoCountry(scope);
-  if (s === 'EU' || s === 'EEA') return regionWithin(region, s) || (s === 'EU' ? EU_STATES : EEA_STATES).has(countryOf(region));
-  return regionWithin(region, scope);
-}
+/** Does residency `scope` (one code) cover `region`? The same containment as search (regionWithin). */
+export const scopeCovers = (scope, region) => regionWithin(region, scope);
 
 /**
  * The commitments that apply at a site in `region`: a processing or storage promise whose scope

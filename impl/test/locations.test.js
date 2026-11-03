@@ -131,6 +131,14 @@ test('search: region= covers serving sites; location_basis= and exclude_lineage=
   assert.ok(!nodes.has('import.seed.ca.cohere'));             // hosted API in the US
   assert.ok(inCanada.every((o) => o.locations.length && o.residency.every((r) => r.startsWith('CA'))));
 
+  // EU matches offerings served only from member states (DE, FR, ...); a London or Zürich site breaks it.
+  const inEu = (await get(registry.origin, '/v0/offerings?region=EU&limit=500')).offerings;
+  assert.ok(inEu.length > 0);
+  assert.ok(inEu.every((o) => o.residency.every((r) => !/^(GB|UK|CH|NO|US|CA)/i.test(r))), JSON.stringify(inEu.map((o) => o.residency)));
+  const inEea = new Set((await get(registry.origin, '/v0/offerings?region=EEA&limit=500')).offerings.map((o) => o.offering_id + o.node_id));
+  assert.ok(inEu.every((o) => inEea.has(o.offering_id + o.node_id)));
+  assert.ok((await get(registry.origin, '/v0/locations?region=EU')).sites.some((s) => s.country === 'DE'));
+
   const documented = (await get(registry.origin, '/v0/offerings?region=CA&location_basis=documented&limit=200')).offerings;
   assert.ok(documented.length > 0 && !documented.some((o) => o.node_id === 'import.seed.ca.azure-openai'));
 
