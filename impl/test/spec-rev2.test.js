@@ -2,7 +2,7 @@
 // region and language containment, and the Stage A card-consistency check.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateCard, regionWithin, residencyWithin, recommend, extractFeatures } from '@opennodes/core';
+import { validateCard, regionWithin, residencyWithin, recommend, recommendEmbedders, extractFeatures } from '@opennodes/core';
 import { startFixtureNode } from '@opennodes/fixture-node';
 import { startRegistry } from '@opennodes/registry';
 import { cardConsistency } from '@opennodes/registry/src/probes.js';
@@ -86,6 +86,28 @@ test('advisor region policy uses containment and requires every pinned location 
   const r = recommend([qc, split], extractFeatures('Summarize this memo.'), { region: 'CA', limit: 5 });
   assert.deepEqual(r.recommendations.map((x) => x.node_id), ['ca.example.qc']);
   assert.equal(r.rejected.region, 1);
+});
+
+test('advisor region policy: unknown location fails, as in search; own machine and LAN pass; embedders too', () => {
+  const base = { tier: 'community', source: 'import', card_revision: 'r1', modality: 'text',
+    model: { name: 'M', artifact: 'hf:x/m', params_b: 70 }, serving: { context_window: 128000, supports: ['streaming'] },
+    binding: { profile: 'onp.openai.chat/v1', model_id: 'm' },
+    pricing: { currency: 'EUR', input_per_mtok: 1, output_per_mtok: 3, schemes: ['prepaid'] },
+    observed: { probe_success: 1, probes: 4, ttft_ms: null, tps: null, availability: null }, endpoints: { openai: 'https://a.example/v1' } };
+  const offerings = [
+    { ...base, node_id: 'import.hf.unknown', offering_id: 'u' },                                   // no location at all
+    { ...base, node_id: 'de.example.fra', offering_id: 'fra', residency: ['DE-HE'] },              // registry summary codes
+    { ...base, node_id: 'fr.example.par', offering_id: 'par', locations: [{ region: 'FR-IDF', status: 'live' }, { region: 'US-VA', status: 'planned' }] },
+    { ...base, node_id: 'uk.example.lon', offering_id: 'lon', residency: ['DE-HE', 'GB-LND'] },
+    { ...base, node_id: 'lan.peer', offering_id: 'lan', tier: 'lan', source: 'lan' },
+    { ...base, node_id: 'local', offering_id: 'local', tier: 'local', source: 'local', local: { run: 'ollama run m' } },
+  ];
+  const r = recommend(offerings, extractFeatures('Summarize this memo.'), { region: 'EU', limit: 10 });
+  assert.deepEqual(r.recommendations.map((x) => x.node_id).sort(), ['de.example.fra', 'fr.example.par', 'lan.peer', 'local']);
+  assert.equal(r.rejected.region, 2);
+  const embed = (o) => ({ ...o, modality: 'embedding', model: { name: 'E5 embed', artifact: 'hf:x/e5-embed' } });
+  const e = recommendEmbedders(offerings.map(embed), extractFeatures('Build a RAG index over 2000 PDFs'), { region: 'EU' });
+  assert.deepEqual(e.map((x) => x.node_id).sort(), ['de.example.fra', 'fr.example.par', 'lan.peer', 'local']);
 });
 
 test('Stage A card consistency: data_policy present, offering schemes declared by the node', () => {

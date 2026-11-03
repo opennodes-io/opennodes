@@ -45,7 +45,7 @@ export const MCP_TOOLS = [
             min_tier: { ...TIER, description: 'Exclude offerings below this trust tier.' },
             max_input_per_mtok: { type: 'number', minimum: 0, description: 'Maximum input price in USD per million tokens.' },
             max_total_usd: { type: 'number', minimum: 0, description: 'Maximum estimated total cost of the call in USD.' },
-            region: { type: 'string', description: 'Required data region, e.g. "CA" or "EU" (EU and EEA include their member states). Offerings pinned to, or served from, other regions are excluded.' },
+            region: { type: 'string', description: 'Required data region, e.g. "CA" or "EU" (EU and EEA include their member states). Offerings pinned to, or served from, other regions are excluded, and so are hosted offerings with no known location; models on this machine or LAN always qualify.' },
             jurisdiction: { type: 'string', description: 'Only operators in this jurisdiction: "eea" or ISO country codes ("DE,FI"). Local and LAN models always qualify.' },
             prefer_local: { type: 'boolean', description: 'Give a bonus to nodes on this machine or LAN.' },
             local_memory_gb: { type: 'number', minimum: 1, description: 'RAM/VRAM this machine can give a local model, in GB. Local models that cannot fit are left out, and the largest size that fits is picked (4-bit estimate). The local stdio server fills this from the machine when it is not given.' },

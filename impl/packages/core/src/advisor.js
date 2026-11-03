@@ -3,7 +3,7 @@
 // client-side (gateway, stdio MCP, SDK) as well as in the registry; a client can send
 // only the extracted *features* to a registry and never the prompt (privacy by design).
 import { estimateBounds, round6 } from './pricing.js';
-import { residencyWithin, isoCountry } from './regions.js';
+import { residencyWithin, isoCountry, servingLocations } from './regions.js';
 
 /* ------------------------------------------------------------------ features */
 
@@ -391,6 +391,18 @@ export function jurisdictionCountries(spec) {
 }
 
 /**
+ * Is the offering served inside `region`? The rule of search (ONP-3 §5): its pinned regions and
+ * live serving sites (else the node's regions) must all lie inside, and an offering with no known
+ * location does not qualify. Models on the user's own machine or network always do.
+ */
+export function inRegion(offering, region) {
+  if (offering.local || offering.tier === 'local' || offering.tier === 'lan') return true;
+  const codes = offering.residency
+    ?? [...(offering.data_policy?.region_pinning ?? []), ...servingLocations(offering).map((l) => l.region)];
+  return residencyWithin(codes, region);
+}
+
+/**
  * Is the offering's operator in the jurisdiction? Registered nodes declare their country; imports of
  * known providers carry an inferred one (`jurisdiction.basis`). No country counts as outside. When the
  * registry's server-location check found the API host in a country outside the jurisdiction (and not
@@ -486,12 +498,7 @@ export function recommend(offerings, features, policy = {}) {
       const dp = o.data_policy;
       if (!dp || dp.training_on_inputs === true || (dp.retention && dp.retention !== 'none')) return reject('data_policy');
     }
-    if (policy.region) {
-      // Offerings with neither pinning nor known locations (e.g. local/LAN models) pass;
-      // the others must lie entirely inside the required region (ONP-2 §3 containment).
-      const codes = [...(o.data_policy?.region_pinning ?? []), ...(o.locations ?? []).map((l) => l.region)];
-      if (codes.length && !residencyWithin(codes, policy.region)) return reject('region');
-    }
+    if (policy.region && !inRegion(o, policy.region)) return reject('region');
     if (policy.jurisdiction && !o.local && !inJurisdiction(o, policy.jurisdiction)) return reject('jurisdiction');
     if (features.locality === 'required' && !o.local) return reject('not_local');
     if (policy.local_memory_gb && o.local) {
@@ -595,6 +602,7 @@ function rankEmbedders(offerings, features, policy, minTier, limit = 3) {
     && tierRank(o.tier) >= minTier
     && !(policy.local_memory_gb && o.local && localSizes(o).length && !localSizes(o).some((x) => x.memory_gb <= policy.local_memory_gb))
     && (o.pricing?.input_per_mtok ?? 0) <= (policy.max_input_per_mtok ?? Infinity)
+    && (!policy.region || inRegion(o, policy.region))
     && (!policy.jurisdiction || o.local || inJurisdiction(o, policy.jurisdiction)));
   const maxPrice = Math.max(...pool.map((o) => o.pricing?.input_per_mtok ?? 0), 0.000001);
   const multilingual = features.language !== 'en';

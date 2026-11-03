@@ -9,6 +9,7 @@ Revision 4 let a residency scope of `EU` or `EEA` cover the member states, but s
 | E1 | ONP-2 §3 | `EEA` accepted as a region code. `EU` and `EEA` contain their member states and those states' subdivisions, and `EEA` contains `EU`: `EU` is met by `DE-HE`, not by `NO`, `CH` or `GB`; `EEA` is met by `NO`. Containment stays one-way: a requirement of `DE` is not met by `EU` |
 | E2 | ONP-3 §5, §5a, §5c | `region=EU` / `region=EEA` in search, the recommend policy and `/v0/locations` follow E1. Every listed location must still lie inside, so an offering also served from London or Zürich does not match `region=EU` |
 | E3 | ONP-2 §3b | Residency `scope` uses the §3 rule directly (no separate EU/EEA rule) |
+| E4 | ONP-3 §5a | The recommend `region` policy has the §5 meaning: a hosted offering with no pinned region, live serving site or node region does not satisfy it. Offerings on the user's own machine or network still always do. Previously any offering with no known location passed, so an EU policy could shortlist US providers (added 2026-11-03 with registry 0.1.46) |
 
 Cards that pin `EU` keep their meaning; offerings pinned to member states now also match `region=EU`. The `jurisdiction=` filter (the operator's country) is unchanged: there `EU` already meant every EEA country.
 
@@ -18,6 +19,7 @@ Cards that pin `EU` keep their meaning; offerings pinned to member states now al
 - `@opennodes/registry`: `region=EU` and `region=EEA` match member-state offerings in `/v0/offerings`, `/v0/recommend` and `/v0/locations`. With the bundled seeds, `region=EU` goes from the legacy `eu-…` pins only to 117 offerings.
 - Tests: `impl/test/spec-rev2.test.js` (containment cases), `impl/test/locations.test.js` (search).
 - Versions: core 0.1.20, cli 0.1.29, registry 0.1.45, ollama-router 0.1.23.
+- E4 (core 0.1.21, cli 0.1.30, registry 0.1.46, ollama-router 0.1.24): new `inRegion` in core, used by `recommend` for generators and embedders (embedders previously ignored `region`) and so by the registry's `/v0/recommend`, MCP `recommend`, the CLI gateway and the Ollama router. It uses an offering summary's `residency` codes when present, else pins plus live sites. With today's registry an EU policy shortlists only local and LAN models: the EU-located offerings are listing-only, and no callable listing declares a location yet.
 
 ## Draft 0.1, revision 4 — 2026-11-03: residency commitments
 
