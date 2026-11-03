@@ -131,8 +131,27 @@
   #w-map { height: 440px; margin-bottom: 0.4rem; overflow: hidden; }
   #w-map .leaflet-popup-content { font-family: "Archivo", "Helvetica Neue", Arial, sans-serif; font-size: 0.8rem; line-height: 1.4; margin: 0.6rem 0.8rem; }
   #w-map .leaflet-popup-content .site + .site { border-top: 1px solid #D6DEE3; margin-top: 0.45rem; padding-top: 0.45rem; }
-  .wlegend { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; font-size: 0.74rem; color: var(--muted); margin: 0 0 0.8rem; }
-  .wlegend .dot { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 50%; border: 2px solid currentColor; vertical-align: -0.1rem; margin-right: 0.3rem; }
+  .wstats { display: flex; flex-wrap: wrap; gap: 0.5rem 1.6rem; align-items: baseline; }
+  .wstats .stat b { font-size: 1.15rem; margin-right: 0.3rem; }
+  .wstats .stat { font-size: 0.8rem; color: var(--muted); }
+  details.wfold { margin: 0 0 0.8rem; }
+  details.wfold > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 0.6rem; font-weight: 600; font-size: 0.86rem; padding: 0.6rem 1rem; }
+  details.wfold > summary::-webkit-details-marker { display: none; }
+  details.wfold > summary::before { content: "+"; font-family: "IBM Plex Mono", monospace; color: var(--muted); width: 0.8rem; }
+  details.wfold[open] > summary::before { content: "–"; }
+  details.wfold > summary .prov { font-weight: 400; }
+  .wlegend { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.9rem 1.6rem; font-size: 0.78rem; color: var(--muted); padding: 0 1rem 0.9rem; }
+  .wlegend h4 { font-family: "IBM Plex Mono", monospace; font-size: 0.6rem; font-weight: 600; letter-spacing: 0.08em; color: var(--faint); margin: 0 0 0.35rem; }
+  .wlegend ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+  .wlegend .dot { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 50%; border: 2px solid currentColor; vertical-align: -0.1rem; margin-right: 0.4rem; }
+  #w-countries table.grid td { padding: 0.5rem 0.8rem; vertical-align: top; }
+  #w-countries tr.cgroup td { background: var(--line-2); font-family: "IBM Plex Mono", monospace; font-size: 0.62rem; font-weight: 600; letter-spacing: 0.08em; color: var(--muted); padding: 0.35rem 0.8rem; }
+  #w-countries tr.crow { cursor: pointer; }
+  #w-countries tr.crow:hover td { background: var(--line-2); }
+  #w-countries .cname b { display: block; }
+  #w-countries .provs { font-size: 0.78rem; color: var(--muted); }
+  .sitebar { display: flex; height: 0.4rem; width: 6rem; border-radius: 0.2rem; overflow: hidden; background: var(--line-2); margin-top: 0.25rem; }
+  .sitebar span { background: var(--accent); } .sitebar span + span { background: var(--warn); }
   .micro { font-family: "IBM Plex Mono", monospace; font-size: 0.58rem; font-weight: 600; letter-spacing: 0.04em; }
   .m-measured { color: var(--good); } .m-claimed { color: var(--faint); font-weight: 400; } .m-warn { color: var(--warn); }
   .prov { font-family: "IBM Plex Mono", monospace; font-size: 0.64rem; color: var(--faint); }
@@ -411,14 +430,37 @@
   </div>
   <div class="panel pad" id="w-summary" style="margin-bottom:0.8rem"></div>
   <div class="panel" id="w-map" hidden></div>
-  <div class="wlegend" id="w-legend" hidden>
-    <span><span class="dot" style="color:var(--good); background:var(--good)"></span>measured or attested</span>
-    <span><span class="dot" style="color:var(--accent); background:var(--accent)"></span>documented</span>
-    <span><span class="dot" style="color:var(--faint); background:var(--faint)"></span>claimed</span>
-    <span><span class="dot" style="color:var(--muted)"></span>hollow: approximate point, only the region or country is known</span>
-    <span><span class="dot" style="color:var(--warn); border-style:dashed"></span>dashed: planned</span>
-    <span>Size: models served. Several sites in one city share a marker.</span>
-  </div>
+  <details class="panel wfold" id="w-legend" data-fold="legend" open>
+    <summary>Legend <span class="prov">what the markers, chips and columns mean</span></summary>
+    <div class="wlegend">
+      <div><h4>MARKER COLOUR · EVIDENCE</h4><ul>
+        <li><span class="dot" style="color:var(--good); background:var(--good)"></span>measured or attested: registry probes or a signed, audited card</li>
+        <li><span class="dot" style="color:var(--accent); background:var(--accent)"></span>documented: the provider's own dated page</li>
+        <li><span class="dot" style="color:var(--faint); background:var(--faint)"></span>claimed: the provider or a news report says so</li>
+      </ul></div>
+      <div><h4>MARKER SHAPE</h4><ul>
+        <li><span class="dot" style="color:var(--muted)"></span>hollow: approximate point, only the region or country is known</li>
+        <li><span class="dot" style="color:var(--warn); border-style:dashed"></span>dashed: planned, not serving yet</li>
+        <li>Size grows with the models served. Several sites in one city share a marker; click it for each one.</li>
+      </ul></div>
+      <div><h4>RESIDENCY · WHAT THE PROVIDER PROMISES</h4><ul>
+        <li><span class="chip r-processing">PROCESSING</span> prompts, outputs and stored data stay in the area</li>
+        <li><span class="chip r-storage">STORAGE</span> data at rest stays; processing may not</li>
+        <li><span class="chip r-none">NO FIXED AREA</span> the provider says data may go anywhere</li>
+        <li><span class="chip r-unstated">NOT STATED</span> no public promise found</li>
+        <li><b>opt in</b>: a setting or regional endpoint you choose · <b>enterprise</b>: contract or paid plan only</li>
+      </ul></div>
+      <div><h4>COUNTS</h4><ul>
+        <li><b>Providers</b>: companies with at least one site in the country</li>
+        <li><b>Models listed</b>: distinct models a provider says it serves there. A dash means the provider names its sites but not which models run at each</li>
+        <li>Click a country to filter the map and the site table.</li>
+      </ul></div>
+    </div>
+  </details>
+  <details class="panel wfold" id="w-countries" data-fold="countries" open>
+    <summary>Countries <span class="prov" id="w-countries-count"></span></summary>
+    <div class="tablewrap" id="w-countries-table"></div>
+  </details>
   <div class="panel tablewrap" id="w-table"></div>
   <h2 id="w-res" style="margin-top:1.6rem">Residency commitments</h2>
   <p class="sub">What each provider officially promises about where prompts, outputs and stored data stay, with the page that says so, including routers and providers with no known sites. <b>default</b>: every customer; <b>opt in</b>: a setting, regional endpoint or region you choose; <b>enterprise</b>: contract or paid plan only. Curated from public pages; a promise is not proof (<a href="https://github.com/opennodes-io/opennodes/blob/main/spec/ONP-2-node-card.md#3b-residency--what-the-operator-promises-about-where-data-stays" target="_blank" rel="noopener">ONP-2 §3b</a>). Also as <a id="r-json" href="/v0/residency">JSON</a> and <a id="r-csv" href="/v0/residency?format=csv">CSV</a>.</p>
@@ -2240,17 +2282,21 @@ async function loadWhere() {
   $('#w-geojson').href = '/v0/locations' + (q ? q + '&' : '?') + 'format=geojson';
   try {
     const r = await api('/v0/locations' + q);
-    renderWhereMap(r.sites).catch((e) => { $('#w-map').hidden = true; $('#w-legend').hidden = true; console.warn('map:', e.message); });
+    renderWhereMap(r.sites).catch((e) => { $('#w-map').hidden = true; console.warn('map:', e.message); });
     if (!whereCountriesLoaded && !q) {
       whereCountriesLoaded = true;
       $('#w-country').innerHTML = '<option value="">every country</option>'
-        + r.countries.map((c) => `<option value="${esc(c.country)}">${esc(c.country)} · ${c.sites} sites</option>`).join('');
+        + r.countries.map((c) => `<option value="${esc(c.country)}">${esc(countryName(c.country))} · ${c.sites} sites</option>`).join('');
     }
     const s = r.summary;
     $('#w-counts').textContent = `${s.sites} sites · ${s.countries} countries`;
-    $('#w-summary').innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:0.4rem 1.2rem; font-size:0.84rem">`
-      + r.countries.map((c) => `<span><b>${esc(c.country)}</b> ${c.providers} providers · ${c.sites} sites (${c.live_sites} live) · ${c.models} models</span>`).join('')
-      + `</div><p class="prov" style="margin:0.5rem 0 0">${fmtInt(s.located_offerings)} offerings in the registry declare where they run; ${fmtInt(s.unlocated_offerings)} do not. That gap is what this page exists to close.</p>`;
+    const live = r.sites.filter((x) => x.status === 'live').length;
+    const promised = r.sites.filter((x) => x.residency?.some((c) => c.commitment === 'processing')).length;
+    const stat = (n, label) => `<span class="stat"><b>${fmtInt(n)}</b>${label}</span>`;
+    $('#w-summary').innerHTML = `<div class="wstats">${stat(s.sites, 'sites')}${stat(live, 'live')}${stat(s.countries, 'countries')}`
+      + `${stat(new Set(r.sites.map((x) => x.provider)).size, 'providers')}${stat(promised, 'sites with a processing promise')}</div>`
+      + `<p class="prov" style="margin:0.5rem 0 0">${fmtInt(s.located_offerings)} offerings in the registry declare where they run; ${fmtInt(s.unlocated_offerings)} do not. That gap is what this page exists to close.</p>`;
+    renderCountries(r.sites);
     const models = (x) => x.models.length
       ? `<div class="wmodels">${x.models.slice(0, 12).map((m) => `<span>${esc(m.name)}${m.lineage_origins ? ` <span class="lin">${esc(m.lineage_origins.join('/'))}</span>` : ''}</span>`).join('')}${x.models.length > 12 ? `<span class="prov">+${x.models.length - 12} more</span>` : ''}</div>`
       : `<span style="color:var(--muted); font-size:0.8rem">${esc(x.models_note ?? '—')}</span>`;
@@ -2271,6 +2317,62 @@ async function loadWhere() {
       <td>${models(x)}</td>
     </tr>`).join('') + '</tbody></table>' : '<p class="sub" style="padding:0.9rem 1rem; margin:0">No sites match these filters.</p>';
   } catch (e) { $('#w-table').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
+}
+/* Countries table: grouped by continent, sites as live/planned, the providers by name. */
+const CONTINENT = Object.fromEntries([
+  ['Americas', 'US CA MX BR AR CL CO PE UY CR PA'],
+  ['Europe', 'AT BE BG CH CY CZ DE DK EE ES FI FR GB GR HR HU IE IS IT LI LT LU LV MT NL NO PL PT RO RS SE SI SK UA TR'],
+  ['Middle East and Africa', 'AE BH EG IL JO KE KW MA NG OM QA SA ZA'],
+  ['Asia-Pacific', 'AU CN HK ID IN JP KR MY NZ PH PK SG TH TW VN KZ'],
+].flatMap(([name, codes]) => codes.split(' ').map((c) => [c, name])));
+const CONTINENT_ORDER = ['Americas', 'Europe', 'Middle East and Africa', 'Asia-Pacific', 'Other'];
+let regionNames = null;
+try { regionNames = new Intl.DisplayNames(['en'], { type: 'region' }); } catch { /* old browser: codes only */ }
+const countryName = (code) => { try { return regionNames?.of(code) ?? code; } catch { return code; } };
+function renderCountries(sites) {
+  const by = new Map();
+  for (const s of sites) {
+    const c = by.get(s.country) ?? { code: s.country, sites: 0, live: 0, planned: 0, providers: new Map(), models: new Set(), processing: 0 };
+    c.sites++;
+    if (s.status === 'live') c.live++; else if (s.status === 'planned') c.planned++;
+    c.providers.set(s.provider, (c.providers.get(s.provider) ?? 0) + 1);
+    for (const m of s.models) c.models.add(m.artifact ?? m.name);
+    if (s.residency?.some((x) => x.commitment === 'processing')) c.processing++;
+    by.set(s.country, c);
+  }
+  const rows = [...by.values()].sort((a, b) => b.sites - a.sites || a.code.localeCompare(b.code));
+  const max = Math.max(1, ...rows.map((c) => c.sites));
+  $('#w-countries-count').textContent = `${rows.length} ${rows.length === 1 ? 'country' : 'countries'}, most sites first`;
+  const groups = CONTINENT_ORDER.map((g) => [g, rows.filter((c) => (CONTINENT[c.code] ?? 'Other') === g)]).filter(([, list]) => list.length);
+  const providers = (c) => {
+    const names = [...c.providers.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([n, k]) => esc(n) + (k > 1 ? ` <span class="prov">×${k}</span>` : ''));
+    return names.slice(0, 8).join(', ') + (names.length > 8 ? ` <span class="prov">+${names.length - 8} more</span>` : '');
+  };
+  $('#w-countries-table').innerHTML = rows.length ? `<table class="grid"><thead><tr>
+    <th>COUNTRY</th><th>SITES</th><th>PROVIDERS</th><th>MODELS LISTED</th><th>PROCESSING PROMISE</th>
+  </tr></thead><tbody>` + groups.map(([g, list]) => `<tr class="cgroup"><td colspan="5">${esc(g.toUpperCase())} · ${list.reduce((n, c) => n + c.sites, 0)} SITES</td></tr>`
+    + list.map((c) => `<tr class="crow" data-country="${esc(c.code)}" title="Show only ${esc(countryName(c.code))}">
+      <td class="cname"><b>${esc(countryName(c.code))}</b><span class="prov">${esc(c.code)}</span></td>
+      <td class="mono" style="font-size:0.78rem; white-space:nowrap">${c.sites}${c.planned ? ` <span class="prov">(${c.planned} planned)</span>` : ''}
+        <div class="sitebar"><span style="width:${(c.live / max) * 100}%"></span><span style="width:${(c.planned / max) * 100}%"></span></div></td>
+      <td class="provs"><b style="color:var(--ink)">${c.providers.size}</b> · ${providers(c)}</td>
+      <td class="mono" style="font-size:0.78rem">${c.models.size || '—'}</td>
+      <td class="mono" style="font-size:0.78rem">${c.processing ? `${c.processing} of ${c.sites} sites` : '—'}</td>
+    </tr>`).join('')).join('') + '</tbody></table>' : '<p class="sub" style="padding:0.9rem 1rem; margin:0">No sites match these filters.</p>';
+}
+$('#w-countries-table').addEventListener('click', (e) => {
+  const row = e.target.closest('tr.crow');
+  if (!row) return;
+  const sel = $('#w-country');
+  if (![...sel.options].some((o) => o.value === row.dataset.country)) sel.add(new Option(row.dataset.country, row.dataset.country));
+  sel.value = sel.value === row.dataset.country ? '' : row.dataset.country;
+  loadWhere();
+  $('#w-map').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+// Legend and countries: open or closed as the viewer last left them.
+for (const d of document.querySelectorAll('details.wfold')) {
+  try { const v = localStorage.getItem('onp-where-' + d.dataset.fold); if (v) d.open = v === 'open'; } catch { /* storage blocked */ }
+  d.addEventListener('toggle', () => { try { localStorage.setItem('onp-where-' + d.dataset.fold, d.open ? 'open' : 'closed'); } catch { /* storage blocked */ } });
 }
 /* Residency (ONP-2 §3b): one chip per commitment, with who gets it and the source. */
 const RES_LABEL = { processing: 'PROCESSING', storage: 'STORAGE', none: 'NO FIXED AREA', unstated: 'NOT STATED' };
@@ -2338,7 +2440,7 @@ async function renderWhereMap(sites) {
   if (mapConfig === undefined) mapConfig = (await api('/v0/health')).map ?? null;
   if (!mapConfig) return;
   const L = await loadLeaflet();
-  $('#w-map').hidden = false; $('#w-legend').hidden = false;
+  $('#w-map').hidden = false;
   const css = getComputedStyle(document.documentElement);
   const color = { claimed: css.getPropertyValue('--faint').trim(), documented: css.getPropertyValue('--accent').trim(),
     measured: css.getPropertyValue('--good').trim(), attested: css.getPropertyValue('--good').trim(), planned: css.getPropertyValue('--warn').trim() };

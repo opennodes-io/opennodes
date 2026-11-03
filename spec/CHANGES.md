@@ -18,7 +18,7 @@ Where a provider serves from (revision 3) is half the answer; the other half is 
   - `/v0/residency` (JSON, CSV) and the MCP `find_residency` tool; `residency` on every `/v0/locations` site, in CSV and GeoJSON;
   - curated seed `src/data/locations-world.json` (checked 2026-11-03): every provider in the registry, 216 entries covering 252 nodes, with 269 serving sites outside the Canada and Europe seeds and each provider's residency commitments (97 state one; most small resellers state nothing); seed entries with `nodes` attach to those nodes, with `kind`, `placement` and `residency`;
   - the Canada and Europe seed entries carry residency, directly or via `residency_of` (a cloud's Canadian and European regions share the cloud's commitments);
-  - the "Where models run" page shows residency per site, a residency filter and a provider table.
+  - the "Where models run" page shows residency per site, a residency filter and a provider table; a collapsible legend and a countries table grouped by continent (sites live/planned, providers by name, models listed, processing promises; click to filter) replace the one-line country summary (registry 0.1.44).
 - `@opennodes/cli`: the stdio MCP server proxies `find_residency`.
 - Known gap: `region=EU` in search (§5) matches only codes inside `EU` (`EU-…`), not member states such as `DE`; residency scopes do cover member states. Aligning search is a separate change.
 
