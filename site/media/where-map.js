@@ -11,6 +11,10 @@
   };
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const plural = (n, w, many = w + 's') => `${n.toLocaleString('en-US')} ${n === 1 ? w : many}`;
+  // A residency commitment (ONP-2 §3b) in a few words: "processing in EU (opt in)".
+  const RES = { processing: 'processing', storage: 'storage only', none: 'no fixed area', unstated: 'not stated' };
+  const residency = (r) => `${RES[r.commitment] ?? RES.unstated}${r.scope?.length ? ' in ' + r.scope.join(r.per_region ? ' or ' : '+') : ''}`
+    + (r.availability === 'opt_in' ? ' (opt in)' : r.availability === 'enterprise' ? ' (enterprise)' : '');
   const loadLeaflet = () => new Promise((resolve, reject) => {
     const css = Object.assign(document.createElement('link'), { rel: 'stylesheet', href: LEAFLET.css[0], integrity: LEAFLET.css[1], crossOrigin: 'anonymous', referrerPolicy: 'no-referrer' });
     const js = Object.assign(document.createElement('script'), { src: LEAFLET.js[0], integrity: LEAFLET.js[1], crossOrigin: 'anonymous', referrerPolicy: 'no-referrer' });
@@ -65,7 +69,8 @@
         ${esc(s.site ?? 'site not named')} · ${esc(s.region)} · ${esc(s.status)} · ${esc(s.basis)}
         ${s.geo.derived ? `<br><i>Approximate: only the ${esc(s.geo.precision)} is known</i>` : ''}
         <br>${s.models.length ? esc(s.models.slice(0, 6).map((m) => m.name).join(', ')) + (s.models.length > 6 ? ` +${s.models.length - 6} more` : '') : esc(s.models_note ?? 'no models listed')}
-        ${s.source === 'seed' ? '' : `<br><a href="${REG}/#/node/${encodeURIComponent(s.node_id)}">node card</a>`}</div>`).join(''), { maxWidth: 300, maxHeight: 300 })
+        ${s.residency?.length ? `<br>Residency: ${esc(s.residency.map(residency).join('; '))}` : ''}
+        ${s.source === 'seed' && s.node_id.startsWith('import.seed.') ? '' : `<br><a href="${REG}/#/node/${encodeURIComponent(s.node_id)}">node card</a>`}</div>`).join(''), { maxWidth: 300, maxHeight: 300 })
         .bindTooltip(`${plural(group.length, 'site')} · ${plural(models, 'model')}`)
         .addTo(map);
       bounds.push([lat, lon]);
