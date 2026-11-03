@@ -129,6 +129,7 @@ test('bundled seeds: every entry well formed, references resolve, residency atta
     for (const p of seed.providers) {
       if (p.residency_of) assert.ok(ids.has(p.residency_of), `${seed.seed}:${p.id} -> ${p.residency_of}`);
       else assert.ok(Array.isArray(p.residency), `${seed.seed}:${p.id} has residency`);
+      if (p.serves_from) assert.ok(ids.has(p.serves_from) && p.nodes?.length && !p.sites?.length, `${seed.seed}:${p.id} serves_from ${p.serves_from}`);
       for (const r of p.residency ?? []) {
         assert.ok(['processing', 'storage', 'none', 'unstated'].includes(r.commitment), `${p.id}: ${r.commitment}`);
         assert.equal(['processing', 'storage'].includes(r.commitment), r.scope.length > 0, `${p.id}: scope`);
@@ -155,4 +156,38 @@ test('a listed node no seed covers appears as unstated', async (t) => {
   assert.deepEqual(report.providers.map((p) => [p.id, p.source, p.strongest]), [
     ['import.modelsdev.hostco', 'none', 'unstated'], ['import.modelsdev.relay', 'none', 'unstated'],
   ]);
+});
+
+test('search and recommend use seed placements: placement "all" and serves_from; never through a router', async (t) => {
+  const registry = await startRegistry();
+  t.after(() => registry.close());
+  await post(registry.origin, '/v0/import/models-dev', { catalog });
+  await post(registry.origin, '/v0/import/huggingface', { router: { data: [{ id: 'org/m4', providers: [{ provider: 'hostco', status: 'live' }] }] }, hub: [] });
+  const seed = {
+    seed: 'eu', title: 'Test', checked: '2026-11-03',
+    providers: [
+      // The provider's own seed card: every model in Paris.
+      { id: 'parisco', name: 'ParisCo', models: [{ name: 'Model Three', artifact: 'hf:x/m3', sites: ['par'] }],
+        sites: [{ id: 'par', region: 'FR-IDF', site: 'Paris', status: 'live', basis: 'documented', ...src }] },
+      // The relay's own API runs at ParisCo's site; HostCo serves everything from Frankfurt (and Ohio, planned).
+      { id: 'relay', name: 'Relay', nodes: ['import.modelsdev.relay'], serves_from: 'eu:parisco', sites: [] },
+      { id: 'hostco', name: 'HostCo', nodes: ['import.modelsdev.hostco', 'import.hf.hostco'], placement: 'all',
+        sites: [{ id: 'fra', region: 'DE-HE', status: 'live', basis: 'documented', ...src }, { id: 'cmh', region: 'US-OH', status: 'planned', basis: 'claimed' }] },
+    ],
+  };
+  await post(registry.origin, '/v0/import/locations', { seed });
+  const search = async (qs) => (await get(registry.origin, `/v0/offerings?${qs}&limit=50`)).offerings;
+  const inEu = await search('region=EU');
+  assert.deepEqual([...new Set(inEu.map((o) => o.node_id))].sort(), ['import.modelsdev.hostco', 'import.modelsdev.relay', 'import.seed.eu.parisco']);
+  const relay = inEu.find((o) => o.node_id === 'import.modelsdev.relay');
+  assert.deepEqual(relay.residency, ['FR-IDF']);
+  assert.equal(relay.locations[0].via, 'seed');
+  assert.equal(relay.locations[0].basis, 'documented');
+  assert.deepEqual((await search('region=DE')).map((o) => o.node_id), ['import.modelsdev.hostco', 'import.modelsdev.hostco'], 'planned Ohio is not a serving site');
+  assert.ok(!(await search('region=EU')).some((o) => o.node_id === 'import.hf.hostco'), 'the HF router sits in between');
+  assert.equal((await search('region=EU&location_basis=measured')).length, 0);
+  const rec = await (await fetch(`${registry.origin}/v0/recommend`, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ task: 'Summarize this memo.', policy: { region: 'EU' } }) })).json();
+  assert.ok(rec.recommendations.length > 0);
+  assert.ok(rec.recommendations.every((x) => ['import.modelsdev.hostco', 'import.modelsdev.relay'].includes(x.node_id)), JSON.stringify(rec.recommendations.map((x) => x.node_id)));
 });

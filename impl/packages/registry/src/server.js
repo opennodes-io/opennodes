@@ -15,7 +15,7 @@ import { runStageB, captureFingerprints } from './stageb.js';
 import { startStageC } from './stagec.js';
 import { startReimport } from './reimport.js';
 import { makeSafeFetch } from './safefetch.js';
-import { searchOfferings, searchOfferingsPaged, collectOfferings, watchStoreWrites, RANK_COMPONENTS, pricePublished } from './search.js';
+import { searchOfferings, searchOfferingsPaged, collectOfferings, watchStoreWrites, setSeedPlacements, RANK_COMPONENTS, pricePublished } from './search.js';
 import { mcpRoutes } from './mcp.js';
 import { hostControlsNamespace, isPrivateHost, makeRateLimiter } from './namespace.js';
 import { exportRoutes } from './export.js';
@@ -27,7 +27,7 @@ import {
   importOpenRouterProviders, fetchOpenRouterEndpoints, importLocationSeed,
   HF_ROUTER_URL, HF_HUB_URL, OPENROUTER_URL, OPENROUTER_PROVIDERS_URL, OLLAMA_LIBRARY_URL,
 } from './importers.js';
-import { locationRoutes, loadLocationSeeds } from './locations.js';
+import { locationRoutes, loadLocationSeeds, seedPlacements } from './locations.js';
 
 /** Default basemap. OSM's tile policy asks for attribution and light use; busy registries set their own. */
 export const OSM_TILES = {
@@ -60,6 +60,7 @@ export async function startRegistry({
     const result = await importLocationSeed(store, seed);
     if (result.skipped.length) console.warn(`location seed ${seed.seed}: skipped ${result.skipped.join('; ')}`);
   }
+  setSeedPlacements(store, seedPlacements(seeds));
   const webApp = readFileSync(fileURLToPath(new URL('./web/index.html', import.meta.url)), 'utf8');
   let registryKeys;
   if (keyPath && existsSync(keyPath)) {
@@ -527,6 +528,7 @@ export async function startRegistry({
         const i = seeds.findIndex((s) => s.seed === seed.seed); // /v0/locations reads site-only entries from here
         if (i < 0) seeds.push(seed); else seeds[i] = seed;
       }
+      setSeedPlacements(store, seedPlacements(seeds));
       sendJson(res, 200, results);
     }],
 

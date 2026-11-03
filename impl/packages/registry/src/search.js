@@ -20,6 +20,19 @@ const TIER_SCORE = { unverified: 0, community: 0.4, verified: 0.8, attested: 1.0
 const MAX_AGE_MS = 60_000;
 const catalogs = new WeakMap();   // store -> { items, at, stale, building }
 
+// Curated seed placements (locations.js seedPlacements): node id -> where it serves every model.
+const placements = new WeakMap();   // store -> Map
+// A request to these hosts passes through a third-party router before it reaches the provider, so
+// the provider's sites say nothing about where the prompt goes: no seed placement for them.
+const ROUTER_HOSTS = new Set(['router.huggingface.co', 'openrouter.ai']);
+const hostOf = (url) => { try { return new URL(url).hostname; } catch { return null; } };
+
+/** Use these seed placements in search from now on (the server sets them at start and on seed import). */
+export function setSeedPlacements(store, map) {
+  placements.set(store, map);
+  markCatalogStale(store);
+}
+
 /** Mark the cached catalog stale: the next read rebuilds it. */
 export function markCatalogStale(store) {
   const entry = catalogs.get(store);
@@ -70,12 +83,16 @@ async function buildOfferings(store) {
     const nodeObs = await store.getObservations(node.id, '_node');
     const availability = nodeObs.availability ?? null;
     const loc = nodeObs.location ?? null;
+    const placed = ROUTER_HOSTS.has(hostOf(card.endpoints?.openai)) ? null : placements.get(store)?.get(node.id);
     // Server-location check (location.js): what the registry found, next to what the operator declared.
     const location = loc ? {
       verdict: loc.verdict, server_country: loc.server?.country ?? null, network: loc.server?.network ?? null,
       cdn: Boolean(loc.server?.cdn), latency: loc.latency?.verdict ?? 'unknown', checked_at: loc.checked_at,
     } : null;
-    for (const offering of card.offerings) {
+    for (const declared of card.offerings) {
+      // No location on the card: a curated seed may say where this node serves every model.
+      const offering = placed && !Array.isArray(declared.locations) && !(card.node?.locations ?? []).length
+        ? { ...declared, locations: placed } : declared;
       const obs = await store.getObservations(node.id, offering.offering_id);
       // Measured values override claims (DS-ADM-03/04): cap the advertised context to
       // the verified size, and surface registry-measured latency/throughput.

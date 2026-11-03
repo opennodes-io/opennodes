@@ -25,6 +25,28 @@ const seedIndex = (seeds) => new Map(seeds.flatMap((seed) => (seed.providers ?? 
 /** A seed provider's own commitments, or those of the entry it points to with `residency_of`. */
 const seedResidency = (index, p) => (p.residency_of ? index.get(p.residency_of)?.p.residency : p.residency) ?? null;
 
+/**
+ * Where the nodes a seed entry describes serve every one of their models: the entry's own live
+ * sites when `placement` is "all", or the live sites of the entry named by `serves_from`
+ * ("eu:scaleway": the whole API runs at that entry's sites). Search and recommend use these for
+ * offerings whose card declares no location (ONP-3 §5); each location is marked `via: "seed"`.
+ */
+export function seedPlacements(seeds) {
+  const index = seedIndex(seeds);
+  const out = new Map();   // node id -> locations
+  for (const seed of seeds) {
+    for (const p of seed.providers ?? []) {
+      if (p.models?.length || !p.nodes?.length) continue;
+      const from = p.serves_from ? index.get(p.serves_from)?.p : p.placement === 'all' ? p : null;
+      const locs = (from?.sites ?? []).map(siteLocation).filter((l) => (l.status ?? 'live') === 'live')
+        .map(({ geo: _g, ...l }) => ({ ...l, via: 'seed' }));
+      if (!locs.length) continue;
+      for (const id of p.nodes) if (!out.has(id)) out.set(id, locs);
+    }
+  }
+  return out;
+}
+
 /** Visible nodes with their latest cards. */
 async function listedCards(store) {
   const cards = [];

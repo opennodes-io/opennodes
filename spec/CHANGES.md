@@ -1,5 +1,20 @@
 # ONP specification changes
 
+## Draft 0.1, revision 6 — 2026-11-03: curated seed placements in search
+
+Revision 4 kept curated seeds out of search, and revision 5 made recommend reject offerings with no known location. Together they left every callable listing out of a region request, including providers whose whole API runs in one documented place. Revision 6 lets a seed supply that place, labelled as such.
+
+| # | Where | Change |
+|---|---|---|
+| S1 | ONP-3 §5c, §5, §5a | When a seed entry that describes existing nodes says every model is served from every listed site (`placement: "all"`), or names an entry whose sites serve the node's whole API (`serves_from`), search and recommend use those live sites for offerings whose card declares no location. Each location is marked `via: "seed"` and keeps its `claimed` or `documented` basis. A card's own locations always win |
+| S2 | ONP-3 §5c | No seed placement for listings reached through a third-party router (Hugging Face router, OpenRouter): the request passes through the router first |
+
+### Reference implementation changes
+
+- `@opennodes/registry`: `seedPlacements` (locations.js) and `setSeedPlacements` (search.js), set at start and on each seed import. The world seed gains `serves_from` for five providers that document a single-region API: Scaleway (Paris), OVHcloud (Gravelines), STACKIT (Germany), Berget (Sweden) and Infomaniak (Switzerland). The 10 world entries that already had `placement: "all"` count too: Alibaba Model Studio (China), Volcengine Ark, DeepSeek, Upstage, Sarvam, Moonshot (global), Z.ai (global), CloudFerro Sherlock, SCX and Pendra. Hyperscalers, Mistral, Nebius and Regolo are not placed: where a model runs depends on the region or endpoint chosen, or is not stated.
+- Tests: `impl/test/residency.test.js` (seed placements in search and recommend; `serves_from` references resolve).
+- Versions: registry 0.1.47.
+
 ## Draft 0.1, revision 5 — 2026-11-03: EU and EEA in region matching
 
 Revision 4 let a residency scope of `EU` or `EEA` cover the member states, but search still read `EU` as a plain code that contains only `EU-…`, so `region=EU` missed offerings served from Frankfurt or Paris. Revision 5 uses one containment rule for both.
