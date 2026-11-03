@@ -7,6 +7,7 @@
     {
       "id": "aws-bedrock",
       "name": "Amazon Bedrock (European regions)",
+      "residency_of": "world:aws-bedrock",
       "operator": { "name": "Amazon Web Services", "country": "US", "url": "https://docs.aws.amazon.com/bedrock/latest/userguide/models-region-compatibility.html" },
       "note": "Only models marked In-Region (bedrock-runtime or bedrock-mantle) in the Bedrock model/Region table are listed; models that reach these regions only through EU Geo or Global cross-region inference (e.g. Claude Sonnet 5.5, Haiku 5.5, Fable 5/5.1, Mythos 5.1, Opus 4.5, Nova 2 Lite, OpenAI GPT-5.x/6, Grok, Kimi K3, GLM 5.3) are not listed. Also excluded: models in Legacy or EOL state on the Bedrock lifecycle page (e.g. Claude 3 Haiku, Gemma 3, Llama 3, Mistral 7B/Mixtral, Voxtral, Devstral 2, MiniMax M2/M2.1, DeepSeek-V3.1, Qwen3 Coder 30B/480B, GLM 4.7, Nemotron Nano v2) and speech-only models (Nova 2 Sonic, Nova 2.5 Sonic in eu-north-1).",
       "sites": [
@@ -68,6 +69,7 @@
     {
       "id": "google-vertex-ai",
       "name": "Google Vertex AI / Gemini Enterprise Agent Platform (European regions)",
+      "residency_of": "world:google-vertex",
       "operator": { "name": "Google Cloud", "country": "US", "url": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations" },
       "note": "A model is listed only where Google's data-residency page marks in-country ML processing for that region and the locations page shows a regional endpoint there; models processed only within the 'eu' multi-region or via the global endpoint (most Gemini 3.x models, Gemini Embedding, Claude Opus 4.7+ and all Claude 5.x, all MaaS open models) are excluded, as are Gemini 2.5 Pro/Flash/Flash-Lite (retired 20 October 2026), deprecated Claude 3.x, Mistral Large (24.07) and Codestral (24.05) (no longer in Google's Mistral model list), E5 embeddings (retired 21 October 2026) and speech models (Chirp, TTS).",
       "sites": [
@@ -101,6 +103,7 @@
     {
       "id": "azure-openai",
       "name": "Azure OpenAI in Foundry (European regions)",
+      "residency_of": "world:azure-openai",
       "operator": { "name": "Microsoft", "country": "US", "url": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability?pivots=standard" },
       "note": "Only the Standard/Regional deployment type (processed in the deployment's region) is counted; models offered in Europe only via Global Standard, Data Zone Standard (EU) or provisioned (incl. regional provisioned) deployments are excluded, as are all non-OpenAI Foundry models (no Standard/Regional option in Europe) and audio models (tts, tts-hd, whisper). Physical locations come from the Azure regions list; GPT-4o merges versions 2024-05-13/2024-08-06 (Sweden Central only) and 2024-11-20.",
       "sites": [
@@ -134,6 +137,7 @@
     {
       "id": "oci-genai",
       "name": "Oracle OCI Generative AI (European regions)",
+      "residency_of": "world:oci-genai",
       "operator": { "name": "Oracle", "country": "US", "url": "https://docs.oracle.com/en-us/iaas/Content/generative-ai/model-endpoint-regions.htm" },
       "note": "Only models hosted on-demand in the region are listed; dedicated-AI-cluster-only models (e.g. Command A Reasoning, Llama 4 Maverick/Scout in London, Rerank 3.5, gpt-oss in London) are excluded, as are Google Gemini 2.5 models in Frankfurt (hosted externally by Google, requests routed to a Google EU location). Other OCI EU regions (Amsterdam, Paris, Madrid, Stockholm, Zurich, Milan, Marseille, Newport) have no local model processing and route calls to Frankfurt or London, so they are not sites.",
       "sites": [
@@ -157,6 +161,7 @@
     {
       "id": "ibm-watsonx",
       "name": "IBM watsonx.ai (European regions)",
+      "residency_of": "world:ibm-watsonx",
       "operator": { "name": "IBM", "country": "US", "url": "https://dataplatform.cloud.ibm.com/docs/content/wsj/getting-started/regional-datactr.html?context=wx" },
       "note": "Lists the multitenant ready-to-use foundation models and encoder (embedding) models hosted in each region; models marked deprecated, Granite TTM time-series models, and the roughly 70 deploy-on-demand (dedicated) models offered in Frankfurt (none in London) are excluded.",
       "sites": [
@@ -175,6 +180,7 @@
     {
       "id": "mistral",
       "name": "Mistral AI (La Plateforme API)",
+      "residency_of": "world:mistral",
       "operator": { "name": "Mistral AI", "country": "FR", "url": "https://docs.mistral.ai/inference/regional-inference" },
       "note": "The EU endpoint (api.eu.mistral.ai) is served from 'multiple data centers in EU and EFTA countries' that Mistral does not name; api.mistral.ai has no committed location and api.us.mistral.ai runs in the US. Only Mistral's own named sites are listed here.",
       "sites": [
@@ -188,6 +194,7 @@
     {
       "id": "scaleway",
       "name": "Scaleway Generative APIs (Serverless)",
+      "residency_of": "world:scaleway",
       "operator": { "name": "Scaleway", "country": "FR", "url": "https://github.com/scaleway/docs-content/blob/main/pages/generative-apis/reference-content/supported-models.mdx" },
       "note": "Read from Scaleway's docs source (scaleway/docs-content). The docs site refused automated fetches. Only models marked 'Available in Serverless' and not past their end-of-life date are listed. Dedicated Deployments are left out.",
       "sites": [
@@ -216,6 +223,7 @@
     {
       "id": "ovhcloud",
       "name": "OVHcloud AI Endpoints",
+      "residency_of": "world:ovhcloud",
       "operator": { "name": "OVHcloud", "country": "FR", "url": "https://www.ovhcloud.com/en/public-cloud/ai-endpoints/catalog/" },
       "note": "The catalogue says it has 22 models, but only 17 could be read from the page. The current product page says only 'hosted and run in the European Union'. Gravelines comes from OVHcloud's launch release.",
       "sites": [
@@ -244,6 +252,10 @@
     {
       "id": "ionos",
       "name": "IONOS AI Model Hub",
+      "kind": "cloud",
+      "residency": [
+        { "commitment": "processing", "scope": ["DE"], "availability": "default", "statement": "All processing occurs only in IONOS German data centres (Berlin), no cross-region replication; prompts and outputs discarded after each request; never used for training.", "source": "https://learn.cloud.ionos.com/foundational/products/AI/ai-model-hub.html", "checked": "2026-11-03" }
+      ],
       "operator": { "name": "IONOS", "country": "DE", "url": "https://docs.ionos.com/cloud/ai/ai-model-hub/models" },
       "note": "Endpoint openai.inference.de-txl.ionos.com. Paraphrase Multilingual MPNet v2 and FLUX.1-schnell are deprecated and leave the hub on 30 November 2026.",
       "sites": [
@@ -270,6 +282,7 @@
     {
       "id": "stackit",
       "name": "STACKIT AI Model Serving",
+      "residency_of": "world:stackit",
       "operator": { "name": "STACKIT (Schwarz Digits)", "country": "DE", "url": "https://docs.stackit.cloud/products/data-and-ai/ai-model-serving/basics/available-shared-models/" },
       "note": "Every shared model is priced in region EU01, and the endpoint is api.openai-compat.model-serving.eu01.onstackit.cloud. No AI Model Serving was found documented for the Austrian region eu02.",
       "sites": [
@@ -290,6 +303,11 @@
     {
       "id": "t-systems",
       "name": "T-Systems AI Foundation Services (LLM Hub)",
+      "kind": "cloud",
+      "residency": [
+        { "commitment": "processing", "scope": ["DE"], "availability": "default", "programme": "Models hosted on T Cloud Public", "statement": "Open-weight models are hosted on T Cloud Public, Telekom's sovereign infrastructure in Germany.", "source": "https://docs.llmhub.t-systems.net/models/comparison/", "checked": "2026-11-03" },
+        { "commitment": "processing", "scope": ["EU"], "availability": "default", "programme": "Azure- and GCP-hosted models", "statement": "OpenAI models run on Microsoft Azure EU regions and Gemini models on Google Cloud EU regions. No region stated for Claude models.", "source": "https://docs.llmhub.t-systems.net/models/comparison/", "checked": "2026-11-03" }
+      ],
       "operator": { "name": "T-Systems International", "country": "DE", "url": "https://docs.llmhub.t-systems.net/models/comparison/" },
       "note": "Only the models 'Hosted on T-Cloud Public — Telekom's sovereign infrastructure in Germany' are listed. The hub's Azure and GCP models (GPT, Claude, Gemini, in 'EU regions' or unstated regions) are left out, and so is 'd3', whose developer is not named.",
       "sites": [
@@ -318,6 +336,7 @@
     {
       "id": "nebius-token-factory",
       "name": "Nebius Token Factory",
+      "residency_of": "world:nebius-token-factory",
       "operator": { "name": "Nebius", "country": "NL", "url": "https://docs.tokenfactory.nebius.com/public-serverless.md" },
       "note": "Public serverless endpoints show Region 'Global': Nebius says the processing location is decided dynamically and can change without notice. Only dedicated endpoints are pinned to a user-selected region. Token Factory docs use eu-north1 (Finland) as the dedicated-endpoint region in their deploy example. Nebius's regions page lists eu-north1 as Finland without naming a city; Mäntsälä is Nebius's own Finnish data centre per its newsroom, so the eu-north1 = Mäntsälä mapping is inferred.",
       "sites": [
@@ -330,6 +349,7 @@
     {
       "id": "infomaniak",
       "name": "Infomaniak AI Services",
+      "residency_of": "world:infomaniak",
       "operator": { "name": "Infomaniak", "country": "CH", "url": "https://www.infomaniak.com/en/hosting/ai-services/open-source-models" },
       "note": "Infomaniak says its AI and GPU services run in its own data centres in Switzerland and doesn't name the site for the API. Its Euria press release (Dec 2025) names the D4 data centre (Geneva area) as the one powering Euria, its assistant. Whisper V3 (speech-to-text) is offered too but left out because no modality value fits.",
       "sites": [
@@ -355,6 +375,7 @@
     {
       "id": "regolo",
       "name": "Regolo.ai",
+      "residency_of": "world:regolo",
       "operator": { "name": "Seeweb", "country": "IT", "url": "https://regolo.ai/team-infrastructure/" },
       "note": "Regolo is Seeweb's inference platform. It says its inference infrastructure is physically hosted in data centres in the Province of Frosinone (Lazio) and in Lombardy, plus unspecified further regions via DHH S.p.A.",
       "sites": [
@@ -367,6 +388,7 @@
     {
       "id": "berget",
       "name": "Berget AI",
+      "residency_of": "world:berget",
       "operator": { "name": "Berget AI", "country": "SE", "url": "https://berget.ai/" },
       "note": "Berget says it runs on its own hardware in Sweden. A second data centre in Southern Stockholm went live in March 2026 (https://berget.ai/en/blog/second-datacenter-is-live). The original site's city isn't named, so both sites are recorded as one country-level site. Speech-to-text models (KB-Whisper, NB-Whisper, Pianissimo, faster-whisper) and preview/eval 'system-one' models are left out.",
       "sites": [
@@ -385,6 +407,10 @@
     {
       "id": "swisscom-swiss-ai-platform",
       "name": "Swisscom Swiss AI Platform",
+      "kind": "cloud",
+      "residency": [
+        { "commitment": "processing", "scope": ["CH"], "availability": "default", "statement": "Swisscom says data and information remain in Switzerland at all times, with processing and storage in Switzerland. Retention not described.", "source": "https://www.swisscom.ch/en/business/enterprise/offer/platforms-applications/data-driven-business/swiss-ai-platform.html", "checked": "2026-11-03" }
+      ],
       "operator": { "name": "Swisscom", "country": "CH", "url": "https://www.swisscom.ch/en/business/enterprise/offer/platforms-applications/data-driven-business/swiss-ai-platform.html" },
       "note": "Enterprise offer with managed inference endpoints through the Swisscom Digital Marketplace. Swisscom says data stays in Switzerland but names no data-centre city. Apertus is the only model it names; other multimodal, speech-to-text and LLM models are mentioned without names.",
       "sites": [
@@ -397,6 +423,10 @@
     {
       "id": "exoscale",
       "name": "Exoscale AI Inference",
+      "kind": "cloud",
+      "residency": [
+        { "commitment": "processing", "scope": ["EU", "CH"], "availability": "default", "statement": "Dedicated Inference: data never leaves Europe; runs in EU and Swiss GPU zones. On-Demand preview runs only in AT-VIE-2 (Vienna). Prompts and responses not stored; not used for training.", "source": "https://www.exoscale.com/ai-cloud-infrastructure/dedicated-inference/", "checked": "2026-11-03" }
+      ],
       "operator": { "name": "Exoscale", "country": "CH", "url": "https://www.exoscale.com/ai-cloud-infrastructure/managed-inference/" },
       "note": "There are two products. On-Demand Inference is a per-token model catalogue, in private preview by invitation, and runs only in AT-VIE-2 (Vienna). Dedicated Inference (GA since 15 June 2026) runs bring-your-own Hugging Face models on dedicated GPUs in the GPU zones, which the product page gives as examples: AT-VIE-2, CH-GVA-2, DE-FRA-1, HR-ZAG-1, CH-DK-2. Dedicated Inference has no fixed catalogue, so models are attached only to AT-VIE-2. Zone cities are from https://www.exoscale.com/datacenters/.",
       "sites": [
@@ -414,6 +444,7 @@
     {
       "id": "greenpt",
       "name": "GreenPT API",
+      "residency_of": "world:greenpt",
       "operator": { "name": "GreenPT BV", "country": "NL", "url": "https://greenpt.com/sustainability" },
       "note": "GreenPT says the platform is hosted by Scaleway in Paris and that its Code models (GLM-5.3, Kimi K2.7 Code) run in Verda data centres in Helsinki. It does not say where the other models run, so they are listed without a site. Left out: MiniMax (conflicting statements), Deepgram speech models, Metis, the green-* aliases and models marked \"Older\".",
       "sites": [
@@ -433,6 +464,7 @@
     {
       "id": "groq",
       "name": "Groq (Helsinki)",
+      "residency_of": "world:groq",
       "operator": { "name": "Groq", "country": "US", "url": "https://groq.com/news/groq-launches-european-data-center-footprint-in-helsinki-finland" },
       "note": "Groq's first European footprint, in space leased from Equinix (the facility among Equinix's Helsinki sites is not stated). GroqCloud docs say customer data is retained in GCP buckets in the United States; there is no documented EU region selection.",
       "sites": [
@@ -444,6 +476,7 @@
     {
       "id": "cerebras",
       "name": "Cerebras Inference (Europe, planned)",
+      "residency_of": "world:cerebras",
       "operator": { "name": "Cerebras Systems", "country": "US", "url": "https://investors.cerebras.ai/news-releases/news-release-details/cerebras-systems-accelerates-european-expansion-200mw-ai-compute" },
       "note": "July 2026: Cerebras says its first European capacity comes online by end of 2026, scaling to 200 MW across France and the Nordics by end of 2027; part of it is for OpenAI workloads. No European site is confirmed live. The University of Edinburgh (EPCC) CS-3 cluster is a research system, not Cerebras Inference, and is left out.",
       "sites": [
@@ -457,6 +490,7 @@
     {
       "id": "nscale",
       "name": "Nscale (Norway, UK)",
+      "residency_of": "world:nscale",
       "operator": { "name": "Nscale", "country": "GB", "url": "https://nscale.com/ai-infrastructure" },
       "note": "Nscale sells GPU capacity and also runs a serverless inference API, but it does not say which site serves it. Partner sites listed by Nscale (Stavanger, Oslo, Hayes, Sines, Keflavik, Blönduós) are left out because their status is not stated.",
       "sites": [
@@ -470,6 +504,10 @@
     {
       "id": "lumi-aif",
       "name": "LUMI AI Factory (Kajaani)",
+      "kind": "inference",
+      "residency": [
+        { "commitment": "unstated", "scope": [], "availability": "default", "statement": "Aitta processes requests on LUMI nodes but publishes no residency, retention or logging terms; use is governed by Aitta's terms of use and LUMI project access.", "source": "https://docs.lumi-supercomputer.eu/laif/inference/aitta/", "checked": "2026-11-03" }
+      ],
       "operator": { "name": "CSC – IT Center for Science", "country": "FI", "url": "https://docs.lumi-supercomputer.eu/laif/inference/aitta/" },
       "note": "EuroHPC AI Factory. Aitta is an OpenAI-compatible inference service on LUMI-G nodes (2 nodes), open to LUMI project users and not meant for production. LUMI-AI, a new system in the same Kajaani data centre, is due in the second half of 2027.",
       "sites": [
@@ -484,6 +522,10 @@
     {
       "id": "jaif",
       "name": "JUPITER AI Factory (Jülich)",
+      "kind": "inference",
+      "residency": [
+        { "commitment": "unstated", "scope": [], "availability": "default", "statement": "No statement on where user data is processed or stored; access policy not published.", "source": "https://www.eurohpc-ju.europa.eu/ai-factories/germany_en", "checked": "2026-11-03" }
+      ],
       "operator": { "name": "Forschungszentrum Jülich", "country": "DE", "url": "https://www.eurohpc-ju.europa.eu/ai-factories/germany_en" },
       "note": "EuroHPC AI Factory on JUPITER. It lists a Model Deployment service, and JUPITER is to be extended with the JARVIS inference system (https://cordis.europa.eu/project/id/101250682). JARVIS was put to tender in July 2026, with the contract due to start in March 2027.",
       "sites": [
@@ -495,6 +537,10 @@
     {
       "id": "hammerhai",
       "name": "HammerHAI AI Factory (Stuttgart)",
+      "kind": "inference",
+      "residency": [
+        { "commitment": "processing", "scope": ["DE"], "availability": "default", "statement": "HLRS says the HammerHAI system will be operated in Germany in line with EU data-security rules. A location statement for the planned system, not detailed data terms.", "source": "https://www.hlrs.de/news/detail/hammerhai-a-new-supercomputer-for-artificial-intelligence", "checked": "2026-11-03" }
+      ],
       "operator": { "name": "HLRS (University of Stuttgart)", "country": "DE", "url": "https://www.hlrs.de/news/detail/hammerhai-a-new-supercomputer-for-artificial-intelligence" },
       "note": "EuroHPC AI Factory open since April 2025. It already offers startups and SMEs access to LLM inference services, on existing systems hosted by consortium partners, without saying which. The dedicated HammerHAI system (HPE, NVIDIA GB200 NVL4, Axelera AI inference partition) is due in operation in the second half of 2026.",
       "sites": [
@@ -506,6 +552,10 @@
     {
       "id": "it4lia",
       "name": "IT4LIA AI Factory (Bologna)",
+      "kind": "inference",
+      "residency": [
+        { "commitment": "unstated", "scope": [], "availability": "default", "statement": "Speaks of compliance with EU data sovereignty and privacy standards, but does not say where user data is processed or stored.", "source": "https://www.eurohpc-ju.europa.eu/eurohpc-ju-signs-contract-boost-ai-capabilities-it4lia-ai-factory-2026-04-22_en", "checked": "2026-11-03" }
+      ],
       "operator": { "name": "CINECA", "country": "IT", "url": "https://www.eurohpc-ju.europa.eu/eurohpc-ju-signs-contract-boost-ai-capabilities-it4lia-ai-factory-2026-04-22_en" },
       "note": "EuroHPC AI Factory. It has offered AI compute on Leonardo since April 2025. The new AI-optimised system (contract signed April 2026) has a dedicated European partition with Axelera AI accelerators for AI inference.",
       "sites": [
@@ -517,6 +567,10 @@
     {
       "id": "bsc-aif",
       "name": "BSC AI Factory (Barcelona)",
+      "kind": "inference",
+      "residency": [
+        { "commitment": "unstated", "scope": [], "availability": "default", "statement": "Only access-level policies are mentioned; nothing on data residency or processing location.", "source": "https://www.eurohpc-ju.europa.eu/ai-factories/spain_en", "checked": "2026-11-03" }
+      ],
       "operator": { "name": "Barcelona Supercomputing Center (BSC-CNS)", "country": "ES", "url": "https://www.eurohpc-ju.europa.eu/ai-factories/spain_en" },
       "note": "EuroHPC AI Factory. MareNostrum 5 is being upgraded with AI partitions 'specially designed' for LLM training and inference (contract signed January 2026). No hosted model service is described.",
       "sites": [
@@ -528,6 +582,10 @@
     {
       "id": "telekom-industrial-ai-cloud",
       "name": "Deutsche Telekom Industrial AI Cloud (Munich)",
+      "kind": "cloud",
+      "residency": [
+        { "commitment": "processing", "scope": ["DE"], "availability": "enterprise", "statement": "Telekom says the AI factory is operated on German soil under strict data-protection requirements; no product-level residency terms published.", "source": "https://www.telekom.com/en/newsroom/latest-updates/media-information/2026/2/germany-s-first-ai-factory-for-industry", "checked": "2026-11-03" }
+      ],
       "operator": { "name": "Deutsche Telekom (T-Systems)", "country": "DE", "url": "https://www.telekom.com/en/newsroom/latest-updates/media-information/2026/2/germany-s-first-ai-factory-for-industry" },
       "sites": [
         { "id": "muc", "region": "DE-BY", "site": "Munich (Tucherpark), Industrial AI Cloud", "status": "live", "basis": "documented", "source": "https://www.telekom.com/en/newsroom/latest-updates/media-information/2026/2/germany-s-first-ai-factory-for-industry", "checked": "2026-11-02", "note": "In operation since 4 February 2026. Telekom said (Nov 2025) that Perplexity would use it for in-country inference.", "geo": { "lat": 48.1351, "lon": 11.582, "precision": "city" } }

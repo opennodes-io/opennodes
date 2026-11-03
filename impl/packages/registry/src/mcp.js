@@ -1,11 +1,11 @@
 // DS-MCP-01: the registry as an MCP server (streamable HTTP, stateless).
 // Minimal JSON-RPC handler covering initialize / tools/list / tools/call so any
 // MCP host gets ONP discovery (recommend, search_offerings, get_offering, get_node, estimate,
-// find_locations) for free.
+// find_locations, find_residency) for free.
 import { readFileSync } from 'node:fs';
 import { readJson, sendJson, problem, estimateBounds, round6, extractFeatures, recommend, MCP_TOOLS, MCP_INSTRUCTIONS, summarizeNode } from '@opennodes/core';
 import { searchOfferingsPaged, searchOfferings, collectOfferings, pricePublished } from './search.js';
-import { buildLocations } from './locations.js';
+import { buildLocations, buildResidency } from './locations.js';
 
 /** Tool arguments -> the query string the REST routes take (null/undefined dropped). */
 const toQuery = (args = {}) => {
@@ -50,6 +50,8 @@ async function runTool(store, seeds, name, args = {}) {
       return searchOfferingsPaged(store, toQuery(args));
     case 'find_locations':
       return buildLocations(store, seeds, toQuery(args));
+    case 'find_residency':
+      return buildResidency(store, seeds, toQuery(args));
     case 'get_offering': {
       const found = (await collectOfferings(store)).find(
         (o) => o.node_id === args.node_id && o.offering_id === args.offering_id);

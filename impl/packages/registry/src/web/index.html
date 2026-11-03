@@ -121,6 +121,11 @@
   .chip.b-documented { color: var(--accent); border-color: var(--accent); }
   .chip.b-measured, .chip.b-attested { color: var(--good); border-color: var(--good); }
   .chip.s-planned { color: var(--warn); border-color: var(--warn); }
+  .chip.r-processing { color: var(--good); border-color: var(--good); }
+  .chip.r-storage { color: var(--accent); border-color: var(--accent); }
+  .chip.r-none { color: var(--warn); border-color: var(--warn); }
+  .chip.r-unstated { color: var(--faint); }
+  .rlist { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.78rem; }
   .wmodels { display: flex; flex-wrap: wrap; gap: 0.25rem 0.6rem; font-size: 0.8rem; }
   .wmodels .lin { font-family: "IBM Plex Mono", monospace; font-size: 0.6rem; color: var(--warn); }
   #w-map { height: 440px; margin-bottom: 0.4rem; overflow: hidden; }
@@ -395,11 +400,12 @@
 <!-- ================= WHERE MODELS RUN ================= -->
 <div id="view-where" hidden>
   <div style="display:flex; align-items:baseline; gap:0.9rem; flex-wrap:wrap"><h1>Where models run</h1><span class="counts" id="w-counts"></span></div>
-  <p class="sub">Every known serving site by country, with the models it serves and how far each location can be trusted: <b>claimed</b> (the provider or a news report says so), <b>documented</b> (the provider's own dated page), <b>measured</b> (registry probes), <b>attested</b> (a signed card backed by an audit). Built from node cards, imported catalogs and curated seeds; <a href="https://github.com/opennodes-io/opennodes/tree/main/impl/packages/registry/src/data" target="_blank" rel="noopener">corrections welcome</a>. Also as <a id="w-json" href="/v0/locations">JSON</a>, <a id="w-csv" href="/v0/locations?format=csv">CSV</a> and <a id="w-geojson" href="/v0/locations?format=geojson">GeoJSON</a> for QGIS, ArcGIS or any web map.</p>
+  <p class="sub">Every known serving site by country, with the models it serves and how far each location can be trusted: <b>claimed</b> (the provider or a news report says so), <b>documented</b> (the provider's own dated page), <b>measured</b> (registry probes), <b>attested</b> (a signed card backed by an audit). Built from node cards, imported catalogs and curated seeds; <a href="https://github.com/opennodes-io/opennodes/tree/main/impl/packages/registry/src/data" target="_blank" rel="noopener">corrections welcome</a>. Also as <a id="w-json" href="/v0/locations">JSON</a>, <a id="w-csv" href="/v0/locations?format=csv">CSV</a> and <a id="w-geojson" href="/v0/locations?format=geojson">GeoJSON</a> for QGIS, ArcGIS or any web map. Each site also shows the provider's official <b>residency</b> commitment where it covers that site: <b>processing</b> (inference and stored data stay in the area), <b>storage</b> (data at rest only), or none; <a href="#w-res">every provider's commitments</a> are listed below the table.</p>
   <div class="toolbar">
     <select id="w-country"><option value="">every country</option></select>
     <select id="w-basis"><option value="">any evidence</option><option value="documented">documented or better</option><option value="measured">measured or better</option><option value="attested">attested</option></select>
     <select id="w-status"><option value="">live and planned</option><option value="live">live only</option><option value="planned">planned only</option></select>
+    <select id="w-residency"><option value="">any residency</option><option value="storage">residency: storage or better</option><option value="processing">residency: processing</option></select>
     <input type="text" id="w-model" placeholder="Filter by model, e.g. gpt-oss or command">
     <input type="text" id="w-lineage" placeholder="exclude lineage, e.g. CN" style="max-width:12rem">
   </div>
@@ -414,6 +420,16 @@
     <span>Size: models served. Several sites in one city share a marker.</span>
   </div>
   <div class="panel tablewrap" id="w-table"></div>
+  <h2 id="w-res" style="margin-top:1.6rem">Residency commitments</h2>
+  <p class="sub">What each provider officially promises about where prompts, outputs and stored data stay, with the page that says so, including routers and providers with no known sites. <b>default</b>: every customer; <b>opt in</b>: a setting, regional endpoint or region you choose; <b>enterprise</b>: contract or paid plan only. Curated from public pages; a promise is not proof (<a href="https://github.com/opennodes-io/opennodes/blob/main/spec/ONP-2-node-card.md#3b-residency--what-the-operator-promises-about-where-data-stays" target="_blank" rel="noopener">ONP-2 §3b</a>). Also as <a id="r-json" href="/v0/residency">JSON</a> and <a id="r-csv" href="/v0/residency?format=csv">CSV</a>.</p>
+  <div class="toolbar">
+    <input type="text" id="r-scope" placeholder="keeps data in, e.g. EU, DE, CA" style="max-width:14rem">
+    <select id="r-commitment"><option value="">any commitment</option><option value="storage">storage or better</option><option value="processing">processing</option></select>
+    <select id="r-availability"><option value="">any availability</option><option value="default">by default</option><option value="opt_in">default or opt in</option></select>
+    <select id="r-kind"><option value="">every kind</option><option value="cloud">clouds</option><option value="lab">model labs</option><option value="inference">inference hosts</option><option value="router">routers</option><option value="local">local apps</option><option value="unknown">unknown</option></select>
+  </div>
+  <div class="panel pad" id="r-summary" style="margin-bottom:0.8rem"></div>
+  <div class="panel tablewrap" id="r-table"></div>
 </div>
 
 <!-- ================= NEW (feed) ================= -->
@@ -657,7 +673,7 @@ function route() {
   if (view === 'chat') loadChatTargets();
   if (view === 'rankings') loadRankings();
   if (view === 'nodes') loadNodes();
-  if (view === 'where') loadWhere();
+  if (view === 'where') { loadWhere(); loadResidency(); }
   if (view === 'feed') loadFeed();
   if (view === 'node' && arg) loadNode(arg);
 }
@@ -2217,7 +2233,7 @@ async function loadWhere() {
   const qs = new URLSearchParams();
   const set = (k, id) => { const v = $(id).value.trim(); if (v) qs.set(k, v); };
   set('country', '#w-country'); set('basis', '#w-basis'); set('status', '#w-status');
-  set('model', '#w-model'); set('exclude_lineage', '#w-lineage');
+  set('model', '#w-model'); set('exclude_lineage', '#w-lineage'); set('residency', '#w-residency');
   const q = qs.toString() ? '?' + qs : '';
   $('#w-json').href = '/v0/locations' + q;
   $('#w-csv').href = '/v0/locations' + (q ? q + '&' : '?') + 'format=csv';
@@ -2238,22 +2254,66 @@ async function loadWhere() {
     const models = (x) => x.models.length
       ? `<div class="wmodels">${x.models.slice(0, 12).map((m) => `<span>${esc(m.name)}${m.lineage_origins ? ` <span class="lin">${esc(m.lineage_origins.join('/'))}</span>` : ''}</span>`).join('')}${x.models.length > 12 ? `<span class="prov">+${x.models.length - 12} more</span>` : ''}</div>`
       : `<span style="color:var(--muted); font-size:0.8rem">${esc(x.models_note ?? '—')}</span>`;
-    const provider = (x) => (x.source === 'seed'
+    const provider = (x) => (!hasNodeCard(x)
       ? `<b>${esc(x.provider)}</b>`
       : `<a href="#/node/${encodeURIComponent(x.node_id)}" style="font-weight:600">${esc(x.provider)}</a>`)
       + (x.operator_country ? ` <span style="color:var(--muted)">(${esc(x.operator_country)})</span>` : '')
       + (x.source !== 'registration' ? ' <span class="chip imp">' + (x.source === 'seed' ? 'SEED' : 'IMPORTED') + '</span>' : '');
     $('#w-table').innerHTML = r.sites.length ? `<table class="grid"><thead><tr>
-      <th>REGION</th><th>SITE</th><th>PROVIDER</th><th>STATUS</th><th>EVIDENCE</th><th>MODELS SERVED</th>
+      <th>REGION</th><th>SITE</th><th>PROVIDER</th><th>STATUS</th><th>EVIDENCE</th><th>RESIDENCY</th><th>MODELS SERVED</th>
     </tr></thead><tbody>` + r.sites.map((x) => `<tr>
       <td class="mono" style="font-size:0.78rem">${esc(x.region)}</td>
       <td>${esc(x.site ?? '—')}${x.facility_operator ? `<span class="prov">run by ${esc(x.facility_operator)}</span>` : ''}${x.note ? `<span class="prov">${esc(x.note)}</span>` : ''}</td>
       <td>${provider(x)}</td>
       <td><span class="chip s-${esc(x.status)}">${esc(String(x.status).toUpperCase())}</span></td>
       <td>${basisChip(x.basis)}${x.source_url ? `<span class="prov"><a href="${esc(x.source_url)}" target="_blank" rel="noopener">source</a>${x.checked ? ' · checked ' + esc(x.checked) : ''}</span>` : ''}</td>
+      <td>${resList(x.residency, true)}</td>
       <td>${models(x)}</td>
     </tr>`).join('') + '</tbody></table>' : '<p class="sub" style="padding:0.9rem 1rem; margin:0">No sites match these filters.</p>';
   } catch (e) { $('#w-table').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
+}
+/* Residency (ONP-2 §3b): one chip per commitment, with who gets it and the source. */
+const RES_LABEL = { processing: 'PROCESSING', storage: 'STORAGE', none: 'NO FIXED AREA', unstated: 'NOT STATED' };
+const AVAIL_LABEL = { opt_in: 'opt in', enterprise: 'enterprise' };
+function resList(list, compact = false) {
+  if (!list) return '<span style="color:var(--faint); font-size:0.78rem">—</span>';
+  if (!list.length) return `<span class="chip r-unstated">${RES_LABEL.unstated}</span>`;
+  return '<div class="rlist">' + list.map((r) => {
+    const c = RES_LABEL[r.commitment] ? r.commitment : 'unstated';
+    const where = !r.scope?.length ? '' : r.per_region && r.scope.length > 4
+      ? ` · CHOSEN REGION, ${r.scope.length} AREAS` : ' ' + r.scope.join(r.per_region ? ' or ' : '+');
+    return `<span><span class="chip r-${c}" title="${esc((r.scope ?? []).join(r.per_region ? ' or ' : ' + '))}">${RES_LABEL[c]}${esc(where)}</span>`
+      + (AVAIL_LABEL[r.availability] ? ` <span style="color:var(--muted)">${AVAIL_LABEL[r.availability]}</span>` : '')
+      + (r.programme ? ` <span style="color:var(--muted)">· ${esc(r.programme)}</span>` : '')
+      + (!compact && r.statement ? `<span class="prov">${esc(r.statement)}</span>` : '')
+      + (r.source ? ` <a href="${esc(r.source)}" target="_blank" rel="noopener" title="${esc(r.statement ?? '')}" style="font-size:0.72rem">source</a>` : '')
+      + '</span>';
+  }).join('') + '</div>';
+}
+/** Site-only seed entries have no node card; seed sites attached to a listed node do. */
+const hasNodeCard = (s) => !(s.source === 'seed' && String(s.node_id).startsWith('import.seed.'));
+async function loadResidency() {
+  const qs = new URLSearchParams();
+  const set = (k, id) => { const v = $(id).value.trim(); if (v) qs.set(k, v); };
+  set('scope', '#r-scope'); set('commitment', '#r-commitment'); set('availability', '#r-availability'); set('kind', '#r-kind');
+  const q = qs.toString() ? '?' + qs : '';
+  $('#r-json').href = '/v0/residency' + q;
+  $('#r-csv').href = '/v0/residency' + (q ? q + '&' : '?') + 'format=csv';
+  try {
+    const r = await api('/v0/residency' + q);
+    const by = r.summary.by_strongest_commitment;
+    $('#r-summary').innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:0.4rem 1.2rem; font-size:0.84rem"><span><b>${fmtInt(r.summary.providers)}</b> providers, by their strongest commitment:</span>`
+      + Object.entries(by).map(([c, n]) => `<span><span class="chip r-${c}">${RES_LABEL[c]}</span> ${fmtInt(n)}</span>`).join('') + '</div>';
+    const link = (x) => x.node_ids.find((id) => !id.startsWith('import.seed.'));
+    $('#r-table').innerHTML = r.providers.length ? `<table class="grid"><thead><tr>
+      <th>PROVIDER</th><th>KIND</th><th>SITES</th><th>COMMITMENTS</th>
+    </tr></thead><tbody>` + r.providers.map((x) => `<tr>
+      <td>${link(x) ? `<a href="#/node/${encodeURIComponent(link(x))}" style="font-weight:600">${esc(x.provider)}</a>` : `<b>${esc(x.provider)}</b>`}${x.operator_country ? ` <span style="color:var(--muted)">(${esc(x.operator_country)})</span>` : ''}</td>
+      <td style="font-size:0.8rem">${esc(x.kind ?? '—')}</td>
+      <td class="mono" style="font-size:0.78rem">${x.sites || '—'}</td>
+      <td>${resList(x.residency)}</td>
+    </tr>`).join('') + '</tbody></table>' : '<p class="sub" style="padding:0.9rem 1rem; margin:0">No providers match these filters.</p>';
+  } catch (e) { $('#r-table').innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
 }
 /* Map: Leaflet is fetched only when this page opens (no CDN or tile requests elsewhere in the
    app), pinned by version and integrity. Tiles come from the registry's /v0/health `map`
@@ -2315,7 +2375,8 @@ async function renderWhereMap(sites) {
       ${esc(s.site ?? 'site not named')} · <span class="mono">${esc(s.region)}</span> · ${esc(s.status)} · ${basisChip(s.basis)}
       ${s.geo.derived ? `<br><i style="color:#5C6E7E">Approximate: only the ${esc(s.geo.precision)} is known</i>` : ''}
       <br>${s.models.length ? esc(s.models.slice(0, 8).map((m) => m.name).join(', ')) + (s.models.length > 8 ? ` +${s.models.length - 8} more` : '') : `<span style="color:#5C6E7E">${esc(s.models_note ?? 'no models listed')}</span>`}
-      ${s.source === 'seed' ? '' : `<br><a href="#/node/${encodeURIComponent(s.node_id)}">node card</a>`}${s.source_url ? ` · <a href="${esc(s.source_url)}" target="_blank" rel="noopener">source</a>` : ''}
+      ${s.residency?.length ? `<br>Residency: ${esc(s.residency.map((r) => (RES_LABEL[r.commitment] ?? RES_LABEL.unstated).toLowerCase() + (r.scope?.length ? ' in ' + r.scope.join(r.per_region ? ' or ' : '+') : '') + (AVAIL_LABEL[r.availability] ? ` (${AVAIL_LABEL[r.availability]})` : '')).join('; '))}` : ''}
+      ${hasNodeCard(s) ? `<br><a href="#/node/${encodeURIComponent(s.node_id)}">node card</a>` : ''}${s.source_url ? ` · <a href="${esc(s.source_url)}" target="_blank" rel="noopener">source</a>` : ''}
     </div>`).join(''), { maxWidth: 320, maxHeight: 320 });
     marker.bindTooltip(`${group.length} site${group.length > 1 ? 's' : ''} · ${models} models`);
     marker.addTo(whereLayer);
@@ -2324,7 +2385,10 @@ async function renderWhereMap(sites) {
   if (bounds.length) whereMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 6 });
 }
 
-for (const id of ['w-country', 'w-basis', 'w-status']) $('#' + id).addEventListener('change', loadWhere);
+for (const id of ['w-country', 'w-basis', 'w-status', 'w-residency']) $('#' + id).addEventListener('change', loadWhere);
+for (const id of ['r-commitment', 'r-availability', 'r-kind']) $('#' + id).addEventListener('change', loadResidency);
+let resDebounce;
+$('#r-scope').addEventListener('input', () => { clearTimeout(resDebounce); resDebounce = setTimeout(loadResidency, 250); });
 let whereDebounce;
 for (const id of ['w-model', 'w-lineage']) $('#' + id).addEventListener('input', () => { clearTimeout(whereDebounce); whereDebounce = setTimeout(loadWhere, 250); });
 

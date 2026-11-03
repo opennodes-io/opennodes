@@ -24,6 +24,9 @@ const FILTERS = {
   jurisdiction: { type: 'string', description: 'Only operators that declare a country inside it: "eea" (EU + Iceland, Liechtenstein, Norway) or comma-separated ISO country codes, e.g. "DE,FI". Registered nodes declare their country; imported listings of known providers carry an inferred one (jurisdiction.basis = "inferred"); listings without a country are excluded.' },
 };
 
+const COMMITMENT = { type: 'string', enum: ['processing', 'storage'] };
+const AVAILABILITY = { type: 'string', enum: ['default', 'opt_in', 'enterprise'], description: 'With a residency filter: count only commitments offered this widely: default (every customer), opt_in (adds settings and regional endpoints), enterprise (adds contract-only offers; the default).' };
+
 export const MCP_TOOLS = [
   {
     name: 'recommend',
@@ -131,13 +134,31 @@ export const MCP_TOOLS = [
         exclude_lineage: { type: 'string', description: 'Comma-separated ISO country codes; drops models whose declared lineage includes any of them, e.g. "CN".' },
         near: { type: 'string', description: 'A point as "lat,lon" in decimal degrees, e.g. "45.50,-73.57" for Montréal. Adds distance_km to each site and sorts nearest first.' },
         within_km: { type: 'number', exclusiveMinimum: 0, description: 'With `near`: only sites within this great-circle distance. Sites known only to the country are excluded, since their point is a placeholder.' },
+        residency: { ...COMMITMENT, description: 'Only sites covered by a residency commitment at least this strong: processing (inference and stored data stay in the area) or storage (data at rest only).' },
+        availability: { ...AVAILABILITY },
       },
     },
     annotations: { title: 'Find where models run', readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   },
+  {
+    name: 'find_residency',
+    title: 'Find residency commitments',
+    description: "What each AI provider officially promises about where prompts, outputs and stored data stay: per provider (cloud, lab API, inference host or router), its commitments, each with a commitment level (processing: inference and stored data stay in the scope; storage: data at rest only; none; unstated), the region codes it covers, who gets it (default, opt_in, enterprise), the programme name, a short statement and the source page with the date it was checked. Includes routers and providers with no known sites. Use it to answer \"which providers keep data in the EU by default\" before choosing an offering; then find_locations or search_offerings with `region`.",
+    inputSchema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        scope: { type: 'string', description: 'Region code, e.g. "EU", "DE", "US", "CA". Keeps providers with a processing or storage commitment whose scope lies within it. EU and EEA cover their member states.' },
+        commitment: { ...COMMITMENT, description: 'Minimum commitment: processing, or storage (which also matches processing).' },
+        availability: { ...AVAILABILITY },
+        kind: { type: 'string', enum: ['inference', 'cloud', 'lab', 'router', 'local', 'unknown'], description: 'Only providers of this kind.' },
+        node_id: { type: 'string', description: 'Only the provider that covers this registry node id.' },
+      },
+    },
+    annotations: { title: 'Find residency commitments', readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+  },
 ];
 
-export const MCP_INSTRUCTIONS = "OpenNodes finds and prices AI inference endpoints across registered nodes and imported catalogs (OpenRouter, Hugging Face, models.dev, local). Start with recommend when you know the task; use search_offerings to browse with filters, get_offering for one offering's full detail, get_node to vet who runs a node and how it has behaved, estimate to price a multi-step chain before running it, and find_locations to see which providers serve which models in a country, with the evidence for each site. All tools are read-only: nothing is invoked or charged.";
+export const MCP_INSTRUCTIONS = "OpenNodes finds and prices AI inference endpoints across registered nodes and imported catalogs (OpenRouter, Hugging Face, models.dev, local). Start with recommend when you know the task; use search_offerings to browse with filters, get_offering for one offering's full detail, get_node to vet who runs a node and how it has behaved, estimate to price a multi-step chain before running it, find_locations to see which providers serve which models in a country, with the evidence for each site, and find_residency to see what each provider promises about where data stays. All tools are read-only: nothing is invoked or charged.";
 
 // Registry node detail → what an agent needs to vet a provider. Drops signatures and
 // raw cards (imported catalogs carry hundreds of offerings).

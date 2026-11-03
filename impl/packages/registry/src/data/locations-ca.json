@@ -7,6 +7,7 @@
     {
       "id": "aws-bedrock",
       "name": "Amazon Bedrock (Canadian regions)",
+      "residency_of": "world:aws-bedrock",
       "operator": { "name": "Amazon Web Services", "country": "US", "url": "https://docs.aws.amazon.com/bedrock/latest/userguide/models-region-compatibility.html" },
       "note": "In-region processing only. Newer models (recent Claude, GPT, Grok, Nova, Kimi) reach the Canadian regions only through Geo or Global cross-region routing and are not listed.",
       "sites": [
@@ -31,6 +32,7 @@
     {
       "id": "google-vertex",
       "name": "Google Vertex AI (Montréal)",
+      "residency_of": "world:google-vertex",
       "operator": { "name": "Google Cloud", "country": "US", "url": "https://cloud.google.com/vertex-ai/generative-ai/docs/learn/data-residency" },
       "note": "Only Google models are processed in Canada; partner and open models on Vertex AI are not. Toronto (northamerica-northeast2) is not listed for generative AI.",
       "sites": [
@@ -47,6 +49,7 @@
     {
       "id": "azure-openai",
       "name": "Azure OpenAI in Foundry (Canadian regions)",
+      "residency_of": "world:azure-openai",
       "operator": { "name": "Microsoft", "country": "US", "url": "https://learn.microsoft.com/en-us/azure/ai-foundry/openai/concepts/models" },
       "note": "OpenAI models only; no Canada data zone. Standard deployments in Canada East; the rest is provisioned (reserved) capacity. Region tables not re-checked on Microsoft's page, so claimed.",
       "sites": [
@@ -71,6 +74,7 @@
     {
       "id": "cohere",
       "name": "Cohere",
+      "residency_of": "world:cohere",
       "operator": { "name": "Cohere", "country": "CA", "url": "https://docs.cohere.com/docs/models" },
       "note": "Cohere's hosted API runs in the US (Trust Center: no servers outside the US). Canadian serving needs Model Vault Canada, a partner such as Bell, or self-hosted weights.",
       "sites": [
@@ -92,6 +96,10 @@
     {
       "id": "denvr-dataworks",
       "name": "Denvr Dataworks",
+      "kind": "inference",
+      "residency": [
+        { "commitment": "processing", "scope": ["CA"], "availability": "opt_in", "statement": "Claimed (not on the provider's own pages): Dedicated inference endpoints can be placed in Canadian data centres; the Canada AI Platform material says all its zones are in Canada and offers Canadian data residency.", "source": "https://denvrcaip.pages.dev/", "checked": "2026-11-03" }
+      ],
       "operator": { "name": "Denvr Dataworks", "country": "CA", "url": "https://www.denvr.com/ai-inference" },
       "note": "Dedicated endpoints in Canadian and US data centres; the customer chooses the site, so each listing covers both countries.",
       "sites": [
@@ -109,6 +117,7 @@
     {
       "id": "cerebras",
       "name": "Cerebras Inference",
+      "residency_of": "world:cerebras",
       "operator": { "name": "Cerebras Systems", "country": "US", "url": "https://inference-docs.cerebras.ai/models/overview" },
       "note": "Which site serves which model is not stated, so each listing covers both countries.",
       "sites": [
@@ -123,6 +132,10 @@
     {
       "id": "telus-sovereign-ai-factory",
       "name": "TELUS Sovereign AI Factory",
+      "kind": "inference",
+      "residency": [
+        { "commitment": "processing", "scope": ["CA"], "availability": "default", "statement": "TELUS says all data processing and storage stays inside Canada, in facilities that are Canadian-controlled and operated.", "source": "https://www.telus.com/business/medium-large/sovereign-ai-factory", "checked": "2026-11-03" }
+      ],
       "operator": { "name": "TELUS", "country": "CA", "url": "https://www.telus.com/business/medium-large/sovereign-ai-factory" },
       "sites": [
         { "id": "rimouski", "region": "CA-QC", "site": "Rimouski", "status": "live", "basis": "claimed", "source": "https://www.rcrwireless.com/20260512/carriers/telus-ai-data-centers", "checked": "2026-11-02", "note": "Live since Sep 2025; reported sold out (news report)", "geo": { "lat": 48.4489, "lon": -68.523, "precision": "city" } },
@@ -135,6 +148,10 @@
     {
       "id": "bell-ai-fabric",
       "name": "Bell AI Fabric",
+      "kind": "inference",
+      "residency": [
+        { "commitment": "processing", "scope": ["CA"], "availability": "default", "statement": "Bell says its AI Fabric data centres keep data and AI compute in Canada.", "source": "https://businessmarkets.bell.ca/sovereign-AI", "checked": "2026-11-03" }
+      ],
       "operator": { "name": "Bell Canada", "country": "CA" },
       "sites": [
         { "id": "kamloops", "region": "CA-BC", "site": "Kamloops", "status": "live", "basis": "claimed", "facility_operator": "Groq", "source": "https://groq.com/blog/groq-becomes-exclusive-inference-provider-for-bell-canadas-sovereign-ai-network", "checked": "2026-11-02", "note": "Groq inference site", "geo": { "lat": 50.6745, "lon": -120.3273, "precision": "city" } },
@@ -146,6 +163,10 @@
     {
       "id": "thinkon",
       "name": "ThinkOn",
+      "kind": "cloud",
+      "residency": [
+        { "commitment": "processing", "scope": ["CA"], "availability": "default", "programme": "Canada's Sovereign AI Platform", "statement": "The platform runs entirely in Canada under Canadian operational and legal control, on Canadian-owned and operated infrastructure.", "source": "https://thinkon.com/blogs/selected-to-power-canadas-sovereign-ai-platform/", "checked": "2026-11-03" }
+      ],
       "operator": { "name": "ThinkOn", "country": "CA", "url": "https://thinkon.com" },
       "sites": [
         { "id": "ca", "region": "CA", "site": "Canadian data centres (not named)", "status": "live", "basis": "documented", "source": "https://thinkon.com/blogs/selected-to-power-canadas-sovereign-ai-platform/", "checked": "2026-11-02" }
@@ -156,6 +177,7 @@
     {
       "id": "oracle-oci",
       "name": "Oracle OCI Generative AI (Canadian regions)",
+      "residency_of": "world:oci-genai",
       "operator": { "name": "Oracle", "country": "US", "url": "https://docs.oracle.com/en-us/iaas/Content/generative-ai/regions-without-local-on-demand-model-hosting.htm" },
       "sites": [
         { "id": "yyz", "region": "CA-ON", "site": "Toronto", "status": "live", "basis": "documented", "source": "https://docs.oracle.com/en-us/iaas/Content/generative-ai/regions-without-local-on-demand-model-hosting.htm", "checked": "2026-11-02", "geo": { "lat": 43.6532, "lon": -79.3832, "precision": "city" } },
@@ -167,6 +189,7 @@
     {
       "id": "ovhcloud",
       "name": "OVHcloud (Beauharnois)",
+      "residency_of": "world:ovhcloud",
       "operator": { "name": "OVHcloud", "country": "FR", "url": "https://help.ovhcloud.com/csm/en-public-cloud-ai-endpoints-capabilities?id=kb_article_view" },
       "sites": [
         { "id": "bhs", "region": "CA-QC", "site": "Beauharnois", "status": "live", "basis": "documented", "source": "https://help.ovhcloud.com/csm/en-public-cloud-ai-endpoints-capabilities?id=kb_article_view", "checked": "2026-11-02", "note": "General cloud region", "geo": { "lat": 45.3151, "lon": -73.8724, "precision": "city" } }
@@ -177,6 +200,10 @@
     {
       "id": "isaic",
       "name": "ISAIC (University of Alberta)",
+      "kind": "cloud",
+      "residency": [
+        { "commitment": "processing", "scope": ["CA"], "availability": "default", "statement": "GPUs are provisioned on Canadian infrastructure. This describes the service; it is not a contractual promise.", "source": "https://isaic.ca", "checked": "2026-11-03" }
+      ],
       "operator": { "name": "University of Alberta", "country": "CA", "url": "https://isaic.ca" },
       "sites": [
         { "id": "edmonton", "region": "CA-AB", "site": "Edmonton", "status": "live", "basis": "documented", "source": "https://isaic.ca", "checked": "2026-11-02", "geo": { "lat": 53.5461, "lon": -113.4938, "precision": "city" } }
@@ -187,6 +214,7 @@
     {
       "id": "coreweave-cambridge",
       "name": "CoreWeave (Cambridge, Ontario)",
+      "residency_of": "world:wandb",
       "operator": { "name": "CoreWeave", "country": "US" },
       "sites": [
         { "id": "cambridge", "region": "CA-ON", "site": "Cambridge", "status": "live", "basis": "claimed", "note": "Cohere is the anchor tenant (news report)", "geo": { "lat": 43.3616, "lon": -80.3144, "precision": "city" } }
@@ -197,6 +225,10 @@
     {
       "id": "qscale",
       "name": "QScale (Lévis)",
+      "kind": "cloud",
+      "residency": [
+        { "commitment": "unstated", "scope": [], "availability": "default", "statement": "Colocation provider; no statement on model data residency.", "source": "https://www.qscale.com", "checked": "2026-11-03" }
+      ],
       "operator": { "name": "QScale" },
       "sites": [
         { "id": "levis", "region": "CA-QC", "site": "Lévis", "status": "live", "basis": "claimed", "note": "Bought by Goldman Sachs Alternatives in May 2026 (news report)", "geo": { "lat": 46.8033, "lon": -71.1779, "precision": "city" } }

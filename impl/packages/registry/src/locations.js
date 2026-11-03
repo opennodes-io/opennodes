@@ -1,10 +1,13 @@
 // Where models run (ONP-3 §5c): every known serving site, with its evidence basis and the
-// models it serves, built from card locations (registered nodes and imports) plus the
-// site-only entries of the curated seeds (providers that publish sites but not models).
+// models it serves, built from card locations (registered nodes and imports) plus the curated
+// seeds: site-only providers (sites but no models) and entries that describe an existing node.
+// Residency commitments (ONP-2 §3b, ONP-3 §5d) come from cards and seeds and are attached to
+// each site they cover.
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   sendJson, problem, regionWithin, countryOf, basisRank, pointFor, distanceKm, parsePoint, precisionRank,
+  residencyAt, residencyMeets, commitmentRank, scopeCovers, RESIDENCY_COMMITMENTS,
 } from '@opennodes/core';
 import { siteLocation } from './importers.js';
 
@@ -17,15 +20,33 @@ export function loadLocationSeeds(dir = DATA_DIR) {
     .map((f) => JSON.parse(readFileSync(dir + f, 'utf8')));
 }
 
+/** `{seed}:{id}` -> seed provider, for `residency_of` references between seeds. */
+const seedIndex = (seeds) => new Map(seeds.flatMap((seed) => (seed.providers ?? []).map((p) => [`${seed.seed}:${p.id}`, { seed, p }])));
+/** A seed provider's own commitments, or those of the entry it points to with `residency_of`. */
+const seedResidency = (index, p) => (p.residency_of ? index.get(p.residency_of)?.p.residency : p.residency) ?? null;
+
+/** Visible nodes with their latest cards. */
+async function listedCards(store) {
+  const cards = [];
+  for (const node of await store.allNodes()) {
+    if (HIDDEN.includes(node.state)) continue;
+    const card = await store.latestCard(node.id);
+    if (card) cards.push({ node, card });
+  }
+  return cards;
+}
+
 /** All sites, unfiltered: one entry per (node, region, site), models attached. */
 export async function collectSites(store, seeds = []) {
   const sites = new Map();
   let located = 0, unlocated = 0;
+  const index = seedIndex(seeds);
   const siteFor = (base, loc) => {
     const key = `${base.node_id}|${loc.region}|${loc.site ?? ''}`;
     if (!sites.has(key)) {
+      const { commitments, ...rest } = base;
       sites.set(key, {
-        ...base,
+        ...rest,
         country: countryOf(loc.region),
         region: loc.region,
         site: loc.site ?? null,
@@ -36,6 +57,7 @@ export async function collectSites(store, seeds = []) {
         checked: loc.checked ?? null,
         note: loc.note ?? null,
         geo: pointFor(loc),   // declared point, else an approximate one from the region (derived: true)
+        residency: commitments ? residencyAt(commitments, loc.region) : null,
         models: [],
         models_note: null,
       });
@@ -43,32 +65,72 @@ export async function collectSites(store, seeds = []) {
     return sites.get(key);
   };
 
-  for (const node of await store.allNodes()) {
-    if (HIDDEN.includes(node.state)) continue;
-    const card = await store.latestCard(node.id);
-    if (!card) continue;
+  const cards = await listedCards(store);
+  const listed = new Set(cards.map((c) => c.node.id));
+
+  // Seed entries that describe registered nodes (`nodes`): the first listed node holds the
+  // sites; with placement "all", the offerings of every listed node are served there.
+  const attached = new Map();   // node id -> { p, primary }
+  for (const seed of seeds) {
+    for (const p of seed.providers ?? []) {
+      if (p.models?.length || !p.nodes?.length) continue;
+      const primary = p.nodes.find((id) => listed.has(id));
+      for (const id of p.nodes) if (listed.has(id)) attached.set(id, { p, primary });
+    }
+  }
+  const residencyOf = new Map();  // node id -> commitments, from seeds
+  for (const seed of seeds) {
+    for (const p of seed.providers ?? []) {
+      const r = seedResidency(index, p);
+      if (!r) continue;
+      if (p.models?.length) residencyOf.set(`import.seed.${seed.seed}.${p.id}`, r);
+      for (const id of p.nodes ?? []) if (!residencyOf.has(id)) residencyOf.set(id, r);
+    }
+  }
+
+  const bases = new Map();
+  for (const { node, card } of cards) {
     // The registry's server-location check (location.js, ONP-3 §6.4) covers the node's API host,
     // not each site: shown beside the declared sites, never turning one into `measured` by itself.
     const check = (await store.getObservations(node.id, '_node')).location ?? null;
-    const base = {
+    const via = attached.get(node.id);
+    const holds = via?.primary === node.id;
+    bases.set(node.id, {
       node_id: node.id,
-      provider: card.node?.name ?? node.id,
-      operator: card.node?.operator?.name ?? null,
-      operator_country: card.node?.operator?.country ?? null,
+      provider: holds ? via.p.name : (card.node?.name ?? node.id),
+      operator: card.node?.operator?.name ?? via?.p.operator?.name ?? null,
+      operator_country: card.node?.operator?.country ?? via?.p.operator?.country ?? null,
       tier: node.state === 'indexed' ? 'unverified' : node.state,
-      source: node.source ?? 'registration',
+      source: holds ? 'seed' : (node.source ?? 'registration'),
       server_check: check ? {
         verdict: check.verdict, server_country: check.server?.country ?? null,
         latency: check.latency?.verdict ?? 'unknown', checked_at: check.checked_at ?? null,
       } : null,
-    };
+      commitments: card.node?.residency ?? residencyOf.get(node.id) ?? null,
+    });
+  }
+  for (const { node, card } of cards) {
+    const base = bases.get(node.id);
     for (const loc of card.node?.locations ?? []) siteFor(base, loc);
+    const via = attached.get(node.id);
+    const seedLocs = via ? (via.p.sites ?? []).map(siteLocation) : [];
+    if (via?.primary === node.id) {
+      for (const loc of seedLocs) {
+        siteFor(base, loc).models_note = via.p.placement === 'all' ? null
+          : (via.p.models_note ?? 'The provider does not say which models run at which site.');
+      }
+    }
     for (const o of card.offerings) {
-      const locs = Array.isArray(o.locations) ? o.locations : (card.node?.locations ?? []);
+      let locs = Array.isArray(o.locations) ? o.locations : (card.node?.locations ?? []);
+      let holder = base;
+      if (!locs.length && !Array.isArray(o.locations) && via?.p.placement === 'all' && seedLocs.length) {
+        locs = seedLocs;
+        holder = bases.get(via.primary);
+      }
       if (!locs.length) { unlocated++; continue; }
       located++;
       for (const loc of locs) {
-        siteFor(base, loc).models.push({
+        siteFor(holder, loc).models.push({
           offering_id: o.offering_id,
           name: o.model.name,
           artifact: o.model.artifact,
@@ -83,7 +145,8 @@ export async function collectSites(store, seeds = []) {
 
   for (const seed of seeds) {
     for (const p of seed.providers ?? []) {
-      if (p.models?.length) continue; // imported as a card; its sites came in above
+      if (p.models?.length) continue;                       // imported as a card; its sites came in above
+      if (p.nodes?.some((id) => listed.has(id))) continue;  // attached to a registered node above
       const base = {
         node_id: `import.seed.${seed.seed}.${p.id}`,
         provider: p.name,
@@ -92,9 +155,15 @@ export async function collectSites(store, seeds = []) {
         tier: 'unverified',
         source: 'seed',
         server_check: null,
+        commitments: seedResidency(index, p),
       };
       for (const s of p.sites ?? []) siteFor(base, siteLocation(s)).models_note = p.models_note ?? 'Models not published';
     }
+  }
+  // Several nodes of one provider at one site: each model once.
+  for (const s of sites.values()) {
+    const seen = new Set();
+    s.models = s.models.filter((m) => { const k = `${m.name}|${m.artifact}`; return !seen.has(k) && seen.add(k); });
   }
   return { sites: [...sites.values()], located_offerings: located, unlocated_offerings: unlocated };
 }
@@ -116,6 +185,10 @@ export async function buildLocations(store, seeds, query) {
   if (where) sites = sites.filter((s) => regionWithin(s.region, where));
   if (q('basis')) sites = sites.filter((s) => basisRank(s.basis) >= basisRank(q('basis')));
   if (q('status')) sites = sites.filter((s) => s.status === q('status'));
+  if (q('residency')) {
+    if (!['processing', 'storage'].includes(q('residency'))) throw Object.assign(new Error('residency must be processing or storage'), { status: 400 });
+    sites = sites.filter((s) => residencyMeets(s.residency, q('residency'), q('availability') ?? 'enterprise'));
+  }
   const banned = q('exclude_lineage')?.toUpperCase().split(',') ?? [];
   const needle = q('model')?.toLowerCase();
   if (banned.length || needle) {
@@ -165,7 +238,10 @@ export async function buildLocations(store, seeds, query) {
 
 const CSV_COLUMNS = ['country', 'region', 'site', 'status', 'basis', 'provider', 'operator', 'operator_country',
   'facility_operator', 'node_id', 'tier', 'source', 'model', 'artifact', 'lineage_origins', 'source_url', 'checked', 'note',
-  'lat', 'lon', 'precision', 'derived', 'distance_km'];
+  'lat', 'lon', 'precision', 'derived', 'distance_km', 'residency'];
+/** "processing EU (opt_in); none" — a site's or provider's commitments as one cell. */
+export const residencyText = (list) => (list ?? []).map((r) => [r.commitment, (r.scope ?? []).join(r.per_region ? '|' : '+'),
+  r.availability && r.availability !== 'default' ? `(${r.availability})` : ''].filter(Boolean).join(' ')).join('; ');
 const csvCell = (v) => {
   const s = v == null ? '' : String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -180,6 +256,7 @@ export function locationsCsv(report) {
       const row = {
         ...s, model: m.name, artifact: m.artifact, lineage_origins: (m.lineage_origins ?? []).join(' '),
         lat: s.geo?.lat, lon: s.geo?.lon, precision: s.geo?.precision, derived: s.geo?.derived,
+        residency: residencyText(s.residency),
       };
       rows.push(CSV_COLUMNS.map((c) => csvCell(row[c])).join(','));
     }
@@ -207,6 +284,7 @@ export function locationsGeoJson(report) {
       models: s.models.map((m) => m.name).join('; '),
       lineage: [...new Set(s.models.flatMap((m) => m.lineage_origins ?? []))].join('; '),
       models_note: s.models_note,
+      residency: residencyText(s.residency),
       ...(s.distance_km !== undefined ? { distance_km: s.distance_km } : {}),
     },
   }));
@@ -219,8 +297,98 @@ export function locationsGeoJson(report) {
   };
 }
 
+/**
+ * Residency commitments per provider (ONP-3 §5d): curated seed entries (an entry that points to
+ * another with `residency_of` is folded into it), registered cards that declare their own, and
+ * every other listed node as unstated. Query: scope (a processing or storage commitment whose
+ * scope lies within it), commitment (minimum), availability, kind, node_id.
+ */
+export async function buildResidency(store, seeds, query) {
+  const q = (k) => query.get(k);
+  if (q('commitment') && !['processing', 'storage'].includes(q('commitment'))) throw Object.assign(new Error('commitment must be processing or storage'), { status: 400 });
+  const { sites } = await collectSites(store, seeds);
+  const siteCount = new Map();
+  for (const s of sites) siteCount.set(s.node_id, (siteCount.get(s.node_id) ?? 0) + 1);
+  const index = seedIndex(seeds);
+  const entries = new Map();
+  const covered = new Set();
+  for (const seed of seeds) {
+    for (const p of seed.providers ?? []) {
+      const key = p.residency_of && index.has(p.residency_of) ? p.residency_of : `${seed.seed}:${p.id}`;
+      const holder = index.get(key).p;
+      if (!entries.has(key)) {
+        entries.set(key, {
+          id: key, provider: holder.name, kind: holder.kind ?? null,
+          operator: holder.operator?.name ?? null, operator_country: holder.operator?.country ?? null,
+          node_ids: new Set(), sites: 0, source: 'seed', residency: holder.residency ?? [],
+        });
+      }
+      const e = entries.get(key);
+      for (const id of [...(p.nodes ?? []), `import.seed.${seed.seed}.${p.id}`]) { e.node_ids.add(id); covered.add(id); }
+    }
+  }
+  for (const { node, card } of await listedCards(store)) {
+    if (covered.has(node.id)) continue;
+    entries.set(node.id, {
+      id: node.id, provider: card.node?.name ?? node.id, kind: null,
+      operator: card.node?.operator?.name ?? null, operator_country: card.node?.operator?.country ?? null,
+      node_ids: new Set([node.id]), sites: 0,
+      source: card.node?.residency ? 'card' : 'none', residency: card.node?.residency ?? [],
+    });
+  }
+  let list = [...entries.values()].map((e) => {
+    const ids = [...e.node_ids];
+    const strongest = e.residency.reduce((best, r) => (commitmentRank(r.commitment) > commitmentRank(best) ? r.commitment : best), 'unstated');
+    return { ...e, node_ids: ids, sites: ids.reduce((n, id) => n + (siteCount.get(id) ?? 0), 0),
+      strongest: RESIDENCY_COMMITMENTS.includes(strongest) ? strongest : 'unstated' };
+  });
+  const availability = q('availability') ?? 'enterprise';
+  const min = q('commitment') ?? (q('scope') ? 'storage' : null);
+  if (min || q('scope')) {
+    list = list.filter((e) => e.residency.some((r) => residencyMeets([r], min ?? 'unstated', availability)
+      && (!q('scope') || (commitmentRank(r.commitment) >= 2 && (r.scope ?? []).length
+        // One area: all of it inside the requested scope. Separate choices: one of them is.
+        && (r.per_region ? r.scope.some : r.scope.every).call(r.scope, (s) => scopeCovers(q('scope'), s))))));
+  }
+  if (q('kind')) list = list.filter((e) => e.kind === q('kind'));
+  if (q('node_id')) list = list.filter((e) => e.node_ids.includes(q('node_id')));
+  list.sort((a, b) => a.provider.localeCompare(b.provider));
+  const by = Object.fromEntries(RESIDENCY_COMMITMENTS.map((c) => [c, list.filter((e) => e.strongest === c).length]));
+  return {
+    generated_at: new Date().toISOString(),
+    filters: Object.fromEntries([...query].filter(([k]) => k !== 'format')),
+    summary: { providers: list.length, by_strongest_commitment: by },
+    providers: list,
+  };
+}
+
+const RESIDENCY_CSV = ['provider', 'kind', 'operator', 'operator_country', 'node_ids', 'sites', 'commitment', 'scope',
+  'availability', 'programme', 'statement', 'source', 'checked'];
+/** One row per provider and commitment; a provider with none gets one "unstated" row. */
+export function residencyCsv(report) {
+  const rows = [RESIDENCY_CSV.join(',')];
+  for (const e of report.providers) {
+    for (const r of e.residency.length ? e.residency : [{ commitment: 'unstated' }]) {
+      const row = { ...e, ...r, node_ids: e.node_ids.join(' '), scope: (r.scope ?? []).join(' '), availability: r.availability ?? 'default' };
+      rows.push(RESIDENCY_CSV.map((c) => csvCell(row[c])).join(','));
+    }
+  }
+  return rows.join('\n') + '\n';
+}
+
 export function locationRoutes(store, seeds) {
   return [
+    ['GET', '/v0/residency', async (req, res, { query }) => {
+      let report;
+      try { report = await buildResidency(store, seeds, query); }
+      catch (err) { if (err.status === 400) return problem(res, 400, 'bad-query', err.message); throw err; }
+      if (query.get('format') === 'csv') {
+        res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'inline; filename="residency.csv"' });
+        res.end(residencyCsv(report));
+        return;
+      }
+      sendJson(res, 200, report);
+    }],
     ['GET', '/v0/locations', async (req, res, { query }) => {
       let report;
       try { report = await buildLocations(store, seeds, query); }

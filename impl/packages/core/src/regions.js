@@ -48,3 +48,42 @@ export function residencyCodes(offering, card) {
   const codes = [...pins, ...sites];
   return codes.length ? codes : (card?.node?.regions ?? []);
 }
+
+// Residency commitments (ONP-2 §3b), strongest first. Unknown commitments count as unstated;
+// unknown availability counts as enterprise (the narrowest offer).
+export const RESIDENCY_COMMITMENTS = ['processing', 'storage', 'none', 'unstated'];
+export const RESIDENCY_AVAILABILITY = ['default', 'opt_in', 'enterprise'];
+/** Higher is stronger: processing 3, storage 2, none 1, unstated 0. */
+export const commitmentRank = (c) => { const i = RESIDENCY_COMMITMENTS.indexOf(c); return i < 0 ? 0 : RESIDENCY_COMMITMENTS.length - 1 - i; };
+/** Lower is wider: default 0, opt_in 1, enterprise (or unknown) 2. */
+export const availabilityRank = (a) => { const i = RESIDENCY_AVAILABILITY.indexOf(a ?? 'default'); return i < 0 ? 2 : i; };
+
+// A residency scope of "EU" or "EEA" covers its member states, which plain region containment
+// (where "EU" contains only "EU-…" codes) does not.
+const EU_STATES = new Set(['AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT',
+  'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE']);
+const EEA_STATES = new Set([...EU_STATES, 'IS', 'LI', 'NO']);
+
+/** Does residency `scope` (one code) cover `region`? Like regionWithin, plus EU and EEA membership. */
+export function scopeCovers(scope, region) {
+  const s = isoCountry(scope);
+  if (s === 'EU' || s === 'EEA') return regionWithin(region, s) || (s === 'EU' ? EU_STATES : EEA_STATES).has(countryOf(region));
+  return regionWithin(region, scope);
+}
+
+/**
+ * The commitments that apply at a site in `region`: a processing or storage promise whose scope
+ * covers the region, plus every none or unstated entry (they apply everywhere). A per-region
+ * promise is narrowed to the choice that covers the site ("US or EU or JP" in Ohio is "US").
+ */
+export function residencyAt(commitments, region) {
+  return (commitments ?? []).filter((r) => commitmentRank(r.commitment) < 2
+    || (r.scope ?? []).some((s) => scopeCovers(s, region)))
+    .map((r) => (r.per_region ? { ...r, scope: r.scope.filter((s) => scopeCovers(s, region)) } : r));
+}
+
+/** Is there a commitment at least as strong as `commitment`, offered at `availability` or wider? */
+export function residencyMeets(commitments, commitment, availability = 'enterprise') {
+  return (commitments ?? []).some((r) => commitmentRank(r.commitment) >= commitmentRank(commitment)
+    && availabilityRank(r.availability) <= availabilityRank(availability));
+}

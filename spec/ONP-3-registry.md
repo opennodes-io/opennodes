@@ -25,6 +25,7 @@ A registry is any service implementing this API. The architecture copies what wo
 | `POST /v0/estimate` | Cost/latency estimate for a planned invocation or chain (§5a) |
 | `GET /v0/offerings/{node_id}/{offering_id}` | Offering detail incl. observations, attestations, rank explanation |
 | `GET /v0/locations` | **Where models run**: serving sites by country, with evidence and the models each serves (§5c) |
+| `GET /v0/residency` | **Residency commitments**: what each provider promises about where data stays (§5d) |
 | `GET /v0/attestations?subject=…` | VCs known for a node/offering |
 | `GET /v0/health` | Registry self-description: ONP versions, ranking components (§6), federation peers (§8), fee policy |
 
@@ -141,6 +142,8 @@ The advisor is deliberately deterministic and reproducible: same catalog, same f
 &status=live         // live | planned; omit for both
 &model=gpt-oss       // substring of a model name or artifact; keeps only sites serving a match
 &exclude_lineage=CN  // drops models whose declared lineage includes these countries
+&residency=processing // keeps sites covered by a commitment at least this strong (ONP-2 §3b)
+&availability=opt_in // with residency: default < opt_in < enterprise; counts commitments up to this
 &near=45.50,-73.57   // a WGS 84 point: adds distance_km to each site, nearest first
 &within_km=300       // with near: great-circle radius; country-level points never match
 &format=csv          // one row per site and model; or format=geojson (RFC 7946)
@@ -164,6 +167,23 @@ The advisor is deliberately deterministic and reproducible: same catalog, same f
 - **GeoJSON.** `format=geojson` returns an RFC 7946 FeatureCollection (`application/geo+json`) with one Point feature per site that has a point, coordinates in `[lon, lat]` order. Properties are flat, with lists joined by `"; "`, so desktop GIS tools read them as columns. The foreign member `unmapped` counts sites without a point.
 - `measured` is the only basis a registry may assign (ONP-2 §3a). It requires probe points inside the region under test, and the registry MUST record which probe points produced it.
 - Sites of registered nodes carry `server_check`: the registry's server-location result for the node's API host (§6.4: verdict, server country, latency verdict, date). It tests where the endpoint answers from, not each declared site, so a passing check does not by itself make a site `measured`.
+- Sites carry `residency`: the provider's commitments (ONP-2 §3b) that apply at that site, meaning those whose scope contains the site's region, plus any `none` or `unstated` entry. A site in Ohio does not inherit a provider's EU commitment. `residency=` keeps sites with a covering commitment at least as strong as the value (`storage` also matches `processing`).
+- A curated seed entry MAY describe an existing node instead of creating its own listing. Its sites and residency are then shown under that node, and its offerings are placed at those sites only when the seed says every model is served from every listed site. This changes nothing in §5 search, which reads cards only.
+
+## 5d. Residency commitments
+
+`GET /v0/residency` lists what each provider promises about where data stays (ONP-2 §3b), from cards and curated seeds, including providers with no known sites, such as routers. Each entry carries the node ids it covers, the provider's `kind` (`inference`, `cloud`, `lab`, `router`, `local`, `unknown`), its operator country, the number of known sites and its commitments, each with source and date.
+
+```
+?scope=EU            // keeps providers with a processing or storage commitment that keeps data within EU:
+                     // every scope code inside it, or with per_region one of them
+&commitment=processing
+&availability=default // default < opt_in < enterprise; counts commitments up to this
+&kind=inference
+&format=csv
+```
+
+`summary` counts providers by their strongest commitment, so the share of providers that state nothing is visible.
 
 ## 6. Verification, observations, and ranking
 

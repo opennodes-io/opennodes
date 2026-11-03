@@ -91,6 +91,39 @@ The Node Card is the self-description document of an AI Node. It is the unit reg
 - **Offering override.** An offering MAY carry its own `locations`, which replaces the node's for that offering (one model may run only at one site). An **empty list means "unknown"**: the offering does not inherit the node's sites, and no residency requirement is met by it.
 - **Residency** combines both declarations: a request's region requirement is met only when every `data_policy.region_pinning` code **and** every live serving location lie inside it (ONP-3 §5). A node that declares neither falls back to its `regions`.
 
+## 3b. `residency` — what the operator promises about where data stays
+
+`locations` says where serving happens today. `residency` (OPTIONAL, on `node`) records the operator's **commitments** about where prompts, outputs and stored content may go, each with its scope and the page that makes the promise. It is what buyers otherwise dig out of data-processing agreements and trust centres.
+
+```json
+"node": {
+  "residency": [
+    {"commitment": "processing", "scope": ["EU"], "availability": "opt_in",
+     "programme": "Data residency in Europe",
+     "statement": "Projects created in the EU region are processed and stored in the EU.",
+     "source": "https://example-cloud.eu/data-residency", "checked": "2026-11-03"},
+    {"commitment": "none", "scope": [], "availability": "default",
+     "statement": "Otherwise requests may be processed in any region with capacity."}
+  ]
+}
+```
+
+- `commitment` — REQUIRED; core values, strongest first:
+
+  | Value | Meaning |
+  |---|---|
+  | `processing` | Inference and any stored content stay inside `scope` |
+  | `storage` | Content at rest (logs, files, tuned weights) stays inside `scope`; inference may run elsewhere |
+  | `none` | The operator says data may be processed or stored outside any fixed area |
+  | `unstated` | No public statement (set by registries for unclaimed listings) |
+
+  Unknown values count as `unstated`.
+- `scope` — region codes under the rules of §3 that the commitment covers, plus `EEA` (the EU with Iceland, Liechtenstein and Norway); for residency, `EU` and `EEA` cover their member states. REQUIRED and non-empty for `processing` and `storage`, empty otherwise. By default the codes form **one area**: data stays somewhere inside their union (`["EEA", "CH"]`).
+- `per_region` — `true` when each code is a **separate choice**: the customer picks one (a region, an endpoint, a data zone) and data stays inside that one (`["US", "EU", "JP"]` for "the US, or the EU, or Japan"). Default `false`.
+- `availability` — who gets it: `default` (every customer, no action needed), `opt_in` (a setting, regional endpoint or region the customer chooses), `enterprise` (only under a contract or a paid plan). A missing value means `default`; clients treat an unknown value as `enterprise`.
+- `programme` (a product or programme name, e.g. "EU Data Boundary"), `statement` (up to 500 characters, in the publisher's words), `source`, `checked` (`YYYY-MM-DD`). On a card, entries are the operator's signed statements. Registries that add entries for unclaimed listings MUST give `source` and `checked`, and MUST NOT present them as the operator's own card.
+- Commitments are informational in this revision. They do not change region matching (ONP-3 §5), which still checks pinned regions and live serving locations: a node whose default commitment is `processing` SHOULD also declare `data_policy.region_pinning` on its offerings.
+
 ## 4. `endpoints`
 
 ```json

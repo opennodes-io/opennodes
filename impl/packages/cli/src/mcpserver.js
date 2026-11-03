@@ -47,6 +47,13 @@ export function createStdioMcp({ registry, input = process.stdin, output = proce
         if (!res.ok) throw new Error(`registry locations failed: ${res.status}`);
         return res.json();
       }
+      case 'find_residency': {
+        const qs = new URLSearchParams();
+        for (const [k, v] of Object.entries(args)) if (v !== undefined && v !== null) qs.set(k, String(v));
+        const res = await fetch(`${base}/v0/residency?${qs}`);
+        if (!res.ok) throw new Error(`registry residency failed: ${res.status}`);
+        return res.json();
+      }
       case 'get_offering': {
         const res = await fetch(`${base}/v0/offerings/${encodeURIComponent(args.node_id)}/${encodeURIComponent(args.offering_id)}`);
         const body = await res.json();

@@ -28,7 +28,8 @@
         },
         "did": { "type": "string", "pattern": "^did:[a-z0-9]+:.+$" },
         "regions": { "$ref": "#/$defs/regions" },
-        "locations": { "$ref": "#/$defs/locations", "description": "Sites where the node serves, each with its evidence basis (ONP-2 §3a). Offerings inherit them unless they declare their own." }
+        "locations": { "$ref": "#/$defs/locations", "description": "Sites where the node serves, each with its evidence basis (ONP-2 §3a). Offerings inherit them unless they declare their own." },
+        "residency": { "$ref": "#/$defs/residency", "description": "The operator's commitments about where prompts, outputs and stored content may go (ONP-2 §3b)." }
       }
     },
     "endpoints": {
@@ -137,6 +138,27 @@
     "locations": {
       "type": "array",
       "items": { "$ref": "#/$defs/location" }
+    },
+    "residency": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["commitment"],
+        "properties": {
+          "commitment": { "$ref": "#/$defs/token", "description": "Core values, strongest first: processing (inference and stored content stay inside scope), storage (content at rest stays inside scope), none (may go anywhere), unstated. Unknown values count as unstated (ONP-2 §3b)." },
+          "scope": { "$ref": "#/$defs/regions", "description": "Region codes the commitment covers (ONP-2 §3 codes plus EEA); non-empty for processing and storage." },
+          "per_region": { "type": "boolean", "description": "True when each scope code is a separate choice (the customer picks one and data stays inside it); false (default) when the codes form one area." },
+          "availability": { "$ref": "#/$defs/token", "description": "Core values: default (every customer), opt_in (a setting, endpoint or region the customer chooses), enterprise (contract or paid plan only). Missing means default; unknown values count as enterprise." },
+          "programme": { "type": "string", "maxLength": 200 },
+          "statement": { "type": "string", "maxLength": 500 },
+          "source": { "type": "string", "format": "uri" },
+          "checked": { "type": "string", "format": "date" }
+        },
+        "allOf": [
+          { "if": { "properties": { "commitment": { "enum": ["processing", "storage"] } }, "required": ["commitment"] },
+            "then": { "required": ["scope"], "properties": { "scope": { "minItems": 1 } } } }
+        ]
+      }
     },
     "hardware": {
       "type": "object",

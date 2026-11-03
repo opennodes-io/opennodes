@@ -40,7 +40,7 @@ test('cli MCP server reports its package version and documents every tool parame
   assert.ok(init.instructions.length > 0);
 
   const tools = (await rpc('tools/list')).result.tools;
-  assert.deepEqual(tools.map((tl) => tl.name).sort(), ['estimate', 'find_locations', 'get_node', 'get_offering', 'recommend', 'search_offerings']);
+  assert.deepEqual(tools.map((tl) => tl.name).sort(), ['estimate', 'find_locations', 'find_residency', 'get_node', 'get_offering', 'recommend', 'search_offerings']);
   const undocumented = [];
   const walk = (schema, path) => {
     for (const [key, prop] of Object.entries(schema.properties ?? {})) {

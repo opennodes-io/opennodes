@@ -222,8 +222,10 @@ test('/v0/locations: near + within_km, GeoJSON (RFC 7946 order), and the map set
   t.after(() => registry.close());
 
   const near = await get(registry.origin, '/v0/locations?near=45.5019,-73.5674&within_km=300');
-  const regions = near.sites.map((s) => s.region);
-  assert.ok(near.sites.length >= 6 && regions.every((r) => r === 'CA-QC'));   // Montréal, Saint-Jérôme, Beauharnois, Québec City, Lévis
+  // Sites with a city point: Montréal, Saint-Jérôme, Beauharnois, Québec City, Lévis. A state-level
+  // placeholder (e.g. "US-NY", city not named) may also fall inside the radius.
+  const regions = near.sites.filter((s) => !s.geo.derived).map((s) => s.region);
+  assert.ok(regions.length >= 6 && regions.every((r) => r === 'CA-QC'));
   assert.ok(near.sites[0].distance_km <= 1);
   assert.ok(near.sites.every((s, i) => i === 0 || near.sites[i - 1].distance_km <= s.distance_km));
   assert.ok(!near.sites.some((s) => s.geo.precision === 'country'));          // ThinkOn's "CA" is not 0 km away
@@ -245,7 +247,7 @@ test('/v0/locations: near + within_km, GeoJSON (RFC 7946 order), and the map set
   assert.deepEqual([thinkon.properties.precision, thinkon.properties.derived], ['country', true]);
 
   const csv = await (await fetch(`${registry.origin}/v0/locations?country=CA&format=csv`)).text();
-  assert.match(csv.split('\n')[0], /,lat,lon,precision,derived,distance_km$/);
+  assert.match(csv.split('\n')[0], /,lat,lon,precision,derived,distance_km,residency$/);
 
   assert.match((await get(registry.origin, '/v0/health')).map.tiles, /openstreetmap/);
   const noMap = await startRegistry({ mapTiles: null });

@@ -1,5 +1,27 @@
 # ONP specification changes
 
+## Draft 0.1, revision 4 — 2026-11-03: residency commitments
+
+Where a provider serves from (revision 3) is half the answer; the other half is what it promises about where data may go. Revision 4 makes that promise machine-readable, with its source. It is additive: no existing card changes meaning, and region matching in search is unchanged.
+
+| # | Where | Change |
+|---|---|---|
+| R1 | ONP-2 §3b, schema | New optional `node.residency`: commitments with `commitment` (`processing` > `storage` > `none` > `unstated`), `scope` (region codes plus `EEA`; `EU` and `EEA` cover their member states), `per_region` (each code a separate choice rather than one area), `availability` (`default`, `opt_in`, `enterprise`), `programme`, `statement`, `source`, `checked`. Informational: §5 search still matches pinned regions and live sites |
+| R2 | ONP-3 §5c | `/v0/locations` sites carry the commitments that cover them (a per-region promise narrowed to the covering choice); `residency=` and `availability=` filters |
+| R3 | ONP-3 §5d, §2 | New `GET /v0/residency`: every provider's commitments, including routers and providers without sites, with `scope=`, `commitment=`, `availability=`, `kind=`, `node_id=` and `format=csv`; `summary` counts providers by their strongest commitment |
+| R4 | ONP-3 §5c | A curated seed entry may describe existing nodes instead of creating its own listing; its sites are shown under the node, with the node's models only when the seed says every model is served from every site. Search is unaffected |
+
+### Reference implementation changes
+
+- `@opennodes/core`: schema copy synced; `residencyAt`, `residencyMeets`, `scopeCovers`, `commitmentRank`, `availabilityRank`, `RESIDENCY_COMMITMENTS`, `RESIDENCY_AVAILABILITY`; `find_locations` takes `residency` and `availability`; new MCP tool `find_residency`.
+- `@opennodes/registry`:
+  - `/v0/residency` (JSON, CSV) and the MCP `find_residency` tool; `residency` on every `/v0/locations` site, in CSV and GeoJSON;
+  - curated seed `src/data/locations-world.json` (checked 2026-11-03): every provider in the registry, 216 entries covering 252 nodes, with 269 serving sites outside the Canada and Europe seeds and each provider's residency commitments (97 state one; most small resellers state nothing); seed entries with `nodes` attach to those nodes, with `kind`, `placement` and `residency`;
+  - the Canada and Europe seed entries carry residency, directly or via `residency_of` (a cloud's Canadian and European regions share the cloud's commitments);
+  - the "Where models run" page shows residency per site, a residency filter and a provider table.
+- `@opennodes/cli`: the stdio MCP server proxies `find_residency`.
+- Known gap: `region=EU` in search (§5) matches only codes inside `EU` (`EU-…`), not member states such as `DE`; residency scopes do cover member states. Aligning search is a separate change.
+
 ## Draft 0.1, revision 3 — 2026-11-02: where models run
 
 No public catalogue says which models run in which country's datacentres, or how anyone knows. Revision 3 adds that layer. It is additive: every revision 2 card stays valid and keeps its meaning, except that residency now also checks the serving locations a card declares.
