@@ -16,6 +16,7 @@ Revision 4 kept curated seeds out of search, and revision 5 made recommend rejec
 - Versions: registry 0.1.47.
 - Registry 0.1.48 (no protocol change): `GET /v0/nodes` adds `serves` for each node: the countries its card declares, else those of its seed sites and linked seed entries, or a `label` saying why there are none (`local`, `router`, `not_published`, `not_declared`, `unknown`). The Nodes page reads it instead of the card alone. The seeds add Groq's Kamloops site to Groq's own entry and the two OpenNodes reference nodes.
 - Registry 0.1.49: the reference nodes lose `placement: "all"`, so they stay on the map and the Nodes page but out of region search and recommend, where in 0.1.48 they took shortlist places from hosted providers. A loopback endpoint counts as `local` only for a node with no seed entry (Privatemode's endpoint is a client-side proxy to a hosted service).
+- Core 0.1.22, cli 0.1.31, registry 0.1.50, ollama-router 0.1.25 (no protocol change): with no `local_memory_gb`, recommend scores catalogue local models at the largest size a typical 16 GB laptop can run and leaves out those with no such size (`rejected.memory`). Each scored model's `local_fit` says `scored_at` and `assumed_memory_gb`; `pick` stays empty. Models on the user's own machines (tiers `local`, `lan`) and callers that pass a budget are unaffected. Previously a free 671B model scored as if anyone could run it and led every shortlist.
 
 ## Draft 0.1, revision 5 — 2026-11-03: EU and EEA in region matching
 

@@ -341,6 +341,43 @@ test('hardware fit: local sizes carry a memory estimate; a memory budget picks t
   assert.equal(tiny.rejected.memory, 1, 'a model with no size that fits is left out');
 });
 
+test('no memory budget: catalogue models are scored for a typical laptop, never as if anyone could run them', () => {
+  const lib = (id, sizes) => ({ node_id: 'import.ollama.library', offering_id: id, tier: 'unverified', source: 'import', modality: 'text',
+    model: { name: id, params_b: Math.max(...sizes.map((x) => parseFloat(x))) }, binding: { model_id: id },
+    pricing: { currency: 'USD', input_per_mtok: 0, output_per_mtok: 0 }, serving: { supports: ['streaming'] },
+    local: { runtime: 'ollama', run: `ollama run ${id}`, sizes }, observed: {} });
+  const hosted = { node_id: 'import.modelsdev.host', offering_id: 'gpt-oss-120b', tier: 'unverified', source: 'import', modality: 'text',
+    model: { name: 'gpt-oss-120b', params_b: 120 }, binding: { model_id: 'gpt-oss-120b' },
+    pricing: { currency: 'USD', input_per_mtok: 0.1, output_per_mtok: 0.5 }, serving: { supports: ['streaming'] },
+    data_policy: { retention: 'none', training_on_inputs: false }, observed: {} };
+  const pricey = { ...hosted, offering_id: 'pricey', model: { name: 'pricey' }, pricing: { currency: 'USD', input_per_mtok: 5, output_per_mtok: 15 } };
+  const pool = [lib('giant', ['671b']), lib('family', ['8b', '70b', '671b']), hosted, pricey];
+  const f = extractFeatures('Summarise customer support tickets');
+
+  const r = recommend(pool, f, { limit: 3 });
+  assert.equal(r.rejected.memory, 1, 'a model with no size a laptop can run is left out');
+  assert.equal(r.recommendations[0].offering, 'import.modelsdev.host/gpt-oss-120b', 'hosted leads an 8B on a laptop');
+  const family = r.recommendations.find((x) => x.offering.endsWith('/family'));
+  assert.equal(family.local_fit.pick, null, 'an assumed budget chooses no size');
+  assert.equal(family.local_fit.scored_at, '8b');
+  assert.ok(family.reasons.some((x) => /scored at 8b, assuming 16 GB/.test(x)));
+
+  // A real budget still counts, and a machine that can hold it gets the big model.
+  const server = recommend(pool, f, { local_memory_gb: 512, limit: 4 });
+  assert.equal(server.rejected.memory, undefined);
+  assert.equal(server.recommendations[0].local_fit.pick, '671b');
+
+  // Asking for your own machine says nothing about its size: the same assumption, until a budget is given.
+  const laptop = recommend(pool, extractFeatures('Summarise this note on my laptop'), { limit: 4 });
+  assert.equal(laptop.rejected.memory, 1);
+  assert.equal(laptop.recommendations[0].offering, 'import.ollama.library/family');
+  assert.equal(laptop.recommendations[0].local_fit.scored_at, '8b');
+
+  // A model already on the user's machine is running: no assumption applies.
+  const own = { ...lib('llama3.3', ['70b']), node_id: 'local', tier: 'local', source: 'local' };
+  assert.equal(recommend([own, hosted], f, { limit: 2 }).rejected.memory, undefined);
+});
+
 test('locality: "on my laptop" prefers the own machine; "offline" requires it', () => {
   assert.equal(extractFeatures('RAG over our documents, running privately on my laptop').locality, 'preferred');
   assert.equal(extractFeatures('self-hosted chatbot for the team').locality, 'preferred');

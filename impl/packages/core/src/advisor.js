@@ -290,6 +290,14 @@ export function localSizes(o) {
 }
 const sizesLine = (sizes) => sizes.map((x) => `${x.tag} ~${x.memory_gb} GB`).join(', ');
 
+/**
+ * Memory assumed for a catalogue model when the caller gives no budget: a typical laptop. Without
+ * it a free 671B model would score as if anyone could run it. Models already on the user's own
+ * machines (tiers local, lan) need no assumption.
+ */
+const TYPICAL_LOCAL_GB = 16;
+const memoryBudget = (o, policy) => policy.local_memory_gb ?? (o.tier === 'local' || o.tier === 'lan' ? null : TYPICAL_LOCAL_GB);
+
 /** Quality prior of a ~8B model: enough for light work (see isLight). */
 const LIGHT_ENOUGH = 0.33;
 /** Quality prior of a ~50B model: answering from retrieved passages gains little beyond it. */
@@ -501,9 +509,10 @@ export function recommend(offerings, features, policy = {}) {
     if (policy.region && !inRegion(o, policy.region)) return reject('region');
     if (policy.jurisdiction && !o.local && !inJurisdiction(o, policy.jurisdiction)) return reject('jurisdiction');
     if (features.locality === 'required' && !o.local) return reject('not_local');
-    if (policy.local_memory_gb && o.local) {
+    const budget = memoryBudget(o, policy);
+    if (budget && o.local) {
       const sizes = localSizes(o);
-      if (sizes.length && !sizes.some((x) => x.memory_gb <= policy.local_memory_gb)) return reject('memory');
+      if (sizes.length && !sizes.some((x) => x.memory_gb <= budget)) return reject('memory');
     }
     return true;
   });
@@ -517,9 +526,10 @@ export function recommend(offerings, features, policy = {}) {
   const maxPrice = Math.max(...candidates.map((o) => o.pricing?.input_per_mtok ?? 0), 0.000001);
   const scored = candidates.map((o) => {
     const sizes = localSizes(o);
-    const fits = policy.local_memory_gb ? sizes.filter((x) => x.memory_gb <= policy.local_memory_gb) : [];
-    const pick = fits.at(-1) ?? null;
-    const prior = qualityPrior(pick ? { ...o, model: { ...o.model, params_b: pick.params_b } } : o, features);
+    const budget = memoryBudget(o, policy);
+    const best = budget ? sizes.filter((x) => x.memory_gb <= budget).at(-1) ?? null : null;
+    const pick = policy.local_memory_gb ? best : null;   // an assumed budget scores a size, it doesn't choose one
+    const prior = qualityPrior(best ? { ...o, model: { ...o.model, params_b: best.params_b } } : o, features);
     const tuned = features.task_class === 'rag' && ragTuned(o);
     const specialty = specialtyOf(o);
     const offField = specialty && specialty !== 'classifier' && !specialtyFits(specialty, features);
@@ -535,8 +545,9 @@ export function recommend(offerings, features, policy = {}) {
     if (features.locality === 'preferred' && o.local) score += 0.15;   // the task asked to run on the user's own machine
     const bounds = estimateBounds(o.pricing ?? {}, features.est_input_tokens, features.est_output_tokens);
     const local_fit = sizes.length ? { sizes: sizes.map(({ tag, memory_gb }) => ({ tag, memory_gb })), pick: pick?.tag ?? null,
-      ...(pick ? { run: `ollama run ${o.binding?.model_id ?? o.model?.name}:${pick.tag}` } : {}), basis: '4-bit estimate' } : null;
-    return { offering: o, score: round2(score), components, basis: prior.basis, rag_tuned: tuned, specialty, off_field: offField, local_fit, estimate: { currency: o.pricing?.currency ?? 'USD', ...bounds } };
+      ...(pick ? { run: `ollama run ${o.binding?.model_id ?? o.model?.name}:${pick.tag}` } : {}),
+      ...(best && !pick ? { scored_at: best.tag, assumed_memory_gb: budget } : {}), basis: '4-bit estimate' } : null;
+    return { offering: o, params_b: best?.params_b ?? o.model?.params_b, score: round2(score), components, basis: prior.basis, rag_tuned: tuned, specialty, off_field: offField, local_fit, estimate: { currency: o.pricing?.currency ?? 'USD', ...bounds } };
   }).filter((c) => c.estimate.max <= (policy.max_total_usd ?? Infinity));
 
   // Deterministic order: score, then cheaper estimate, then larger model, then id. A task that asked to run
@@ -638,7 +649,7 @@ function explain(c, features, w, policy = {}) {
   const r = [];
   const dominant = Object.entries(c.components).sort((a, b) => (w[b[0]] * b[1]) - (w[a[0]] * a[1]))[0]?.[0];
   if (dominant === 'price') r.push(`price-led: ${fmtPrice(o.pricing)}`);
-  if (dominant === 'quality') r.push(`quality-led for ${features.task_class} — basis: ${c.basis}${o.model?.params_b ? `, ${o.model.params_b}B` : ''}${features.task_class === 'rag' && (o.model?.params_b ?? 0) > 50 ? ' (size counted up to ~50B for RAG)' : ''}`);
+  if (dominant === 'quality') r.push(`quality-led for ${features.task_class} — basis: ${c.basis}${c.params_b ? `, ${c.params_b}B` : ''}${features.task_class === 'rag' && (o.model?.params_b ?? 0) > 50 ? ' (size counted up to ~50B for RAG)' : ''}`);
   if (dominant === 'trust') r.push(`${o.tier} tier with ${Math.round((o.observed?.probe_success ?? 0) * 100)}% probe pass`);
   if (dominant === 'perf') r.push(o.observed?.ttft_ms?.p50 != null ? `measured ${o.observed.ttft_ms.p50}ms TTFT` : 'best claimed latency (unmeasured)');
   if (features.language !== 'en') {
@@ -654,7 +665,7 @@ function explain(c, features, w, policy = {}) {
     const pick = c.local_fit.sizes.find((x) => x.tag === c.local_fit.pick);
     r.push(pick
       ? `runs on your machine: ${pick.tag} needs ~${pick.memory_gb} GB RAM/VRAM, within ${policy.local_memory_gb} GB (4-bit estimate)`
-      : `runs on your machine — memory needed (4-bit estimate): ${sizesLine(c.local_fit.sizes)}`);
+      : `runs on your machine — memory needed (4-bit estimate): ${sizesLine(c.local_fit.sizes)}${c.local_fit.scored_at ? `; scored at ${c.local_fit.scored_at}, assuming ${c.local_fit.assumed_memory_gb} GB` : ''}`);
   }
   if (o.local && features.locality) r.push(features.locality === 'required' ? 'runs offline on your own machine, as the task requires' : 'runs on your own machine, as the task asked');
   if (c.specialty) r.push(c.off_field
