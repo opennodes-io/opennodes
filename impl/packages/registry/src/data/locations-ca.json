@@ -154,7 +154,7 @@
       ],
       "operator": { "name": "Bell Canada", "country": "CA" },
       "sites": [
-        { "id": "kamloops", "region": "CA-BC", "site": "Kamloops", "status": "live", "basis": "claimed", "facility_operator": "Groq", "source": "https://groq.com/blog/groq-becomes-exclusive-inference-provider-for-bell-canadas-sovereign-ai-network", "checked": "2026-11-02", "note": "Groq inference site", "geo": { "lat": 50.6745, "lon": -120.3273, "precision": "city" } },
+        { "id": "kamloops", "region": "CA-BC", "site": "Kamloops", "status": "live", "basis": "claimed", "facility_operator": "Groq", "source": "https://groq.com/newsroom/groq-becomes-exclusive-inference-provider-for-bell-canadas-sovereign-ai-network", "checked": "2026-11-02", "note": "Groq inference site. Announced 28 May 2025 as a 7 MW Groq facility \"coming online in June\"; neither Groq nor Bell has confirmed the opening since, and a third-party directory lists it as operational.", "geo": { "lat": 50.6745, "lon": -120.3273, "precision": "city" } },
         { "id": "merritt", "region": "CA-BC", "site": "Merritt", "status": "planned", "basis": "claimed", "facility_operator": "BUZZ HPC, Hypertec", "note": "For Cohere; expected late 2026 to early 2027 (news report)", "geo": { "lat": 50.1113, "lon": -120.7862, "precision": "city" } }
       ],
       "models": [],

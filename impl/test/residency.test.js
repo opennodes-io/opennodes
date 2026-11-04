@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateCard, residencyAt, residencyMeets, scopeCovers, commitmentRank } from '@opennodes/core';
 import { startRegistry } from '@opennodes/registry';
+import { seedNodeSites, nodeServes } from '@opennodes/registry/src/locations.js';
 
 const post = async (origin, path, body) => (await fetch(`${origin}${path}`, {
   method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
@@ -156,6 +157,36 @@ test('a listed node no seed covers appears as unstated', async (t) => {
   assert.deepEqual(report.providers.map((p) => [p.id, p.source, p.strongest]), [
     ['import.modelsdev.hostco', 'none', 'unstated'], ['import.modelsdev.relay', 'none', 'unstated'],
   ]);
+});
+
+test('the node directory reports where each node serves from, card first, then the seeds', async (t) => {
+  const registry = await startRegistry({ locationSeeds: true });
+  t.after(() => registry.close());
+  const seeds = [{ seed: 'x', providers: [
+    { id: 'hub', name: 'Hub', kind: 'cloud', nodes: ['n.hub', 'n.sibling'], sites: [{ id: 'a', region: 'US-CA', status: 'live', basis: 'documented' }] },
+    { id: 'eu', name: 'Hub EU', residency_of: 'x:hub', sites: [{ id: 'b', region: 'DE-HE', status: 'live', basis: 'documented' }, { id: 'c', region: 'NO', status: 'planned', basis: 'claimed' }] },
+    { id: 'via', name: 'Via', kind: 'inference', nodes: ['n.via'], serves_from: 'x:far' },
+    { id: 'far', name: 'Far', residency_of: 'x:via', sites: [{ id: 'd', region: 'FR-IDF', status: 'live', basis: 'claimed' }] },
+    { id: 'app', name: 'App', kind: 'local', nodes: ['n.app'] },
+    { id: 'mix', name: 'Mix', kind: 'router', nodes: ['n.mix'] },
+    { id: 'quiet', name: 'Quiet', kind: 'lab', nodes: ['n.quiet'] },
+  ] }];
+  const known = seedNodeSites(seeds);
+  const serves = (id, card) => nodeServes({ source: 'import' }, card, known.get(id));
+  assert.deepEqual(serves('n.sibling'), { places: ['DE', 'US'], planned: ['NO'], source: 'seed', label: null });
+  assert.deepEqual(serves('n.via').places, ['FR']);
+  assert.equal(serves('n.app').label, 'local');
+  assert.equal(serves('n.mix').label, 'router');
+  assert.equal(serves('n.quiet').label, 'not_published');
+  assert.equal(serves('n.none').label, 'unknown');
+  assert.equal(serves('n.none', { endpoints: { openai: 'http://127.0.0.1:11434/v1' } }).label, 'local');
+  assert.equal(nodeServes({ source: 'registration' }, {}, undefined).label, 'not_declared');
+  // A card that declares a location wins over the seeds.
+  const card = { node: { locations: [{ region: 'CA-QC', basis: 'claimed' }] }, offerings: [] };
+  assert.deepEqual(serves('n.hub', card), { places: ['CA'], planned: [], source: 'card', label: null });
+
+  const { nodes } = await (await fetch(`${registry.origin}/v0/nodes`)).json();
+  assert.ok(nodes.every((n) => n.serves && Array.isArray(n.serves.places)));
 });
 
 test('search and recommend use seed placements: placement "all" and serves_from; never through a router', async (t) => {

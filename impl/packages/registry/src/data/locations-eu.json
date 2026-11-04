@@ -592,6 +592,32 @@
       ],
       "models": [],
       "models_note": "GPU capacity (about 10,000 NVIDIA Blackwell GPUs, with data-centre partner Polarise); no public list of models served there. Telekom's hosted models are listed under T-Systems AI Foundation Services."
+    },
+    {
+      "id": "opennodes-demo",
+      "name": "OpenNodes demo node",
+      "nodes": ["io.opennodes.demo-node"],
+      "placement": "all",
+      "operator": { "name": "OpenNodes Project", "country": "DE", "url": "https://opennodes.io" },
+      "sites": [
+        { "id": "nur", "region": "DE-BY", "site": "Nuremberg", "status": "live", "basis": "claimed", "facility_operator": "Hetzner", "source": "https://demo-node.opennodes.io/.well-known/open-node.json", "checked": "2026-11-04", "note": "Stated in the node's own card description (Hetzner CPX22 VM).", "geo": { "lat": 49.4521, "lon": 11.0767, "precision": "city" } }
+      ],
+      "residency": [
+        { "commitment": "unstated", "scope": [], "availability": "default", "statement": "The card declares no retention and no training on inputs, but makes no promise about where data stays.", "source": "https://demo-node.opennodes.io/.well-known/open-node.json", "checked": "2026-11-04" }
+      ]
+    },
+    {
+      "id": "opennodes-helsinki",
+      "name": "OpenNodes reference node (Helsinki)",
+      "nodes": ["io.opennodes.helsinki"],
+      "placement": "all",
+      "operator": { "name": "OpenNodes Project", "country": "FI", "url": "https://opennodes.io" },
+      "sites": [
+        { "id": "hel", "region": "FI-18", "site": "Helsinki", "status": "live", "basis": "claimed", "facility_operator": "Hetzner", "source": "https://helsinki.opennodes.io/.well-known/open-node.json", "checked": "2026-11-04", "note": "Stated in the node's own card description (Hetzner CPX22 VM).", "geo": { "lat": 60.1699, "lon": 24.9384, "precision": "city" } }
+      ],
+      "residency": [
+        { "commitment": "unstated", "scope": [], "availability": "default", "statement": "The card declares no retention and no training on inputs, but makes no promise about where data stays.", "source": "https://helsinki.opennodes.io/.well-known/open-node.json", "checked": "2026-11-04" }
+      ]
     }
   ]
 }

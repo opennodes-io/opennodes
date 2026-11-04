@@ -47,6 +47,50 @@ export function seedPlacements(seeds) {
   return out;
 }
 
+/**
+ * What the seeds know about each node, for the directory (`/v0/nodes`): its entry's kind and the
+ * sites of that entry and the entries linked to it with `residency_of` or `serves_from`, which
+ * describe the same provider. A provider-level answer: it does not say which model runs where.
+ */
+export function seedNodeSites(seeds) {
+  const index = seedIndex(seeds);
+  const hubOf = (key) => (index.has(index.get(key)?.p.residency_of) ? index.get(key).p.residency_of : key);
+  const family = new Map();   // hub key -> sites
+  for (const [key, { p }] of index) family.set(hubOf(key), [...(family.get(hubOf(key)) ?? []), ...(p.sites ?? [])]);
+  const out = new Map();      // node id -> { kind, sites }
+  for (const [key, { seed, p }] of index) {
+    const sites = [...(family.get(hubOf(key)) ?? []), ...(family.get(hubOf(p.serves_from)) ?? [])];
+    for (const id of p.models?.length ? [`import.seed.${seed.seed}.${p.id}`] : p.nodes ?? []) {
+      const known = out.get(id);
+      out.set(id, { kind: known?.kind ?? p.kind ?? null, sites: [...new Set([...(known?.sites ?? []), ...sites])] });
+    }
+  }
+  return out;
+}
+
+const LOOPBACK = /^https?:\/\/(127\.|localhost[:/]|\[::1\])/;
+
+/**
+ * Where a node serves from, for the directory: the countries its card declares, else those of
+ * its seed sites (`seed` from seedNodeSites). With neither, `label` says why: local (seed kind or
+ * a loopback endpoint), router, not_published (researched, nothing public), not_declared
+ * (registered card), unknown.
+ */
+export function nodeServes(node, card, seed) {
+  const countries = (locs) => [...new Set(locs.map((l) => countryOf(l.region)))].sort();
+  const locs = [...(card?.node?.locations ?? []), ...(card?.offerings ?? []).flatMap((o) => o.locations ?? [])];
+  const declared = [...locs, ...(card?.node?.regions ?? []).map((region) => ({ region }))];
+  const from = declared.length ? declared : seed?.sites ?? [];
+  const live = (l) => (l.status ?? 'live') === 'live';
+  const places = countries(from.filter(live));
+  const planned = countries(from.filter((l) => !live(l))).filter((c) => !places.includes(c));
+  const label = places.length || planned.length ? null
+    : seed?.kind === 'local' || LOOPBACK.test(card?.endpoints?.openai ?? '') ? 'local'
+      : seed?.kind === 'router' ? 'router'
+        : seed ? 'not_published' : node.source === 'import' ? 'unknown' : 'not_declared';
+  return { places, planned, source: !from.length ? null : declared.length ? 'card' : 'seed', label };
+}
+
 /** Visible nodes with their latest cards. */
 async function listedCards(store) {
   const cards = [];

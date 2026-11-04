@@ -412,7 +412,7 @@
 <!-- ================= NODES ================= -->
 <div id="view-nodes" hidden>
   <div style="display:flex; align-items:baseline; gap:0.9rem"><h1>Nodes</h1><span class="counts" id="n-counts"></span></div>
-  <p class="sub">The supply side, first-class: every provider serving through OpenNodes, with the trust tier it has earned. <b>Verified</b> means identity-fingerprinted, context-verified, capacity-measured, and continuously probed — <a href="#/qualification">the qualification procedure</a> is automated and the same for everyone.</p>
+  <p class="sub">The supply side, first-class: every provider serving through OpenNodes, with the trust tier it has earned. <b>Verified</b> means identity-fingerprinted, context-verified, capacity-measured, and continuously probed — <a href="#/qualification">the qualification procedure</a> is automated and the same for everyone. <b>Region</b> lists the countries where a provider has known sites, not where each of its models runs: <a href="#/where">the map</a> has that detail.</p>
   <div class="panel tablewrap" id="n-table"></div>
 </div>
 
@@ -2251,6 +2251,14 @@ async function loadRankings() {
 }
 
 /* ---------- nodes directory ---------- */
+const SERVES_LABEL = { local: 'your machine', router: 'routes to others', not_published: 'not published', not_declared: 'not declared', unknown: 'unknown' };
+function servesCell(s) {
+  if (!s || s.label) return `<span style="color:var(--muted)">${esc(SERVES_LABEL[s?.label] ?? 'unknown')}</span>`;
+  const shown = (codes) => codes.slice(0, 5).join(', ') + (codes.length > 5 ? ` +${codes.length - 5}` : '');
+  const text = [s.places.length ? shown(s.places) : '', s.planned.length ? `planned: ${shown(s.planned)}` : ''].filter(Boolean).join(' · ');
+  const title = [...s.places.map(countryName), ...s.planned.map((c) => `${countryName(c)} (planned)`)].join(', ') + (s.source === 'seed' ? ' (from the curated map data)' : ' (declared on the card)');
+  return `<span title="${esc(title)}">${esc(text)}</span>`;
+}
 async function loadNodes() {
   try {
     const { nodes } = await api('/v0/nodes');
@@ -2261,7 +2269,7 @@ async function loadNodes() {
       <td><a href="#/node/${encodeURIComponent(n.id)}" style="font-weight:600">${esc(n.id)}</a></td>
       <td><span style="display:inline-flex; gap:0.3rem">${tierChip(n.tier)}${n.institutional ? '<span class="chip inst">institutional</span>' : ''}${n.source === 'import' ? '<span class="chip imp">IMPORTED</span>' : ''}</span></td>
       <td>${esc(n.operator ?? '—')}${n.country ? ' <span style="color:var(--muted)">(' + esc(n.country) + ')</span>' : ''}</td>
-      <td style="color:var(--muted)">${esc([...new Set([...(n.regions || []), ...(n.locations || []).map((l) => l.region)])].join(', ') || '—')}</td>
+      <td>${servesCell(n.serves)}</td>
       <td>${n.offerings}</td>
       <td>${n.availability?.ratio != null ? Math.round(n.availability.ratio * 100) + '%' : '—'}</td>
       <td><span class="prov">${ago(n.updated_at)}</span></td>

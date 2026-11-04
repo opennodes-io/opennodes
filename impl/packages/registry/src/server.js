@@ -27,7 +27,7 @@ import {
   importOpenRouterProviders, fetchOpenRouterEndpoints, importLocationSeed,
   HF_ROUTER_URL, HF_HUB_URL, OPENROUTER_URL, OPENROUTER_PROVIDERS_URL, OLLAMA_LIBRARY_URL,
 } from './importers.js';
-import { locationRoutes, loadLocationSeeds, seedPlacements } from './locations.js';
+import { locationRoutes, loadLocationSeeds, seedPlacements, seedNodeSites, nodeServes } from './locations.js';
 
 /** Default basemap. OSM's tile policy asks for attribution and light use; busy registries set their own. */
 export const OSM_TILES = {
@@ -317,6 +317,7 @@ export async function startRegistry({
     // Node directory: every listed node with tier, source, offering count, availability.
     ['GET', '/v0/nodes', async (req, res) => {
       const out = [];
+      const known = seedNodeSites(seeds);
       for (const node of await store.allNodes()) {
         if (['delisted', 'claimed'].includes(node.state)) continue;
         const card = await store.latestCard(node.id);
@@ -333,6 +334,7 @@ export async function startRegistry({
           country: card?.node?.operator?.country ?? null,
           regions: card?.node?.regions ?? [],
           locations: card?.node?.locations ?? [],
+          serves: nodeServes(node, card, known.get(node.id)),
           offerings: card?.offerings?.length ?? 0,
           availability,
         });

@@ -14,6 +14,7 @@ Revision 4 kept curated seeds out of search, and revision 5 made recommend rejec
 - `@opennodes/registry`: `seedPlacements` (locations.js) and `setSeedPlacements` (search.js), set at start and on each seed import. The world seed gains `serves_from` for five providers that document a single-region API: Scaleway (Paris), OVHcloud (Gravelines), STACKIT (Germany), Berget (Sweden) and Infomaniak (Switzerland). The 10 world entries that already had `placement: "all"` count too: Alibaba Model Studio (China), Volcengine Ark, DeepSeek, Upstage, Sarvam, Moonshot (global), Z.ai (global), CloudFerro Sherlock, SCX and Pendra. Hyperscalers, Mistral, Nebius and Regolo are not placed: where a model runs depends on the region or endpoint chosen, or is not stated.
 - Tests: `impl/test/residency.test.js` (seed placements in search and recommend; `serves_from` references resolve).
 - Versions: registry 0.1.47.
+- Registry 0.1.48 (no protocol change): `GET /v0/nodes` adds `serves` for each node: the countries its card declares, else those of its seed sites and linked seed entries, or a `label` saying why there are none (`local`, `router`, `not_published`, `not_declared`, `unknown`). The Nodes page reads it instead of the card alone. The seeds add Groq's Kamloops site to Groq's own entry and the two OpenNodes reference nodes.
 
 ## Draft 0.1, revision 5 — 2026-11-03: EU and EEA in region matching
 
