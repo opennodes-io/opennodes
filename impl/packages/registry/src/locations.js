@@ -72,8 +72,8 @@ const LOOPBACK = /^https?:\/\/(127\.|localhost[:/]|\[::1\])/;
 
 /**
  * Where a node serves from, for the directory: the countries its card declares, else those of
- * its seed sites (`seed` from seedNodeSites). With neither, `label` says why: local (seed kind or
- * a loopback endpoint), router, not_published (researched, nothing public), not_declared
+ * its seed sites (`seed` from seedNodeSites). With neither, `label` says why: local (seed kind, or
+ * a loopback endpoint with no seed entry: a client-side proxy can look the same), router, not_published (researched, nothing public), not_declared
  * (registered card), unknown.
  */
 export function nodeServes(node, card, seed) {
@@ -85,7 +85,7 @@ export function nodeServes(node, card, seed) {
   const places = countries(from.filter(live));
   const planned = countries(from.filter((l) => !live(l))).filter((c) => !places.includes(c));
   const label = places.length || planned.length ? null
-    : seed?.kind === 'local' || LOOPBACK.test(card?.endpoints?.openai ?? '') ? 'local'
+    : seed?.kind === 'local' || (!seed && LOOPBACK.test(card?.endpoints?.openai ?? '')) ? 'local'
       : seed?.kind === 'router' ? 'router'
         : seed ? 'not_published' : node.source === 'import' ? 'unknown' : 'not_declared';
   return { places, planned, source: !from.length ? null : declared.length ? 'card' : 'seed', label };

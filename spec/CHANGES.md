@@ -15,6 +15,7 @@ Revision 4 kept curated seeds out of search, and revision 5 made recommend rejec
 - Tests: `impl/test/residency.test.js` (seed placements in search and recommend; `serves_from` references resolve).
 - Versions: registry 0.1.47.
 - Registry 0.1.48 (no protocol change): `GET /v0/nodes` adds `serves` for each node: the countries its card declares, else those of its seed sites and linked seed entries, or a `label` saying why there are none (`local`, `router`, `not_published`, `not_declared`, `unknown`). The Nodes page reads it instead of the card alone. The seeds add Groq's Kamloops site to Groq's own entry and the two OpenNodes reference nodes.
+- Registry 0.1.49: the reference nodes lose `placement: "all"`, so they stay on the map and the Nodes page but out of region search and recommend, where in 0.1.48 they took shortlist places from hosted providers. A loopback endpoint counts as `local` only for a node with no seed entry (Privatemode's endpoint is a client-side proxy to a hosted service).
 
 ## Draft 0.1, revision 5 — 2026-11-03: EU and EEA in region matching
 

@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateCard, residencyAt, residencyMeets, scopeCovers, commitmentRank } from '@opennodes/core';
 import { startRegistry } from '@opennodes/registry';
-import { seedNodeSites, nodeServes } from '@opennodes/registry/src/locations.js';
+import { seedNodeSites, nodeServes, seedPlacements, loadLocationSeeds } from '@opennodes/registry/src/locations.js';
 
 const post = async (origin, path, body) => (await fetch(`${origin}${path}`, {
   method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
@@ -179,7 +179,9 @@ test('the node directory reports where each node serves from, card first, then t
   assert.equal(serves('n.mix').label, 'router');
   assert.equal(serves('n.quiet').label, 'not_published');
   assert.equal(serves('n.none').label, 'unknown');
-  assert.equal(serves('n.none', { endpoints: { openai: 'http://127.0.0.1:11434/v1' } }).label, 'local');
+  const loopback = { endpoints: { openai: 'http://127.0.0.1:11434/v1' } };
+  assert.equal(serves('n.none', loopback).label, 'local');
+  assert.equal(serves('n.quiet', loopback).label, 'not_published');   // a client-side proxy to a hosted service
   assert.equal(nodeServes({ source: 'registration' }, {}, undefined).label, 'not_declared');
   // A card that declares a location wins over the seeds.
   const card = { node: { locations: [{ region: 'CA-QC', basis: 'claimed' }] }, offerings: [] };
@@ -187,6 +189,12 @@ test('the node directory reports where each node serves from, card first, then t
 
   const { nodes } = await (await fetch(`${registry.origin}/v0/nodes`)).json();
   assert.ok(nodes.every((n) => n.serves && Array.isArray(n.serves.places)));
+
+  // The reference nodes are on the map and the Nodes page, but never placed into region search:
+  // free, verified and tiny, they would outrank every hosted provider in a recommend shortlist.
+  const bundled = loadLocationSeeds();
+  assert.deepEqual(nodeServes({ source: 'registration' }, {}, seedNodeSites(bundled).get('io.opennodes.helsinki')).places, ['FI']);
+  assert.ok(![...seedPlacements(bundled).keys()].some((id) => id.startsWith('io.opennodes.')));
 });
 
 test('search and recommend use seed placements: placement "all" and serves_from; never through a router', async (t) => {

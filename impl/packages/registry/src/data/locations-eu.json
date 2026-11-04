@@ -597,7 +597,7 @@
       "id": "opennodes-demo",
       "name": "OpenNodes demo node",
       "nodes": ["io.opennodes.demo-node"],
-      "placement": "all",
+      "models_note": "Reference node: one small CPU-only model. Listed for where it runs, not offered in region search or recommendations.",
       "operator": { "name": "OpenNodes Project", "country": "DE", "url": "https://opennodes.io" },
       "sites": [
         { "id": "nur", "region": "DE-BY", "site": "Nuremberg", "status": "live", "basis": "claimed", "facility_operator": "Hetzner", "source": "https://demo-node.opennodes.io/.well-known/open-node.json", "checked": "2026-11-04", "note": "Stated in the node's own card description (Hetzner CPX22 VM).", "geo": { "lat": 49.4521, "lon": 11.0767, "precision": "city" } }
@@ -610,7 +610,7 @@
       "id": "opennodes-helsinki",
       "name": "OpenNodes reference node (Helsinki)",
       "nodes": ["io.opennodes.helsinki"],
-      "placement": "all",
+      "models_note": "Reference node: one small CPU-only model. Listed for where it runs, not offered in region search or recommendations.",
       "operator": { "name": "OpenNodes Project", "country": "FI", "url": "https://opennodes.io" },
       "sites": [
         { "id": "hel", "region": "FI-18", "site": "Helsinki", "status": "live", "basis": "claimed", "facility_operator": "Hetzner", "source": "https://helsinki.opennodes.io/.well-known/open-node.json", "checked": "2026-11-04", "note": "Stated in the node's own card description (Hetzner CPX22 VM).", "geo": { "lat": 60.1699, "lon": 24.9384, "precision": "city" } }
