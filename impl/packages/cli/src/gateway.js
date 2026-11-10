@@ -5,6 +5,7 @@ import { appendFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
 import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend, recommendEmbedders, isEmbedder, parseAutoModel, AUTO_MODEL_NAMES, responseBudgetMs, fetchWithin, sensitiveHeader } from '@opennodes/core';
+import { parseMaskMode, maskModeOf, piiDetectorFrom, maskChatRequest, maskEmbeddingRequest, maskedRequestFor, oncePerRequest, unmaskCompletion, unmaskSse, piiMaskedHeader, describeMaskCounts } from '@opennodes/core';
 import { OnpClient } from './client.js';
 import { loadChecks, DEFAULT_CHECKS_PATH } from './check.js';
 import { Reputation } from './reputation.js';
@@ -74,11 +75,17 @@ export async function startGateway({
   checksPath = DEFAULT_CHECKS_PATH,   // results of `onp check`; null to ignore them
   reputationPath = null,   // where passive reputation persists (the CLI uses ~/.opennodes); null = this run only
   ollama = null,   // your local Ollama (the CLI uses http://127.0.0.1:11434): its embedding models serve /v1/embeddings first
+  // PII masking (docs/pii-masking.md): 'open' (default; ONP_MASK_PII) masks requests to open-pool offerings,
+  // 'all' every hosted offering, 'off' none. Detection: the rules, plus a local Presidio service
+  // (piiService, ONP_PII_SERVICE) and a local model (piiLlm "model[@url]", ONP_PII_LLM); or your own piiDetector.
+  maskPii = null, piiService = null, piiLlm = null, piiDetector = null,
 } = {}) {
   if (!['127.0.0.1', 'localhost', '::1'].includes(host) && !token) {
     throw new Error('refusing non-loopback bind without --token (TC-NFR-03)');
   }
   const client = new OnpClient({ registry, policy });
+  const maskMode = parseMaskMode(maskPii ?? env.ONP_MASK_PII, 'open');
+  const detector = piiDetector ?? piiDetectorFrom({ service: piiService, llm: piiLlm, env });
   const creds = credentialsFrom(keys, env);
   const jwksCache = new Map();
   const receipts = [];
@@ -211,7 +218,8 @@ export async function startGateway({
     receipts.push(entry);
     if (ledgerPath) appendFileSync(ledgerPath, JSON.stringify(entry) + '\n');
     console.log(`[gateway] ${entry.model} -> ${entry.offering} rev=${entry.revision} ` +
-      `${entry.cost != null ? entry.currency + ' ' + entry.cost : entry.receipt_error ? 'RECEIPT FAILED: ' + entry.receipt_error : 'no-receipt'} ${entry.latency_ms}ms${entry.fallback ? ' (fallback)' : ''}`);
+      `${entry.cost != null ? entry.currency + ' ' + entry.cost : entry.receipt_error ? 'RECEIPT FAILED: ' + entry.receipt_error : 'no-receipt'} ${entry.latency_ms}ms${entry.fallback ? ' (fallback)' : ''}` +
+      `${entry.pii_masked ? ` pii-masked ${describeMaskCounts(entry.pii_masked) || 'none'}` : ''}`);
   }
 
   const authed = (req, res) => {
@@ -221,16 +229,23 @@ export async function startGateway({
     return false;
   };
 
-  /** One upstream attempt. Returns {done:true} when the response was written, or {retryPricing|failed}. */
-  async function attempt(offering, body, res, requestedModel, { sensitive = false } = {}) {
+  /**
+   * One upstream attempt. Returns {done:true} when the response was written, or {retryPricing|failed}.
+   * PII: an offering that needs masking (mode, under this gateway's trusted view) gets the masked body,
+   * and the answer gets the values back; `mask` detects once for all the candidates of a request.
+   */
+  async function attempt(offering, body, res, requestedModel, {
+    sensitive = false, mode = maskMode, mask = oncePerRequest(() => maskChatRequest(body, { detector })),
+  } = {}) {
     client.checkPolicy(offering, body.max_tokens ?? 1024, { sensitive });
+    const masked = await maskedRequestFor(offering, { mode, view: client.trusted, mask });   // null: sent as it is
     const t0 = performance.now();
     // BYOK: attach the operator's key for this upstream host (imported catalogs
     // like OpenRouter/HF need their own credentials; ONP nodes may need none).
     const upstreamKey = creds[new URL(offering.endpoints.openai).hostname];
     // Give up on this node if it hasn't started answering within a budget built from its measured
     // latency and the request size, so failover reaches the next candidate quickly.
-    const { models: _fallbacks, ...upstreamBody } = body;   // the fallback list is ours, not the node's
+    const { models: _fallbacks, ...upstreamBody } = masked?.body ?? body;   // the fallback list is ours, not the node's
     const budgetMs = responseBudgetMs(offering, {
       stream: Boolean(body.stream),
       promptTokens: Math.ceil(JSON.stringify(body.messages ?? '').length / 4),
@@ -259,6 +274,7 @@ export async function startGateway({
       offering: `${offering.node_id}/${offering.offering_id}`, revision: offering.card_revision,
       receipt_id: null, cost: null, currency: null, usage: null,
       latency_ms: Math.round(performance.now() - t0),
+      ...(masked ? { pii_masked: masked.counts } : {}),   // types and counts only
     };
     const settle = (receipt) => Object.assign(entry, receipt && {
       receipt_id: receipt.receipt_id, cost: receipt.amount.value, currency: receipt.amount.currency, usage: receipt.usage,
@@ -271,8 +287,11 @@ export async function startGateway({
     }
 
     if (body.stream) {
-      res.writeHead(200, { 'content-type': upstream.headers.get('content-type') ?? 'text/event-stream' });
-      await new Promise((resolve, reject) => {
+      res.writeHead(200, { 'content-type': upstream.headers.get('content-type') ?? 'text/event-stream', ...piiMaskedHeader(masked) });
+      if (masked?.vault.size) {   // values put back as the answer arrives; a placeholder split over chunks waits
+        for await (const text of unmaskSse(upstream.body, masked.vault)) res.write(text);
+        res.end();
+      } else await new Promise((resolve, reject) => {
         const nodeStream = Readable.fromWeb(upstream.body);
         nodeStream.pipe(res);
         nodeStream.on('end', resolve);
@@ -283,8 +302,8 @@ export async function startGateway({
       try { if (receiptRef) settle(await verifyReceipt(offering, receiptRef, sent)); }
       catch (err) { entry.receipt_error = err.message; }
     } else {
-      const completion = await upstream.json();
-      sendJson(res, 200, { ...completion, model: requestedModel });
+      const completion = unmaskCompletion(await upstream.json(), masked?.vault);
+      sendJson(res, 200, { ...completion, model: requestedModel }, piiMaskedHeader(masked));
     }
     logRequest(entry);
     return { done: true, ms: Math.round(performance.now() - t0), ...(body.stream ? { first_ms: firstMs } : {}) };
@@ -358,14 +377,17 @@ export async function startGateway({
     return offering ? [offering] : [];
   }
 
-  /** One upstream embeddings call; same contract as attempt(). */
-  async function attemptEmbedding(offering, body, res, requestedModel, { sensitive = false } = {}) {
+  /** One upstream embeddings call; same contract as attempt(). Inputs to an offering that needs masking are masked. */
+  async function attemptEmbedding(offering, body, res, requestedModel, {
+    sensitive = false, mode = maskMode, mask = oncePerRequest(() => maskEmbeddingRequest(body, { detector })),
+  } = {}) {
     const isLocal = offering.tier === 'local';
     if (sensitive) client.checkTrusted(offering);   // local models too: the lineage rule applies to every model
     if (!isLocal) client.checkPolicy(offering, 0);
+    const masked = await maskedRequestFor(offering, { mode, view: client.trusted, mask });   // never for your own Ollama
     const t0 = performance.now();
     const upstreamKey = isLocal ? null : creds[new URL(offering.endpoints.openai).hostname];
-    const { models: _fallbacks, ...upstreamBody } = body;
+    const { models: _fallbacks, ...upstreamBody } = masked?.body ?? body;
     const chars = JSON.stringify(body.input ?? '').length;
     const upstream = await fetchWithin(`${offering.endpoints.openai}/embeddings`, {
       method: 'POST',
@@ -387,8 +409,9 @@ export async function startGateway({
       receipt_id: null, currency: offering.pricing?.currency ?? 'USD', usage: result.usage ?? null,
       cost: isLocal ? 0 : tokens != null && price != null ? round6(tokens * price / 1e6) : null,
       latency_ms: Math.round(performance.now() - t0),
+      ...(masked ? { pii_masked: masked.counts } : {}),
     });
-    sendJson(res, 200, { ...result, model: requestedModel });
+    sendJson(res, 200, { ...result, model: requestedModel }, piiMaskedHeader(masked));
     return { done: true, ms: Math.round(performance.now() - t0) };
   }
 
@@ -416,6 +439,10 @@ export async function startGateway({
       const body = await readJson(req, 10_000_000);
       // Personal data: the gateway's --sensitive, the onp-sensitive header, or onp/auto-sensitive.
       const sensitive = sensitiveRequest(req, policy.sensitive) || Boolean(parseAutoModel(body.model, 'onp/')?.sensitive);
+      // PII masking: the gateway's mode, which an onp-mask-pii header can strengthen, never weaken
+      let mode;
+      try { mode = maskModeOf(req.headers, maskMode); } catch (err) { return problem(res, 400, 'bad-request', err.message); }
+      const mask = oncePerRequest(() => maskChatRequest(body, { detector }));
       const candidates = await resolve(body.model, body, { sensitive });
       // OpenRouter-compatible fallback list: `models: [...]` adds further models to try, in order.
       if (Array.isArray(body.models)) {
@@ -446,10 +473,10 @@ export async function startGateway({
         const id = `${candidates[i].node_id}/${candidates[i].offering_id}`;
         const t0 = performance.now();
         try {
-          let result = await attempt(offering, body, res, body.model, { sensitive });
+          let result = await attempt(offering, body, res, body.model, { sensitive, mode, mask });
           if (result.retryPricing) {
             offering = await repin(offering);
-            if (offering) result = await attempt(offering, body, res, body.model, { sensitive });
+            if (offering) result = await attempt(offering, body, res, body.model, { sensitive, mode, mask });
             else result = { failed: 'offering gone after reprice' };
           }
           if (result.done) { reputation.record(id, { ok: true, ms: result.ms, first_ms: result.first_ms }); return; }
@@ -472,6 +499,9 @@ export async function startGateway({
       if (body.input == null || !body.model) return problem(res, 400, 'bad-request', 'embeddings need "model" and "input"');
       const auto = parseAutoModel(body.model, 'onp/');
       const sensitive = sensitiveRequest(req, policy.sensitive) || Boolean(auto?.sensitive);
+      let mode;
+      try { mode = maskModeOf(req.headers, maskMode); } catch (err) { return problem(res, 400, 'bad-request', err.message); }
+      const mask = oncePerRequest(() => maskEmbeddingRequest(body, { detector }));
       const candidates = await resolveEmbedding(body.model, body, { sensitive });
       if (!candidates.length && sensitive && auto) {
         return problem(res, 404, 'no-trusted-offerings', 'the request is sensitive and no embedding model this gateway can call is in the trusted pool; it was not sent anywhere');
@@ -487,7 +517,7 @@ export async function startGateway({
         const id = `${offering.node_id}/${offering.offering_id}`;
         const t0 = performance.now();
         try {
-          const r = await attemptEmbedding(offering, body, res, body.model, { sensitive });
+          const r = await attemptEmbedding(offering, body, res, body.model, { sensitive, mode, mask });
           if (r.done) { reputation.record(id, { ok: true, ms: r.ms }); return; }
           reputation.record(id, { ok: false, ms: Math.round(performance.now() - t0), why: r.failed });
           errors.push(`${id}: ${r.failed}`);
@@ -523,6 +553,7 @@ export async function startGateway({
     origin: `http://${host}:${actualPort}`,
     keyHosts: Object.keys(creds),
     trusted: client.trusted,   // this gateway's trusted view (sensitive requests)
+    pii: { mode: maskMode, detector: detector.name },   // PII masking before the open pool
     receipts,
     close: () => { reputation.flush(); return closeApp(app); },
     reputation,

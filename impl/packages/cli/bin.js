@@ -5,6 +5,7 @@ import { startGateway, TIERS, credentialsFrom } from './src/gateway.js';
 import { checkOffering, saveCheck, DEFAULT_CHECKS_PATH } from './src/check.js';
 import { DEFAULT_REPUTATION_PATH } from './src/reputation.js';
 import { createStdioMcp } from './src/mcpserver.js';
+import { piiDetectorFrom, describeMaskCounts } from '@opennodes/core';
 
 const [cmd, ...args] = process.argv.slice(2);
 // Default: the hosted OpenNodes registry. Point ONP_REGISTRY at http://127.0.0.1:4300 for a local one.
@@ -18,6 +19,14 @@ const flag = (name, fallback) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : fallback;
 };
+// PII masking before the open pool (docs/pii-masking.md): --mask-pii off|open|all (ONP_MASK_PII, default open);
+// detectors besides the rules, on this machine or network: --pii-service <url> (ONP_PII_SERVICE), --pii-llm <model>[@<url>] (ONP_PII_LLM).
+const pii = {
+  maskPii: flag('mask-pii') ?? process.env.ONP_MASK_PII ?? null,
+  piiService: flag('pii-service') ?? process.env.ONP_PII_SERVICE ?? null,
+  piiLlm: flag('pii-llm') ?? process.env.ONP_PII_LLM ?? null,
+};
+client.policy.mask_pii = pii.maskPii;   // read by invoke(); an unknown mode is an error there
 
 try {
   switch (cmd) {
@@ -54,8 +63,10 @@ try {
       const offerings = await client.search({});
       const offering = offerings.find((o) => o.node_id === nodeId && o.offering_id === offeringId);
       if (!offering) throw new Error(`offering not found in registry: ${flag('offering')}`);
-      const { completion, receipt } = await client.invoke(offering, [{ role: 'user', content: prompt }]);
+      client.piiDetector = piiDetectorFrom({ service: pii.piiService, llm: pii.piiLlm, env: {} });
+      const { completion, receipt, pii_masked } = await client.invoke(offering, [{ role: 'user', content: prompt }]);
       console.log(completion.choices[0].message.content);
+      if (pii_masked) console.log(`pii masked before sending: ${describeMaskCounts(pii_masked) || 'nothing found'}`);
       if (receipt) console.log(`receipt: ${receipt.receipt_id}  ${receipt.amount.currency} ${receipt.amount.value}  usage ${receipt.usage.prompt_tokens}+${receipt.usage.completion_tokens}`);
       break;
     }
@@ -114,6 +125,7 @@ try {
         ollama: args.includes('--no-ollama') ? null : flag('ollama', 'http://127.0.0.1:11434'),
         ledgerPath: flag('ledger', null),
         env: args.includes('--no-env-keys') ? {} : process.env,
+        ...pii,
       });
       console.log(`onp gateway (OpenAI-compatible) at ${gw.origin}/v1`);
       console.log(gw.keyHosts.length
@@ -123,6 +135,11 @@ try {
       console.log(sensitive
         ? `sensitive: every request stays in the trusted pool (${gw.trusted.jurisdictions} operators, declared lineage without CN, verified+, no retention, no training)`
         : 'sensitive requests: send header "onp-sensitive: 1" or use model onp/auto-sensitive (trusted pool only); --sensitive marks every request');
+      console.log({
+        open: `PII masking (${gw.pii.detector}): personal data is replaced by placeholders before an open-pool offering, and put back in the answer`,
+        all: `PII masking (${gw.pii.detector}): personal data is replaced by placeholders before every hosted offering, and put back in the answer`,
+        off: 'PII masking off (--mask-pii off): requests are sent as they are',
+      }[gw.pii.mode]);
       if (Object.keys(aliases).length) console.log('aliases:', aliases);
       if (Object.keys(virtuals).length) console.log('virtual models:', virtuals);
       await new Promise(() => {}); // run until Ctrl+C
@@ -170,14 +187,17 @@ try {
 usage:
   onp search [--modality text] [--tier community] [--lang en:strong] [--sort price|rank] [--trust trusted] [--retention none] [--no_training true] [--lineage declared] ...
   onp estimate --offering <node_id>/<offering_id> [--in 1000] [--out 500]
-  onp invoke --offering <node_id>/<offering_id> [--prompt "..."] [--sensitive]
+  onp invoke --offering <node_id>/<offering_id> [--prompt "..."] [--sensitive] [--mask-pii off|open|all] [--pii-service <url>] [--pii-llm <model>[@<url>]]
   onp card <node-origin-url>
-  onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--no-env-keys] [--min-tier unverified|community|verified] [--no-reputation] [--ollama http://127.0.0.1:11434 | --no-ollama] [--ledger receipts.jsonl]
+  onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--no-env-keys] [--min-tier unverified|community|verified] [--no-reputation] [--ollama http://127.0.0.1:11434 | --no-ollama] [--ledger receipts.jsonl] [--mask-pii off|open|all] [--pii-service <url>] [--pii-llm <model>[@<url>]]
   onp check <node_id>/<offering_id> [--key host=KEY] [--max-usd 0.02] [--context 8192|full] [--json] [--no-save]
   onp check --url https://api.example.com/v1 --model <id>    # any OpenAI-compatible endpoint
   onp mcp [--print-config] [--sensitive]    # stdio MCP server for Cursor / VS Code / Claude Desktop
   onp health
 --sensitive (or ONP_SENSITIVE=1): the requests carry personal data, so only the trusted pool is used
+--mask-pii (or ONP_MASK_PII): open (default) masks personal data before open-pool offerings and puts it back in the answer;
+     all: before every hosted offering; off: never. Add a local Presidio service (--pii-service, ONP_PII_SERVICE)
+     or a local model (--pii-llm, ONP_PII_LLM) to find names and addresses. Masking does not make a request trusted.
 env: ONP_REGISTRY (default https://registry.opennodes.io; a local registry runs at http://127.0.0.1:4300),
      ONP_TRUSTED_JURISDICTIONS (operators of the trusted pool; default EU,CA)`);
   }

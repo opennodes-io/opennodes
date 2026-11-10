@@ -1,17 +1,31 @@
 // OpenNodes client SDK (REQ-002 subset): discover, estimate, invoke with pinning + receipt verification.
 import { verifyJws, keyFromJwk, validateCard, verifyCardSignature, costForUsage, round6, trustedView, trustedJurisdictionsFrom, trustGaps } from '@opennodes/core';
+import { parseMaskMode, piiDetectorFrom, maskChatRequest, maskedRequestFor, unmaskCompletion } from '@opennodes/core';
 
 export class OnpClient {
   /**
-   * policy: { min_tier, max_input_per_mtok, max_request_cost, sensitive, trusted_jurisdictions }.
+   * policy: { min_tier, max_input_per_mtok, max_request_cost, sensitive, trusted_jurisdictions, mask_pii }.
    * `sensitive: true` treats every request as carrying personal data: only the trusted pool, under
    * this client's trusted view (`trusted_jurisdictions`, else ONP_TRUSTED_JURISDICTIONS, else EU,CA).
+   * `mask_pii` (off | open | all; default ONP_MASK_PII, else open): invoke() masks personal data before
+   * an open-pool offering (open) or any hosted one (all), with `piiDetector` (default: the rules, plus
+   * ONP_PII_SERVICE / ONP_PII_LLM), and puts the values back in the answer. See docs/pii-masking.md.
    */
-  constructor({ registry, policy = {} }) {
+  constructor({ registry, policy = {}, piiDetector = null }) {
     this.registry = registry.replace(/\/$/, '');
     this.policy = { max_input_per_mtok: Infinity, max_request_cost: Infinity, min_tier: 'unverified', sensitive: false, ...policy };
     this.trusted = trustedView(this.policy.trusted_jurisdictions ?? trustedJurisdictionsFrom());
+    this.piiDetector = piiDetector;
     this.receipts = [];
+  }
+
+  /** The masked request for this offering, or null when it may have the request as it is; throws `policy: …`. */
+  async maskFor(offering, body) {
+    const mode = parseMaskMode(this.policy.mask_pii ?? process.env.ONP_MASK_PII, 'open');
+    return maskedRequestFor(offering, {
+      mode, view: this.trusted,
+      mask: () => maskChatRequest(body, { detector: this.piiDetector ??= piiDetectorFrom() }),
+    });
   }
 
   async search(params = {}) {
@@ -69,8 +83,10 @@ export class OnpClient {
   }
 
   /** Invoke an offering (onp.openai.chat/v1) with pinning, one price_changed retry, receipt verification. */
-  async invoke(offering, messages, { maxTokens = 256, _retried = false } = {}) {
+  async invoke(offering, messages, { maxTokens = 256, _retried = false, _masked } = {}) {
     this.checkPolicy(offering, maxTokens);
+    const request = { model: offering.binding.model_id, messages, max_tokens: maxTokens };
+    const masked = _masked !== undefined ? _masked : await this.maskFor(offering, request);   // null: sent as it is
     const res = await fetch(`${offering.endpoints.openai}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -78,7 +94,7 @@ export class OnpClient {
         'onp-offering': `${offering.node_id}/${offering.offering_id}`,
         'onp-card-revision': offering.card_revision,
       },
-      body: JSON.stringify({ model: offering.binding.model_id, messages, max_tokens: maxTokens }),
+      body: JSON.stringify(masked?.body ?? request),
     });
 
     if (res.status === 409 && !_retried) {
@@ -88,7 +104,7 @@ export class OnpClient {
       const fresh = card.offerings.find((o) => o.offering_id === offering.offering_id);
       if (!fresh) throw new Error('offering disappeared in new card revision');
       const updated = { ...offering, pricing: fresh.pricing, card_revision: card.revision };
-      return this.invoke(updated, messages, { maxTokens, _retried: true });
+      return this.invoke(updated, messages, { maxTokens, _retried: true, _masked: masked });
     }
     const body = await res.json();
     if (!res.ok) throw new Error(`invoke failed: ${res.status} ${body.detail ?? ''}`);
@@ -108,7 +124,10 @@ export class OnpClient {
       }
       this.receipts.push(receipt);
     }
-    return { completion: body, receipt, repinned: _retried ? offering.card_revision : null };
+    return {
+      completion: unmaskCompletion(body, masked?.vault), receipt, repinned: _retried ? offering.card_revision : null,
+      pii_masked: masked ? masked.counts : null,   // types and counts of what was masked (null: not masked)
+    };
   }
 
   spendTotal() {
