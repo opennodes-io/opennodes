@@ -1,0 +1,93 @@
+{
+  "seed": "ua",
+  "title": "Ukrainian data centres and GPU clouds",
+  "checked": "2026-11-10",
+  "note": "Curated by the OpenNodes project from public sources (ONP-2 §3a). Site-only entries: none of these operators serves models through a public API, so none becomes a node; providers that run models here can name them as facility_operator. During the war each site shows no more than the operator publishes itself (a city, or only the country), never an address. Sites outside Ukraine are not listed here. documented = the operator's own page; claimed = news or third-party pages. Corrections, or removal on request, by pull request or to operators@opennodes.io.",
+  "providers": [
+    {
+      "id": "denovo",
+      "name": "De Novo",
+      "kind": "cloud",
+      "residency": [
+        { "commitment": "unstated", "scope": [], "availability": "default", "statement": "Colocation and GPU cloud; no statement on model data residency.", "source": "https://denovo.ua/en/data-center/colocation", "checked": "2026-11-10" }
+      ],
+      "operator": { "name": "De Novo", "country": "UA", "url": "https://denovo.ua/en/" },
+      "sites": [
+        { "id": "kyiv", "region": "UA-30", "site": "Kyiv", "status": "live", "basis": "documented", "source": "https://denovo.ua/en/data-center/colocation", "checked": "2026-11-10", "note": "Colocation (up to 15 kW a rack in the shielded module) and public cloud", "geo": { "lat": 50.4501, "lon": 30.5234, "precision": "city" } },
+        { "id": "lviv", "region": "UA-46", "site": "Lviv", "status": "live", "basis": "documented", "source": "https://denovo.ua/en/data-center/colocation", "checked": "2026-11-10", "note": "Public cloud", "geo": { "lat": 49.8397, "lon": 24.0297, "precision": "city" } }
+      ],
+      "models": [],
+      "models_note": "Colocation and GPU cloud (LLM Cloud with open models preinstalled for tenants); no public model API."
+    },
+    {
+      "id": "gigacloud",
+      "name": "GigaCloud",
+      "kind": "cloud",
+      "residency": [
+        { "commitment": "unstated", "scope": [], "availability": "default", "statement": "GPU cloud; no statement on model data residency.", "source": "https://gigacloud.ua/en/", "checked": "2026-11-10" }
+      ],
+      "operator": { "name": "GigaCloud", "country": "UA", "url": "https://gigacloud.ua/en/" },
+      "sites": [
+        { "id": "ua", "region": "UA", "site": "Three data centres in Ukraine (cities not published)", "status": "live", "basis": "documented", "source": "https://gigacloud.ua/en/", "checked": "2026-11-10", "note": "Two more data centres in Poland" }
+      ],
+      "models": [],
+      "models_note": "GPU cloud (H100, L40S); no public model API."
+    },
+    {
+      "id": "ucloud",
+      "name": "Ucloud",
+      "kind": "cloud",
+      "residency": [
+        { "commitment": "unstated", "scope": [], "availability": "default", "statement": "GPU cloud and colocation; no statement on model data residency.", "source": "https://ucloud.ua/", "checked": "2026-11-10" }
+      ],
+      "operator": { "name": "Ucloud", "country": "UA", "url": "https://ucloud.ua/" },
+      "sites": [
+        { "id": "ua", "region": "UA", "site": "Data centres in Ukraine (cities not published)", "status": "live", "basis": "documented", "source": "https://ucloud.ua/", "checked": "2026-11-10", "note": "Also in Poland (Warsaw) and Germany; colocation is offered at BE MOBILE Data Park" }
+      ],
+      "models": [],
+      "models_note": "GPU cloud and colocation; no public model API."
+    },
+    {
+      "id": "bemobile",
+      "name": "BE MOBILE Data Park",
+      "kind": "cloud",
+      "residency": [
+        { "commitment": "unstated", "scope": [], "availability": "default", "statement": "Colocation provider; no statement on model data residency.", "source": "https://ucloud.ua/en/service/colocation/", "checked": "2026-11-10" }
+      ],
+      "operator": { "name": "BE MOBILE", "country": "UA", "url": "https://bemobile.ua/" },
+      "sites": [
+        { "id": "ua", "region": "UA", "site": "BE MOBILE Data Park", "status": "live", "basis": "claimed", "source": "https://ucloud.ua/en/service/colocation/", "checked": "2026-11-10", "note": "TIA-942 Tier III design and ISO 27001, per Ucloud" }
+      ],
+      "models": [],
+      "models_note": "Colocation only; no model service."
+    },
+    {
+      "id": "colocall",
+      "name": "Colocall",
+      "kind": "cloud",
+      "residency": [
+        { "commitment": "unstated", "scope": [], "availability": "default", "statement": "Colocation provider; no statement on model data residency.", "source": "https://www.colocall.net/en/colocation/colocation.html", "checked": "2026-11-10" }
+      ],
+      "operator": { "name": "Colocall", "country": "UA", "url": "https://www.colocall.net/en/" },
+      "sites": [
+        { "id": "ua", "region": "UA", "site": "Colocall data centre (city not published)", "status": "live", "basis": "claimed", "source": "https://www.colocall.net/en/colocation/colocation.html", "checked": "2026-11-10", "note": "Colocation and cloud" }
+      ],
+      "models": [],
+      "models_note": "Colocation only; no model service."
+    },
+    {
+      "id": "kyivstar-cloud",
+      "name": "Kyivstar Cloud",
+      "kind": "cloud",
+      "residency": [
+        { "commitment": "unstated", "scope": [], "availability": "default", "statement": "Business cloud described as hosted in Ukraine; no statement on model data residency.", "source": "https://forbes.ua/news/kiivstar-zapustiv-vlasniy-khmarniy-servis-dlya-biznesu-24062025-30782", "checked": "2026-11-10" }
+      ],
+      "operator": { "name": "Kyivstar", "country": "UA", "url": "https://kyivstar.ua/" },
+      "sites": [
+        { "id": "ua", "region": "UA", "site": "Kyivstar Cloud (facilities not named)", "status": "live", "basis": "claimed", "source": "https://forbes.ua/news/kiivstar-zapustiv-vlasniy-khmarniy-servis-dlya-biznesu-24062025-30782", "checked": "2026-11-10", "note": "Business cloud launched June 2025 on HPE servers, hosted in Ukraine" }
+      ],
+      "models": [],
+      "models_note": "Business cloud; no model service."
+    }
+  ]
+}
