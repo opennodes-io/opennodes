@@ -34,7 +34,7 @@ answer  <── values put back (vault, in memory, this request only) <── "S
   - `presidio`: WebTester's local service (`WebTester/tools/pii/pii_service.py`, Microsoft Presidio with
     Canadian recognizers, or LLM Guard). `ONP_PII_SERVICE=http://127.0.0.1:5123`.
   - `llm`: a local model, OpenAI-compatible (Ollama, vLLM). `ONP_PII_LLM=gemma3:12b` or
-    `ONP_PII_LLM=google/gemma-4-31B-it@http://172.16.30.40:11420/v1`.
+    `ONP_PII_LLM=google/gemma-4-31B-it@http://192.168.1.20:8000/v1`.
   - Configured detectors run together; whatever any finds is masked. A detector reads raw text, so a URL
     that is not on this machine or the private network is refused.
 - **Placeholders** look like `[[PERSON_1]]`. The same value gets the same placeholder throughout the

@@ -1,5 +1,15 @@
 # ONP specification changes
 
+## Reference implementation — 2026-11-10: PII masking and a Ukrainian location seed (no spec change)
+
+- PII masking before the open pool, in `@opennodes/core` 0.1.23 (`pii.js`), `@opennodes/cli` 0.1.32 (gateway and `onp invoke`) and `@opennodes/ollama-router` 0.1.26. Design and limits: `docs/pii-masking.md`.
+  - Before a request goes to an open-pool offering, the client replaces the personal data it finds with placeholders (`[[EMAIL_1]]`) and puts the values back in the answer, streamed or whole. The vault is in memory for one request and never logged or sent.
+  - Detection runs on the user's machine: built-in rules (e-mail, phone, Luhn-checked cards, IBAN, SSN, SIN, postal codes, public IPv4, labelled identifiers), plus optionally a local Presidio service (`ONP_PII_SERVICE`) or a local model (`ONP_PII_LLM`). A detector URL off this machine or the private network is refused.
+  - `--mask-pii open` (default) `| all | off`, `ONP_MASK_PII`, and the `onp-mask-pii` header, which can ask for more masking but not less.
+  - Masking never makes a request trusted: sensitive requests still go to the trusted pool only (revision 8). Receipts hash the masked bytes actually sent.
+  - Tests: `impl/test/pii.test.js`, `impl/test/pii-wiring.test.js` (22 tests).
+- `@opennodes/registry` 0.1.52: location seed `locations-ua.json`, six Ukrainian data centres and GPU clouds. Site-only (none serves models through a public API, so none becomes a node), and no finer than the operator publishes: a city or only the country, never an address. `@opennodes/core` 0.1.23 adds a country point for UA.
+
 ## Draft 0.1, revision 9 — 2026-11-09: verification covers only tested profiles
 
 | # | Where | Change |

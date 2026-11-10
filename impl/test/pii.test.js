@@ -213,7 +213,7 @@ test('detectors that read raw text must be on this machine or the private networ
   assert.throws(() => llmDetector({ baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o' }), /not on this machine/);
   assert.throws(() => sidecarDetector({ url: 'https://pii.example.com' }), /not on this machine/);
   assert.throws(() => piiDetectorFrom({ env: { ONP_PII_SERVICE: 'http://8.8.8.8:5123' } }), /not on this machine/);
-  for (const u of ['http://127.0.0.1:5123', 'http://172.16.30.40:11420/v1', 'http://[::1]:1', 'http://gpu-box:8000', 'http://pii.lan', 'http://100.101.1.2']) assert.ok(isLocalEndpoint(u), u);
+  for (const u of ['http://127.0.0.1:5123', 'http://172.16.0.10:8000/v1', 'http://[::1]:1', 'http://gpu-box:8000', 'http://pii.lan', 'http://100.101.1.2']) assert.ok(isLocalEndpoint(u), u);
   for (const u of ['https://example.com', 'http://8.8.8.8', 'http://[2001:db8::1]', 'not a url']) assert.ok(!isLocalEndpoint(u), u);
   assert.equal(normalizePiiType('EMAIL_ADDRESS'), 'EMAIL');
   assert.equal(normalizePiiType('ON_PROPERTY_PIN'), 'ID');
