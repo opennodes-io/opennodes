@@ -6,6 +6,10 @@ Shared building blocks of the OpenNodes Protocol (ONP) reference implementation:
 - **JWS** — Ed25519 sign/verify with a stable canonical serialization that byte-matches across the JS and Python implementations (`signJson`, `verifyJws`, `generateKeypair`, `keypairFromPem`, `keyFromJwk`).
 - **Pricing** — `costForUsage`, `estimateBounds`, `round6`: the arithmetic behind enforceable estimates and receipt checks (`amount = usage × pinned price`).
 - **Advisor** — `extractFeatures` (task → routing features, never the text) and `recommend` (deterministic ranking with filters, weighted components, labeled quality basis, explanations, optional scenario, MCP tool categories).
+- **Trusted and open pools** (ONP-3 §5e):
+  - `trustedView(jurisdictions)` (default `EU,CA`, or `trustedJurisdictionsFrom(env)` for `ONP_TRUSTED_JURISDICTIONS`), `inTrustedPool`, `poolOf`, and `trustGaps`, which says in words why an offering is open;
+  - the filters behind it: `meetsDataPolicy` (`retention`, `no_training`) and `lineageAllowed` (`exclude`, `declared`);
+  - `recommend(…, { sensitive: true, trusted })` keeps only the trusted pool, and `sensitiveHeader` reads `onp-sensitive`.
 - **HTTP helpers** — tiny router with CORS, problem+json errors, graceful close.
 
 Used by `@opennodes/cli` and `@opennodes/registry`. Part of [OpenNodes](https://opennodes.io) · Apache-2.0.

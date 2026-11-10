@@ -4,6 +4,9 @@
 // Every method is async so both drivers present the identical contract.
 import { DatabaseSync } from 'node:sqlite';
 
+/** Admin-set node labels: shown with a listing, never rank inputs (ONP-3 §4b). */
+export const NODE_FLAGS = ['institutional', 'founding'];
+
 /** config: ':memory:' | sqlite file path | postgres:// URL */
 export async function createStore(config = ':memory:') {
   if (typeof config === 'string' && /^postgres(ql)?:\/\//.test(config)) {
@@ -18,7 +21,7 @@ export async function createSqliteStore(path = ':memory:') {
   db.exec(`
     CREATE TABLE IF NOT EXISTS nodes (
       id TEXT PRIMARY KEY, origin TEXT NOT NULL, card_url TEXT NOT NULL,
-      state TEXT NOT NULL, institutional INTEGER DEFAULT 0,
+      state TEXT NOT NULL, institutional INTEGER DEFAULT 0, founding INTEGER DEFAULT 0,
       source TEXT NOT NULL DEFAULT 'registration',
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
@@ -53,7 +56,17 @@ export async function createSqliteStore(path = ':memory:') {
       value TEXT NOT NULL, at TEXT NOT NULL,
       PRIMARY KEY (node_id, offering_id, key)
     );
+    -- How often the registry returned each node to a client, per ISO week and surface
+    -- (search / recommend / mcp). Node ids and counts only: never the query, prompt or client.
+    CREATE TABLE IF NOT EXISTS request_counts (
+      node_id TEXT NOT NULL, week TEXT NOT NULL, surface TEXT NOT NULL, n INTEGER NOT NULL,
+      PRIMARY KEY (node_id, week, surface)
+    );
   `);
+  // Databases created before the founding mark existed: add the column in place.
+  if (!db.prepare('PRAGMA table_info(nodes)').all().some((c) => c.name === 'founding')) {
+    db.exec('ALTER TABLE nodes ADD COLUMN founding INTEGER DEFAULT 0');
+  }
 
   const now = () => new Date().toISOString();
 
@@ -67,6 +80,11 @@ export async function createSqliteStore(path = ':memory:') {
         .run(id, origin, cardUrl, state, source, now(), now());
     },
     async getNode(id) { return db.prepare('SELECT * FROM nodes WHERE id = ?').get(id); },
+    /** Admin-set labels (`institutional`, `founding`). Not a state change: no transition, updated_at kept. */
+    async setNodeFlag(id, flag, value) {
+      if (!NODE_FLAGS.includes(flag)) throw new Error(`unknown node flag: ${flag}`);
+      db.prepare(`UPDATE nodes SET ${flag} = ? WHERE id = ?`).run(value ? 1 : 0, id);
+    },
     async setState(id, toState, reason = null) {
       const cur = await this.getNode(id);
       db.prepare('UPDATE nodes SET state = ?, updated_at = ? WHERE id = ?').run(toState, now(), id);
@@ -135,6 +153,18 @@ export async function createSqliteStore(path = ':memory:') {
     async observationsForNode(nodeId) {
       const rows = db.prepare('SELECT offering_id, key, value FROM observations WHERE node_id = ?').all(nodeId);
       return rows.map((r) => ({ offering_id: r.offering_id, key: r.key, value: JSON.parse(r.value) }));
+    },
+    /** rows: [{node_id, week, surface, n}] — added to the stored counts. */
+    async addRequestCounts(rows) {
+      const add = db.prepare(`INSERT INTO request_counts (node_id, week, surface, n) VALUES (?, ?, ?, ?)
+        ON CONFLICT(node_id, week, surface) DO UPDATE SET n = request_counts.n + excluded.n`);
+      for (const r of rows) add.run(r.node_id, r.week, r.surface, r.n);
+    },
+    /** Counts from `sinceWeek` (ISO week, e.g. 2026-W46) on, newest week first; one node or all. */
+    async requestCounts({ nodeId = null, sinceWeek = '0000-W00' } = {}) {
+      return nodeId
+        ? db.prepare('SELECT * FROM request_counts WHERE node_id = ? AND week >= ? ORDER BY week DESC').all(nodeId, sinceWeek)
+        : db.prepare('SELECT * FROM request_counts WHERE week >= ? ORDER BY week DESC').all(sinceWeek);
     },
     async close() { db.close(); },
   };

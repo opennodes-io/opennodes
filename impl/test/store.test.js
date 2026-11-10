@@ -58,6 +58,31 @@ async function conformance(store) {
   assert.equal((await store.getObservations('org.x.a', 'off1')).tps, 55);
   assert.equal((await store.observationsForNode('org.x.a')).length, 2);
 
+  // admin marks: set and clear, never a state transition, only known flags
+  await store.setNodeFlag('org.x.a', 'founding', true);
+  await store.setNodeFlag('org.x.a', 'institutional', true);
+  await store.setNodeFlag('org.x.a', 'founding', false);
+  const marked = await store.getNode('org.x.a');
+  assert.equal(Number(marked.founding), 0);
+  assert.equal(Number(marked.institutional), 1);
+  assert.equal((await store.transitionsFor('org.x.a')).length, 2);
+  await assert.rejects(store.setNodeFlag('org.x.a', 'state', 'x'), /unknown node flag/);
+
+  // request counts: increments add up per (node, week, surface); filters by node and since-week
+  await store.addRequestCounts([
+    { node_id: 'org.x.a', week: '2026-W45', surface: 'search', n: 2 },
+    { node_id: 'org.x.a', week: '2026-W46', surface: 'search', n: 1 },
+  ]);
+  await store.addRequestCounts([
+    { node_id: 'org.x.a', week: '2026-W46', surface: 'search', n: 4 },
+    { node_id: 'org.x.b', week: '2026-W46', surface: 'mcp', n: 1 },
+  ]);
+  const recent = await store.requestCounts({ nodeId: 'org.x.a', sinceWeek: '2026-W46' });
+  assert.deepEqual(recent.map((r) => [r.week, r.surface, Number(r.n)]), [['2026-W46', 'search', 5]]);
+  const everything = await store.requestCounts({ sinceWeek: '2026-W45' });
+  assert.equal(everything.length, 3);
+  assert.equal(everything[0].week, '2026-W46', 'newest week first');
+
   await store.close();
 }
 

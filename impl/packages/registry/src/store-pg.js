@@ -5,10 +5,11 @@ import pg from 'pg';
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS nodes (
     id TEXT PRIMARY KEY, origin TEXT NOT NULL, card_url TEXT NOT NULL,
-    state TEXT NOT NULL, institutional INTEGER DEFAULT 0,
+    state TEXT NOT NULL, institutional INTEGER DEFAULT 0, founding INTEGER DEFAULT 0,
     source TEXT NOT NULL DEFAULT 'registration',
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
   );
+  ALTER TABLE nodes ADD COLUMN IF NOT EXISTS founding INTEGER DEFAULT 0;
   CREATE TABLE IF NOT EXISTS card_revisions (
     node_id TEXT NOT NULL, revision TEXT NOT NULL, raw TEXT NOT NULL,
     sig_ok INTEGER NOT NULL, fetched_at TEXT NOT NULL,
@@ -38,7 +39,13 @@ const SCHEMA = `
     value TEXT NOT NULL, at TEXT NOT NULL,
     PRIMARY KEY (node_id, offering_id, key)
   );
+  CREATE TABLE IF NOT EXISTS request_counts (
+    node_id TEXT NOT NULL, week TEXT NOT NULL, surface TEXT NOT NULL, n INTEGER NOT NULL,
+    PRIMARY KEY (node_id, week, surface)
+  );
 `;
+
+const NODE_FLAGS = ['institutional', 'founding'];   // same list as store.js
 
 export async function createPgStore({ connectionString, pool } = {}) {
   const p = pool ?? new pg.Pool({ connectionString, max: 10 });
@@ -59,6 +66,10 @@ export async function createPgStore({ connectionString, pool } = {}) {
     },
     async getNode(id) {
       return (await q('SELECT * FROM nodes WHERE id = $1', [id]))[0];
+    },
+    async setNodeFlag(id, flag, value) {
+      if (!NODE_FLAGS.includes(flag)) throw new Error(`unknown node flag: ${flag}`);
+      await q(`UPDATE nodes SET ${flag} = $1 WHERE id = $2`, [value ? 1 : 0, id]);
     },
     async setState(id, toState, reason = null) {
       const cur = await this.getNode(id);
@@ -134,6 +145,18 @@ export async function createPgStore({ connectionString, pool } = {}) {
     async observationsForNode(nodeId) {
       const rows = await q('SELECT offering_id, key, value FROM observations WHERE node_id = $1', [nodeId]);
       return rows.map((r) => ({ offering_id: r.offering_id, key: r.key, value: JSON.parse(r.value) }));
+    },
+    async addRequestCounts(rows) {
+      for (const r of rows) {
+        await q(`INSERT INTO request_counts (node_id, week, surface, n) VALUES ($1, $2, $3, $4)
+          ON CONFLICT (node_id, week, surface) DO UPDATE SET n = request_counts.n + excluded.n`,
+          [r.node_id, r.week, r.surface, r.n]);
+      }
+    },
+    async requestCounts({ nodeId = null, sinceWeek = '0000-W00' } = {}) {
+      return nodeId
+        ? q('SELECT * FROM request_counts WHERE node_id = $1 AND week >= $2 ORDER BY week DESC', [nodeId, sinceWeek])
+        : q('SELECT * FROM request_counts WHERE week >= $1 ORDER BY week DESC', [sinceWeek]);
     },
     async close() { await p.end(); },
   };

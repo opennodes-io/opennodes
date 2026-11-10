@@ -116,6 +116,8 @@
   .chip.t-community { color: var(--accent); border-color: var(--accent); }
   .chip.t-disputed, .chip.t-suspended { color: var(--bad); border-color: var(--bad); }
   .chip.inst { color: var(--accent); border-color: var(--accent); }
+  .chip.found { color: var(--star); border-color: var(--star); }
+  .chip.untested { color: var(--warn); border-color: var(--warn); border-style: dashed; }
   .chip.imp { background: var(--panel-2); font-weight: 400; }
   .chip.loc { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
   .chip.b-documented { color: var(--accent); border-color: var(--accent); }
@@ -650,15 +652,28 @@
   <h1>The qualification procedure</h1>
   <p class="sub">Listing is open; tiers are earned. The registry runs an automated admission battery against your live endpoints — no paperwork, no gatekeepers, no exceptions. Every verdict is recorded and visible in your node's listing history.</p>
   <div class="panel pad" style="max-width:56rem">
-    <div class="stage"><span class="k">STAGE A</span><span><b>Conformance</b> — gate to <span class="chip t-community">COMMUNITY</span>, minutes. Health endpoint live; card valid and signed; models list agrees with the card; one blind invocation returns proper usage accounting and a signed receipt. Re-run every 6&nbsp;hours and on every card revision.</span></div>
+    <div class="stage"><span class="k">STAGE A</span><span><b>Conformance</b> — gate to <span class="chip t-community">COMMUNITY</span>, minutes. Health endpoint live; card valid and signed; models list agrees with the card; one blind invocation returns proper usage accounting and a signed receipt. Runs when you verify your registration, and again whenever you call <code>PUT /v0/nodes/{id}/ping</code>; this registry does not yet re-run it on a timer.</span></div>
     <div class="stage"><span class="k">STAGE B</span><span><b>Substance</b> — gate to <span class="chip t-verified">VERIFIED</span>, hours. <b>Identity fingerprinting:</b> a deterministic probe battery compared against reference outputs of the claimed model — serving a cheaper substitute under a premium name marks the node <i>disputed</i> and delists it. <b>Context verification:</b> needle-in-haystack probes at 25/50/90% of the claimed window; overclaims are capped to the verified size, visibly. <b>Capacity ramp:</b> stepped concurrent load; measured TTFT/throughput overrides claims in search results.</span></div>
     <div class="stage"><span class="k">STAGE C</span><span><b>Continuous</b> — keeps the tier honest. Liveness sweeps feed a rolling availability score; random blind invocations at unpredictable times defeat "benchmark mode"; sustained failures auto-suspend the listing.</span></div>
+    <div class="stage"><span class="k">COVERAGE</span><span><b>What is tested.</b> This registry has tests only for chat offerings (<code>onp.openai.chat/v1</code>). A tier covers only the offerings it could test: speech, embeddings, image or any other offering is listed as <span class="chip untested">UNTESTED</span>, and its tier is capped to <span class="chip t-unverified">UNVERIFIED</span> whatever the node's tier. A node with no chat offering stays unverified, because Stage A has nothing to call.</span></div>
+  </div>
+  <h2 id="probe-load">Probe load</h2>
+  <p class="sub">Everything this registry sends to your endpoints, as the code runs today. A <i>chat offering</i> is one bound to <code>onp.openai.chat/v1</code>; other offerings get only the health and models checks. Probe calls carry your probe key if you gave one at registration, and the registry does not pay for them.</p>
+  <div class="panel pad" style="max-width:56rem" id="probe-load-table">
+    <div class="stage"><span class="k">STAGE A</span><span><b>When:</b> once when you verify your registration, and once per <code>PUT /v0/nodes/{id}/ping</code>. No timed re-run yet.<br><b>Sends:</b> 1 GET to your health endpoint, 1 GET to <code>/models</code>, and 1 blind chat completion per chat offering (a short prompt, at most 32 output tokens).</span></div>
+    <div class="stage"><span class="k">STAGE B</span><span><b>When:</b> only when you ask for admission (<code>POST /v0/nodes/{id}/admit</code>), at most once every 30&nbsp;minutes per node on registry.opennodes.io.<br><b>Sends, per chat offering</b> (up to 20 chat completions):
+      <br>· <b>Fingerprint battery:</b> 3 fixed prompts at temperature 0, at most 64 output tokens each. Skipped when the registry holds no reference outputs for the model.
+      <br>· <b>Calibration:</b> 1 call with about 4,000 characters of filler, at most 4 output tokens, to measure your tokenizer.
+      <br>· <b>Context:</b> 3 probes sized at 25, 50 and 90% of the claimed context window, at most 64 output tokens each: about 1.65 times the window in prompt tokens altogether (about 210k tokens for a 128k window).
+      <br>· <b>Capacity ramp:</b> one batch each of 1, 4 and 8 parallel requests (13 calls, at most 48 output tokens each) inside a 3-second budget; a step that would start after the budget is skipped.</span></div>
+    <div class="stage"><span class="k">STAGE C</span><span><b>When:</b> continuously, for community, verified and attested nodes, and for nodes suspended for liveness until they recover.<br><b>Sends:</b> 1 GET to your health endpoint every 5&nbsp;minutes on average (each gap is random, 2.5 to 7.5&nbsp;minutes), and 1 blind chat completion per node per hour on average (30 to 90&nbsp;minutes apart, to a randomly chosen chat offering, at most 32 output tokens), each after a fetch of your card. That is about 288 health checks and 24 chat calls a day per node, whatever the number of offerings.</span></div>
+    <div class="stage"><span class="k">LOCATION</span><span><b>When:</b> after verification and then daily.<br><b>Sends:</b> 3 TCP connections to port 443 of your API host from each probe site (Nuremberg and Helsinki). No HTTP request.</span></div>
   </div>
   <h2>Principles</h2>
   <div class="panel pad" style="max-width:56rem; font-size:0.85rem">
     <p><b>Claimed ≠ measured ≠ attested.</b> Self-reported values are labeled <span class="micro m-claimed">CLAIMED</span>; registry measurements override them and show as <span class="micro m-measured">● MEASURED</span>; third-party Verifiable Credentials earn <i>attested</i>. The three are never blended.</p>
     <p><b>Transparent rank, by rule.</b> Every result carries its rank explanation — component weights and values. Undisclosed ranking inputs are non-conformant; sponsored placement, if ever present, must be labeled and excluded from rank.</p>
-    <p style="margin-bottom:0"><b>Probes cost you nothing you don't grant.</b> Your card declares a probe allowance; the registry stays within it or pays like any client.</p>
+    <p style="margin-bottom:0"><b>Probe load is bounded and published.</b> The probe load list above is all the traffic the registry sends you. A card may declare a probe allowance (<code>payment.probe_allowance</code>); this registry does not read it yet, so the load above applies whatever the card says.</p>
   </div>
 </div>
 
@@ -682,7 +697,13 @@ const ago = (iso) => {
   return Math.round(s / 86400) + 'd ago';
 };
 const tierChip = (t) => `<span class="chip t-${esc(t)}">${esc(String(t).toUpperCase())}</span>`;
-const SUBSCRIPTION_NODE = /-plan(-|$)|\.gitlab$/;
+// Marks the registry admin sets on a node or offering (ONP-3 §4b): labels only, never rank inputs.
+const markChips = (o) => (o.founding ? '<span class="chip found" title="Founding operator: one of the first operators to list with this registry. A label only: it does not change rank.">FOUNDING</span>' : '')
+  + (o.institutional ? '<span class="chip inst" title="Operated by a research or public institution. A label only: it does not change rank.">institutional</span>' : '');
+// An offering on a registered node whose profile the registry cannot test (ONP-3 §4a): its tier is capped to unverified.
+const untestedChip = (o) => (o.tested === false && o.source !== 'import' && !o.local
+  ? `<span class="chip untested" title="This registry has no tests for ${esc(o.binding?.profile ?? 'this profile')}: the node's tier does not cover this offering.">UNTESTED</span>` : '');
+const SUBSCRIPTION_NODE =/-plan(-|$)|\.gitlab$/;
 const pricePublished = (p) => p && (p.input_per_mtok != null || p.output_per_mtok != null);
 const priceStr = (p, nodeId = '') => {
   if (!pricePublished(p)) return SUBSCRIPTION_NODE.test(nodeId) ? 'in a subscription plan' : 'price not published';
@@ -1066,7 +1087,7 @@ function renderItem(o) {
   return `<div class="mitem" data-artifact="${esc(o.model.artifact)}" data-key="${esc(o.node_id + '/' + o.offering_id)}">
     <div class="t">
       <span class="nm">${esc(o.model.name)}</span>
-      ${tierChip(o.tier)}
+      ${tierChip(o.tier)}${markChips(o)}${untestedChip(o)}
       ${o.local ? '<span class="chip loc">LOCAL</span>' : (o.source === 'import' ? '<span class="chip imp">IMP</span>' : '')}
     </div>
     <div class="b">
@@ -1149,7 +1170,7 @@ function renderRow(o, idx) {
       ${tierChip(o.tier)}
       <span class="chip">${esc(o.modality)}</span>
       ${o.local ? '<span class="chip loc">RUNS LOCALLY</span>' : (o.source === 'import' ? '<span class="chip imp">IMPORTED</span>' : '')}
-      ${o.institutional ? '<span class="chip inst">institutional</span>' : ''}
+      ${markChips(o)}${untestedChip(o)}
       <a class="nodeid" href="#/node/${encodeURIComponent(o.node_id)}">${esc(o.node_id)}</a>
       <span class="rankwrap" title="rank — expand for the formula">
         <span class="rankbar"><i style="width:${Math.round((o.rank ?? 0) * 100)}%; ${rankMuted ? 'background: var(--faint)' : ''}"></i></span>
@@ -1191,7 +1212,9 @@ function renderScore(artifact) {
       verified: 'verified: passed identity, context and capacity checks',
       community: 'community: passed the registration checks',
       attested: 'attested by a third party',
-    }[o.tier] ?? (o.source === 'import' ? 'unverified: imported from a public catalog, not checked by this registry' : 'unverified: not checked yet'),
+    }[o.tier] ?? (o.source === 'import' ? 'unverified: imported from a public catalog, not checked by this registry'
+      : o.tested === false ? `unverified: this registry has no tests for ${o.binding?.profile ?? 'this profile'}, so the node's tier does not cover it`
+      : 'unverified: not checked yet'),
     probe_success: obs.probes > 0 ? `${Math.round((obs.probe_success ?? 0) * obs.probes)} of the last ${obs.probes} checks passed` : 'no checks yet',
   };
   const label = { price: 'Price', tier: 'Trust tier', probe_success: 'Check pass rate' };
@@ -1314,7 +1337,7 @@ async function loadModel(artifact) {
       return `<tr>
         <td><div style="display:flex; flex-direction:column; gap:0.2rem">
           <a href="#/node/${encodeURIComponent(o.node_id)}" style="font-weight:600">${esc(o.node_id)}</a>
-          <span style="display:flex; gap:0.3rem">${tierChip(o.tier)}${o.institutional ? '<span class="chip inst">institutional</span>' : ''}${o.source === 'import' ? `<span class="chip imp">IMPORTED</span> <a class="prov" href="#/node/${encodeURIComponent(o.node_id)}">claim</a>` : ''}</span>
+          <span style="display:flex; gap:0.3rem">${tierChip(o.tier)}${markChips(o)}${untestedChip(o)}${o.source === 'import' ? `<span class="chip imp">IMPORTED</span> <a class="prov" href="#/node/${encodeURIComponent(o.node_id)}">claim</a>` : ''}</span>
         </div></td>
         <td><b>${priceStr(o.pricing, o.node_id)}</b></td>
         <td>${hwStr(o) || '<span style="color:var(--faint)" title="Vendor has not disclosed the hardware behind this offering">undisclosed</span>'}</td>
@@ -2236,7 +2259,7 @@ async function loadRankings() {
       <td><div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap">
         <a href="#/model/${encodeURIComponent(o.model.artifact)}" style="font-weight:600">${esc(o.model.name)}</a>
         <span style="color:var(--muted); font-size:0.76rem">${esc(o.node_id)}</span>
-        ${tierChip(o.tier)}${o.institutional ? '<span class="chip inst">institutional</span>' : ''}
+        ${tierChip(o.tier)}${markChips(o)}${untestedChip(o)}
       </div></td>
       <td><b>${o.observed?.ttft_ms?.p50 ?? '—'}ms</b></td>
       <td><b>${o.observed?.tps > 0 ? o.observed.tps : '—'}</b></td>
@@ -2268,7 +2291,7 @@ async function loadNodes() {
       <th>NODE</th><th>TIER</th><th>OPERATOR</th><th>REGION</th><th>OFFERINGS</th><th>UP</th><th>UPDATED</th>
     </tr></thead><tbody>` + nodes.map((n) => `<tr>
       <td><a href="#/node/${encodeURIComponent(n.id)}" style="font-weight:600">${esc(n.id)}</a></td>
-      <td><span style="display:inline-flex; gap:0.3rem">${tierChip(n.tier)}${n.institutional ? '<span class="chip inst">institutional</span>' : ''}${n.source === 'import' ? '<span class="chip imp">IMPORTED</span>' : ''}</span></td>
+      <td><span style="display:inline-flex; gap:0.3rem">${tierChip(n.tier)}${markChips(n)}${n.source === 'import' ? '<span class="chip imp">IMPORTED</span>' : ''}</span></td>
       <td>${esc(n.operator ?? '—')}${n.country ? ' <span style="color:var(--muted)">(' + esc(n.country) + ')</span>' : ''}</td>
       <td>${servesCell(n.serves)}</td>
       <td>${n.offerings}</td>
@@ -2584,6 +2607,24 @@ function locationRow(loc, imported) {
   return `<tr><td style="color:var(--muted)" class="mono">server</td><td style="font-size:0.8rem">${words[loc.verdict] || esc(loc.verdict)}${srv.asn ? ` · AS${srv.asn}${srv.network ? ' ' + esc(srv.network) : ''}` : ''}<br><span style="color:var(--muted)">latency ${latWord}${sites ? ' (' + sites + ')' : ''} · checked ${esc((loc.checked_at || '').slice(0, 10))} · evidence, not proof</span></td></tr>`;
 }
 
+/** Request counts (GET /v0/nodes/{id} request_counts): how often clients were shown this node. */
+function returnedRow(weeks, nodeId) {
+  if (!Array.isArray(weeks) || !weeks.length) return '';
+  const [now, prev] = weeks;
+  const all = weeks.reduce((sum, w) => sum + w.total, 0);
+  const parts = (w) => `search ${fmtInt(w.search)} · recommend ${fmtInt(w.recommend)} · MCP ${fmtInt(w.mcp)}`;
+  return `<tr><td style="color:var(--muted)" class="mono">returned</td><td style="font-size:0.8rem"><b>${fmtInt(now.total)}</b> this week (${parts(now)})${prev ? ` · ${fmtInt(prev.total)} last week` : ''} · ${fmtInt(all)} in ${weeks.length} weeks<br><span style="color:var(--muted)">registry responses that included this node, per ISO week from Monday ${esc(now.starts)} (UTC) · counts only, no queries stored · <a href="/v0/stats/requests?node_id=${encodeURIComponent(nodeId)}">JSON</a></span></td></tr>`;
+}
+
+/** What the node's tier covers (GET /v0/nodes/{id} verification): shown only when some offering is untested. */
+function testedRow(n, total, untested) {
+  const v = n.verification;
+  if (!v || n.source === 'import' || !untested) return '';
+  const profiles = (v.tested_profiles || []).map(esc).join(', ');
+  const skipped = v.blind_skipped ? `<br><span class="warncol">Stage C blind probes skipped since ${esc((v.blind_skipped.since || '').slice(0, 10))}: ${esc(v.blind_skipped.reason)}</span>` : '';
+  return `<tr><td style="color:var(--muted)" class="mono">tested</td><td style="font-size:0.8rem">${fmtInt(total - untested)} of ${fmtInt(total)} offerings · <b>${fmtInt(untested)} untested</b>: this registry tests only ${profiles}, so the trust tier says nothing about the others${skipped}</td></tr>`;
+}
+
 async function loadNode(id) {
   $('#node-title').textContent = id;
   try {
@@ -2596,9 +2637,11 @@ async function loadNode(id) {
     const tier = n.state === 'indexed' ? 'unverified' : n.state;
     const stat = (v, l) => `<span class="stat"><span class="sv">${v}</span><span class="sl">${l}</span></span>`;
     const offers = (card.offerings || []);
+    // Offerings the registry's tests cannot call (ONP-3 §4a): the node's tier does not cover them.
+    const untested = new Set(n.source === 'import' ? [] : (n.verification?.untested_offerings || []));
     const offerRows = offers.slice(0, 50).map((o) => `<tr>
       <td><a href="#/model/${encodeURIComponent(o.model?.artifact ?? '')}" style="font-weight:600">${esc(o.model?.name ?? o.offering_id)}</a></td>
-      <td><span class="chip">${esc(o.modality)}</span></td>
+      <td><span class="chip">${esc(o.modality)}</span>${untested.has(o.offering_id) ? ' ' + untestedChip({ tested: false, source: n.source, binding: o.binding }) : ''}</td>
       <td class="num"><b>${priceStr(o.pricing || {}, o.node_id)}</b></td>
       <td>${hwStr({ hardware: o.hardware ?? card.hardware }) || '<span style="color:var(--faint)">undisclosed</span>'}</td>
       <td class="num">${o.serving?.context_window ? fmtInt(o.serving.context_window) : '—'}</td>
@@ -2609,6 +2652,7 @@ async function loadNode(id) {
       ${card.node?.description ? `<p class="desc">${esc(card.node.description)}</p>` : ''}
       <div class="statstrip">
         ${stat(tierChip(tier), 'TRUST TIER')}
+        ${markChips(n) ? stat(`<span style="display:inline-flex; gap:0.3rem">${markChips(n)}</span>`, 'REGISTRY MARK — label, not a rank input') : ''}
         ${stat(String(offers.length), 'OFFERINGS')}
         ${card.node?.operator?.name ? stat(esc(card.node.operator.name) + (card.node.operator.country ? ' (' + esc(card.node.operator.country) + (n.source === 'import' ? ' · inferred' : '') + ')' : ''), 'OPERATOR') : ''}
         ${(card.node?.regions || []).length ? stat(esc(card.node.regions.join(', ')), 'REGIONS') : ''}
@@ -2619,6 +2663,8 @@ async function loadNode(id) {
         ${docsUrl(card.endpoints) ? `<tr><td style="color:var(--muted)" class="mono">docs</td><td class="mono" style="font-size:0.74rem"><a href="${esc(docsUrl(card.endpoints))}" target="_blank" rel="noopener">${esc(docsUrl(card.endpoints))}</a></td></tr>` : ''}
         ${locationRow(n.location, n.source === 'import')}
         ${card.hardware ? `<tr><td style="color:var(--muted)" class="mono">hardware</td><td style="font-size:0.78rem">${hwStr({ hardware: card.hardware })}</td></tr>` : ''}
+        ${returnedRow(n.request_counts, n.id)}
+        ${testedRow(n, offers.length, untested.size)}
         <tr><td style="color:var(--muted)" class="mono">revision</td><td class="mono" style="font-size:0.74rem">${esc(card.revision ?? '—')}</td></tr>
       </table></div>
       ${offers.length ? `<h2>Offerings</h2><div class="panel tablewrap" style="max-width:56rem"><table class="grid num"><thead><tr>

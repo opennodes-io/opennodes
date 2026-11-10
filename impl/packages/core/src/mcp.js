@@ -17,7 +17,11 @@ const FILTERS = {
   lang: { type: 'string', description: 'Language with minimum grade, "<iso-code>[:basic|strong|native]", e.g. "pl:strong" or "de".' },
   region: { type: 'string', description: 'Data residency: every pinned region and every live serving site must lie inside this ISO 3166 code, e.g. "CA" (also matches "CA-QC") or "EU" (also matches member states such as "DE"; "EEA" adds IS, LI, NO).' },
   location_basis: { ...LOCATION_BASIS, description: 'Minimum evidence for the serving locations: claimed < documented (the provider\'s own dated page) < measured (registry probes) < attested. Offerings without known locations are excluded.' },
-  exclude_lineage: { type: 'string', description: 'Comma-separated ISO country codes; drops offerings whose declared model lineage includes any of them, e.g. "CN". Offerings that declare no lineage are kept.' },
+  exclude_lineage: { type: 'string', description: 'Comma-separated ISO country codes; drops offerings whose declared model lineage includes any of them, e.g. "CN". Offerings that declare no lineage are kept unless lineage is "declared".' },
+  lineage: { type: 'string', enum: ['declared', 'any'], description: '"declared": drop offerings whose model declares no lineage (unknown origin is not clean). Combine with exclude_lineage for a strict origin policy.' },
+  retention: { type: 'string', enum: ['none', 'ephemeral', 'logged'], description: 'Maximum data retention: "none" keeps offerings whose data_policy stores nothing beyond the request; "ephemeral" also allows bounded holding. Offerings without a data_policy are excluded.' },
+  no_training: { type: 'boolean', description: 'true: only offerings whose data_policy says training_on_inputs is false. Offerings without a data_policy are excluded.' },
+  trust: { type: 'string', enum: ['trusted', 'open'], description: '"trusted": only the trusted pool, for personal data and sensitive work: operators in the registry\'s trusted jurisdictions (see /v0/health trust), declared lineage without CN, tier verified or higher, no retention and no training on inputs. "open" (or omitted): both pools. Each result carries pool: "trusted" or "open".' },
   q: { type: 'string', description: 'Free-text match against the model metadata, offering id, and node id, e.g. "bielik" or "coder".' },
   local: { type: 'boolean', description: "true: only models that run on the user's own machine (the Ollama library: no server, free, ranked by Ollama pulls, with local.sizes_memory per size). false: only hosted offerings. Omit for both (hosted listed first). The result's counts give { hosted, local }." },
   memory_gb: { type: 'number', minimum: 1, description: 'RAM/VRAM the user can give a local model, in GB: keeps local models with a size that fits (4-bit estimate). Hosted offerings are unaffected.' },
@@ -48,6 +52,7 @@ export const MCP_TOOLS = [
             region: { type: 'string', description: 'Required data region, e.g. "CA" or "EU" (EU and EEA include their member states). Offerings pinned to, or served from, other regions are excluded, and so are hosted offerings with no known location; models on this machine or LAN always qualify.' },
             jurisdiction: { type: 'string', description: 'Only operators in this jurisdiction: "eea" or ISO country codes ("DE,FI"). Local and LAN models always qualify.' },
             prefer_local: { type: 'boolean', description: 'Give a bonus to nodes on this machine or LAN.' },
+            sensitive: { type: 'boolean', description: 'true when the task carries personal data or is otherwise sensitive: only the trusted pool qualifies (trusted jurisdictions, declared lineage without CN, tier verified or higher, no retention, no training on inputs). Models on this machine or LAN qualify on jurisdiction, tier and data policy, but not on lineage. If nothing qualifies, recommendations is empty: do not fall back to the open pool.' },
             local_memory_gb: { type: 'number', minimum: 1, description: 'RAM/VRAM this machine can give a local model, in GB. Local models that cannot fit are left out, and the largest size that fits is picked (4-bit estimate). The local stdio server fills this from the machine when it is not given; otherwise catalogue models are scored for a typical 16 GB laptop, and none is picked.' },
             limit: { type: 'integer', minimum: 1, maximum: 20, default: 3, description: 'Number of candidates to return.' },
           },
@@ -132,6 +137,7 @@ export const MCP_TOOLS = [
         status: { type: 'string', enum: ['live', 'planned'], description: 'Only live or only planned sites. Omit for both.' },
         model: { type: 'string', description: 'Substring of a model name or artifact, e.g. "gpt-oss" or "command". Keeps only sites serving a match.' },
         exclude_lineage: { type: 'string', description: 'Comma-separated ISO country codes; drops models whose declared lineage includes any of them, e.g. "CN".' },
+        lineage: { type: 'string', enum: ['declared', 'any'], description: '"declared": also drop models that declare no lineage.' },
         near: { type: 'string', description: 'A point as "lat,lon" in decimal degrees, e.g. "45.50,-73.57" for Montréal. Adds distance_km to each site and sorts nearest first.' },
         within_km: { type: 'number', exclusiveMinimum: 0, description: 'With `near`: only sites within this great-circle distance. Sites known only to the country are excluded, since their point is a placeholder.' },
         residency: { ...COMMITMENT, description: 'Only sites covered by a residency commitment at least this strong: processing (inference and stored data stay in the area) or storage (data at rest only).' },
@@ -166,6 +172,8 @@ export function summarizeNode(node, offeringLimit = 25) {
   const card = node.card ?? {};
   const offerings = card.offerings ?? [];
   const liveness = (node.probes ?? []).filter((p) => p.kind === 'liveness');
+  // Registries from 0.1.52 list the offerings their tests cannot call (ONP-3 §4a); imports are never tested.
+  const untested = node.verification ? new Set(node.verification.untested_offerings ?? []) : null;
   return {
     id: node.id,
     name: card.node?.name ?? node.id,
@@ -176,6 +184,7 @@ export function summarizeNode(node, offeringLimit = 25) {
     tier: node.state === 'indexed' ? 'unverified' : node.state,
     source: node.source ?? 'registration',
     institutional: Boolean(node.institutional),
+    founding: Boolean(node.founding),
     origin: node.origin ?? null,
     card_url: node.card_url ?? null,
     card_revision: card.revision ?? null,
@@ -208,6 +217,7 @@ export function summarizeNode(node, offeringLimit = 25) {
       supports: o.serving?.supports ?? [],
       pricing: o.pricing ? { currency: o.pricing.currency, input_per_mtok: o.pricing.input_per_mtok, output_per_mtok: o.pricing.output_per_mtok, schemes: o.pricing.schemes } : null,
       retention: o.data_policy?.retention ?? null,
+      ...(untested ? { tested: node.source !== 'import' && !untested.has(o.offering_id) } : {}),
     })),
   };
 }

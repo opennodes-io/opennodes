@@ -7,7 +7,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   sendJson, problem, regionWithin, countryOf, basisRank, pointFor, distanceKm, parsePoint, precisionRank,
-  residencyAt, residencyMeets, commitmentRank, scopeCovers, RESIDENCY_COMMITMENTS,
+  residencyAt, residencyMeets, commitmentRank, scopeCovers, RESIDENCY_COMMITMENTS, lineageAllowed,
 } from '@opennodes/core';
 import { siteLocation } from './importers.js';
 
@@ -237,7 +237,7 @@ export async function collectSites(store, seeds = []) {
 /**
  * Filter and summarise. Query: country | region (containment), basis (minimum evidence),
  * status (live | planned), model (substring of name or artifact), exclude_lineage (CSV of
- * countries; drops those models, keeps undeclared lineage), near=lat,lon (adds distance_km,
+ * countries; drops those models, keeps undeclared lineage unless lineage=declared), near=lat,lon (adds distance_km,
  * nearest first) with within_km (radius; country-level points never match), format=csv|geojson.
  */
 export async function buildLocations(store, seeds, query) {
@@ -255,12 +255,14 @@ export async function buildLocations(store, seeds, query) {
     if (!['processing', 'storage'].includes(q('residency'))) throw Object.assign(new Error('residency must be processing or storage'), { status: 400 });
     sites = sites.filter((s) => residencyMeets(s.residency, q('residency'), q('availability') ?? 'enterprise'));
   }
-  const banned = q('exclude_lineage')?.toUpperCase().split(',') ?? [];
+  const banned = q('exclude_lineage')?.split(',').filter(Boolean) ?? [];
+  if (q('lineage') && !['declared', 'any'].includes(q('lineage'))) throw Object.assign(new Error('lineage must be declared or any'), { status: 400 });
+  const declared = q('lineage') === 'declared';   // also drop models that declare no lineage
   const needle = q('model')?.toLowerCase();
-  if (banned.length || needle) {
+  if (banned.length || declared || needle) {
     sites = sites.map((s) => ({
       ...s,
-      models: s.models.filter((m) => !(m.lineage_origins ?? []).some((c) => banned.includes(c))
+      models: s.models.filter((m) => lineageAllowed({ model: m }, { exclude: banned, declared })
         && (!needle || `${m.name} ${m.artifact}`.toLowerCase().includes(needle))),
     }));
     if (needle) sites = sites.filter((s) => s.models.length);

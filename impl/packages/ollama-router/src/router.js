@@ -10,7 +10,11 @@ import { Readable } from 'node:stream';
 import {
   createApp, listen, closeApp, sendJson, problem, readJson,
   verifyJws, keyFromJwk, costForUsage, estimateBounds, round6, extractFeatures, recommend, parseAutoModel, AUTO_MODEL_NAMES,
-  responseBudgetMs, fetchWithin,
+  responseBudgetMs, fetchWithin, trustedView, trustedJurisdictionsFrom, trustGaps, sensitiveHeader,
+} from '@opennodes/core';
+import {
+  parseMaskMode, maskModeOf, piiDetectorFrom, maskChatRequest, maskedRequestFor, oncePerRequest,
+  unmaskCompletion, unmaskSse, createSseUnmasker, piiMaskedHeader,
 } from '@opennodes/core';
 import { OnpClient } from '@opennodes/cli';
 import { Reputation } from '@opennodes/cli/src/reputation.js';
@@ -20,8 +24,8 @@ import {
 } from './translate.js';
 import { probePeer, browseMdns } from './discovery.js';
 
-// auto, auto-cheap|fast|quality|private, and auto-<where> (eu, or a country code such as ca): your own
-// machines plus public operators in that jurisdiction. Parsed by @opennodes/core.
+// auto, auto-cheap|fast|quality|private, auto-sensitive (trusted pool only), and auto-<where> (eu, or a
+// country code such as ca): your own machines plus public operators in that jurisdiction. Parsed by @opennodes/core.
 const LOCAL_TTL = 30_000, PUBLIC_TTL = 60_000;
 const VERSION = '0.1.0';
 // Ollama clients slice digest[:12] for display: synthesized entries need a real-looking one.
@@ -35,14 +39,24 @@ export async function startOllamaRouter({
   ollama = 'http://127.0.0.1:11434',
   peers = [],                 // origins of LAN Ollama servers or ONP nodes
   registry = null,            // OpenNodes registry URL for the public tier (null = LAN only)
-  policy = {},                // { min_tier: 'community', max_request_usd: 0.05, region }
+  policy = {},                // { min_tier: 'community', max_request_usd: 0.05, region, sensitive }
+  trustedJurisdictions = trustedJurisdictionsFrom(),   // operators of the trusted pool (ONP_TRUSTED_JURISDICTIONS, default EU,CA)
   keys = {},                  // BYOK upstream credentials by hostname (imported catalogs)
   ledgerPath = null,
   reputationPath = null,      // passive reputation of each offering, from real calls (null = this run only)
   mdns = true,
   log = console.log,
+  // PII masking (docs/pii-masking.md): 'open' (default; ONP_MASK_PII) masks requests to open-pool public
+  // offerings, 'all' every public one, 'off' none; local and LAN models never. Detection: the rules,
+  // plus a local Presidio service (piiService, ONP_PII_SERVICE) and a local model (piiLlm, ONP_PII_LLM).
+  maskPii = null, piiService = null, piiLlm = null, piiDetector = null,
 } = {}) {
-  const pol = { min_tier: 'community', max_request_usd: 0.05, ...policy };
+  const pol = { min_tier: 'community', max_request_usd: 0.05, sensitive: false, ...policy };
+  const maskMode = parseMaskMode(maskPii ?? process.env.ONP_MASK_PII, 'open');
+  const detector = piiDetector ?? piiDetectorFrom({ service: piiService, llm: piiLlm });
+  // Sensitive requests (policy.sensitive, the onp-sensitive header, or auto-sensitive) use the trusted pool only.
+  const trusted = trustedView(trustedJurisdictions);
+  const sensitiveOf = (req, name) => Boolean(pol.sensitive) || sensitiveHeader(req.headers) || Boolean(parseAutoModel(name)?.sensitive);
   const client = registry ? new OnpClient({ registry }) : null;
   const jwksCache = new Map();
   const receipts = [];
@@ -146,20 +160,22 @@ export async function startOllamaRouter({
   };
 
   /** Resolve a requested model name to an ordered list of catalog entries. */
-  async function resolve(name, { messages = [], prompt = null, maxTokens = null, request = null } = {}) {
+  async function resolve(name, { messages = [], prompt = null, maxTokens = null, request = null, sensitive = false } = {}) {
     const auto = parseAutoModel(name);
     if (auto) {
       const { preset } = auto;
+      sensitive ||= Boolean(auto.sensitive);
       const text = prompt ?? lastUserText(messages);
       const features = extractFeatures(text, { messages: prompt ? [] : messages.slice(0, -1), est_output_tokens: maxTokens, request });
       const pool = preset === 'private' ? await localEntries() : await catalog();
       const result = recommend(reputation.apply(pool.map((e) => e.offering)), features, {
         preset, limit: 5, prefer_local: true, max_total_usd: pol.max_request_usd, region: pol.region,
         jurisdiction: auto.jurisdiction ?? pol.jurisdiction,
+        sensitive, trusted,
       });
       const byKey = new Map(pool.map((e) => [`${e.offering.node_id}/${e.offering.offering_id}`, e]));
       const chosen = result.recommendations.map((r) => byKey.get(r.offering)).filter(Boolean);
-      lastAdvice = { model: name, features, recommendations: result.recommendations.map((r) => { const seen = reputation.describe(r.offering); return { offering: r.offering, tier: r.tier, score: r.score, reasons: seen ? [...r.reasons, seen] : r.reasons }; }) };
+      lastAdvice = { model: name, features, ...(sensitive ? { sensitive: true, trusted_view: trusted } : {}), recommendations: result.recommendations.map((r) => { const seen = reputation.describe(r.offering); return { offering: r.offering, tier: r.tier, score: r.score, reasons: seen ? [...r.reasons, seen] : r.reasons }; }) };
       return chosen;
     }
     const all = await catalog();
@@ -202,6 +218,7 @@ export async function startOllamaRouter({
       ts: new Date().toISOString(), model: requested, tier: entry.tier, offering: entry.name,
       receipt_id: receipt?.receipt_id ?? null, cost: entry.tier === 'public' ? (receipt?.amount.value ?? null) : 0,
       currency: receipt?.amount.currency ?? 'USD', usage: receipt?.usage ?? extra.usage ?? null, latency_ms: latencyMs,
+      ...(extra.pii_masked ? { pii_masked: extra.pii_masked } : {}),   // types and counts only
     };
     receipts.push(row);
     if (ledgerPath) appendFileSync(ledgerPath, JSON.stringify(row) + '\n');
@@ -235,24 +252,41 @@ export async function startOllamaRouter({
     return res;
   }
 
+  /**
+   * PII masking for one request: `masked(entry)` is the masked OpenAI body for an entry that needs it, or
+   * null; a refusal (detection failed, an image to the open pool) is returned as { refused } instead.
+   * Detection runs once per request, on the first entry that needs it.
+   */
+  function piiFor(req, openaiBody) {
+    const mode = maskModeOf(req.headers, maskMode);   // a header can strengthen it, never weaken it
+    const mask = oncePerRequest(() => maskChatRequest(openaiBody(), { detector }));
+    return async (entry) => {
+      try { return { masked: await maskedRequestFor(entry.offering ?? {}, { mode, view: trusted, mask }) }; }
+      catch (err) { return { refused: { failed: err.message.replace(/^policy: /, ''), policy: true, refused: true } }; }
+    };
+  }
+
   /** Ollama-native request through an ONP node, translated both ways. mode: chat | generate. */
-  async function viaOnp(entry, body, res, requested, mode) {
+  async function viaOnp(entry, body, res, requested, mode, pii = null) {
     const t0 = performance.now();
     const openaiBody = mode === 'chat' ? ollamaChatToOpenAI(body, entry.upstreamModel) : ollamaGenerateToOpenAI(body, entry.upstreamModel);
-    const upstream = await onpFetch(entry, openaiBody);
+    const { masked = null, refused } = pii ? await pii(entry) : {};
+    if (refused) return refused;
+    const upstream = await onpFetch(entry, masked?.body ?? openaiBody);   // onpFetch sets the model
     const firstMs = Math.round(performance.now() - t0);
     if (!upstream.ok) return { failed: `upstream ${upstream.status}: ${(await upstream.text()).slice(0, 200)}` };
     const receiptHeader = upstream.headers.get('onp-receipt');
     const chunker = new OllamaChunker({ model: requested, mode, startedAt: t0 });
     const stream = body.stream !== false;
+    const unmasker = masked?.vault.size ? createSseUnmasker(masked.vault) : null;
     if (stream) {
-      res.writeHead(200, { 'content-type': 'application/x-ndjson' });
-      for await (const chunk of parseSse(upstream.body)) {
-        const delta = chunker.take(chunk);
-        if (delta) res.write(JSON.stringify(delta) + '\n');
-      }
+      res.writeHead(200, { 'content-type': 'application/x-ndjson', ...piiMaskedHeader(masked) });
+      const write = (chunk) => { const delta = chunker.take(chunk); if (delta) res.write(JSON.stringify(delta) + '\n'); };
+      for await (const chunk of parseSse(upstream.body)) write(unmasker ? unmasker.chunk(chunk) : chunk);
+      const held = unmasker?.close();   // a placeholder still held when the stream ended
+      if (held) write(held);
     } else {
-      const completion = await upstream.json();
+      const completion = unmaskCompletion(await upstream.json(), masked?.vault);
       chunker.take({ choices: [{ message: completion.choices?.[0]?.message ?? {}, finish_reason: completion.choices?.[0]?.finish_reason }], usage: completion.usage });
     }
     let receipt = null;
@@ -260,8 +294,8 @@ export async function startOllamaRouter({
     catch (err) { log(`[onp-ollama] receipt verification failed for ${entry.name}: ${err.message}`); }
     const counts = { promptTokens: receipt?.usage.prompt_tokens, completionTokens: receipt?.usage.completion_tokens };
     if (stream) { res.end(JSON.stringify(chunker.final(counts)) + '\n'); }
-    else sendJson(res, 200, chunker.whole(counts));
-    record(entry, requested, receipt, Math.round(performance.now() - t0), { usage: chunker.usage });
+    else sendJson(res, 200, chunker.whole(counts), piiMaskedHeader(masked));
+    record(entry, requested, receipt, Math.round(performance.now() - t0), { usage: chunker.usage, pii_masked: masked?.counts });
     return { done: true, ...(stream ? { first_ms: firstMs } : {}) };
   }
 
@@ -291,22 +325,34 @@ export async function startOllamaRouter({
     return { done: true, ...(body.stream !== false ? { first_ms: firstMs } : {}) };
   }
 
-  /** Try candidates in order; the first that answers wins. */
-  async function dispatch(res, requested, candidates, attemptFn) {
-    if (!candidates.length) return oerr(res, 404, `model '${requested}' not found locally, on the LAN, or in the registry`);
+  /**
+   * Try candidates in order; the first that answers wins. A sensitive request goes only to entries in
+   * the trusted pool: the others are refused before anything is sent.
+   */
+  async function dispatch(res, requested, candidates, attemptFn, { sensitive = false } = {}) {
+    if (!candidates.length) {
+      return sensitive && parseAutoModel(requested)
+        ? oerr(res, 404, `the request is sensitive and no model here is in the trusted pool (${trusted.jurisdictions} operators, declared lineage without CN, verified+, no retention, no training); it was not sent anywhere`)
+        : oerr(res, 404, `model '${requested}' not found locally, on the LAN, or in the registry`);
+    }
     const errors = [];
+    let refused = 0;
     for (const entry of candidates) {
       const id = entry.offering ? `${entry.offering.node_id}/${entry.offering.offering_id}` : entry.name;
       const t0 = performance.now();
       const ms = () => Math.round(performance.now() - t0);
+      const gaps = sensitive ? trustGaps(entry.offering ?? {}, trusted) : [];
+      if (gaps.length) { refused++; errors.push(`${entry.name}: open pool, the request is sensitive (${gaps.join('; ')})`); continue; }
       try {
         const r = await attemptFn(entry);
         if (r.done) { reputation.record(id, { ok: true, ms: ms(), first_ms: r.first_ms }); return; }
+        if (r.refused) refused++;   // not sent: PII masking could not make it safe for this entry
         if (!r.policy) reputation.record(id, { ok: false, ms: ms(), why: r.failed });
         errors.push(`${entry.name}: ${r.failed}`);
       } catch (err) { reputation.record(id, { ok: false, ms: ms(), why: err.message }); errors.push(`${entry.name}: ${err.message}`); }
       if (res.headersSent) return;   // a stream started and broke: nothing more we can send
     }
+    if (refused === candidates.length) return oerr(res, 403, `refused: ${errors.join(' | ')}`);
     oerr(res, 502, `all candidates failed: ${errors.join(' | ')}`);
   }
 
@@ -327,6 +373,7 @@ export async function startOllamaRouter({
   const autoNote = (name) => {
     const a = parseAutoModel(name);
     if (a?.preset === 'private') return 'routes only to local and LAN models';
+    if (a?.sensitive) return `for personal data: routes only to the trusted pool (${trusted.jurisdictions} operators, declared lineage without CN, verified+, no retention, no training)`;
     if (a?.jurisdiction) return `routes to local, LAN and ${a.jurisdiction === 'eea' ? 'EU/EEA' : a.jurisdiction} operators only`;
     return 'routes by the OpenNodes advisor';
   };
@@ -374,20 +421,26 @@ export async function startOllamaRouter({
 
     ['POST', '/api/chat', async (req, res) => {
       const body = await readJson(req, 50_000_000);
-      const candidates = await resolve(body.model, { messages: body.messages, maxTokens: body.options?.num_predict, request: { tools: body.tools, json: Boolean(body.format) } });
+      const sensitive = sensitiveOf(req, body.model);
+      let pii;
+      try { pii = piiFor(req, () => ollamaChatToOpenAI(body, '')); } catch (err) { return oerr(res, 400, err.message); }
+      const candidates = await resolve(body.model, { messages: body.messages, maxTokens: body.options?.num_predict, request: { tools: body.tools, json: Boolean(body.format) }, sensitive });
       await dispatch(res, body.model, candidates, async (entry) => {
         const over = checkBudget(entry, body); if (over) return { failed: over, policy: true };
-        return entry.kind === 'ollama' ? viaOllama(entry, body, res, body.model, '/api/chat') : viaOnp(entry, body, res, body.model, 'chat');
-      });
+        return entry.kind === 'ollama' ? viaOllama(entry, body, res, body.model, '/api/chat') : viaOnp(entry, body, res, body.model, 'chat', pii);
+      }, { sensitive });
     }],
 
     ['POST', '/api/generate', async (req, res) => {
       const body = await readJson(req, 50_000_000);
-      const candidates = await resolve(body.model, { prompt: body.prompt ?? '', maxTokens: body.options?.num_predict, request: { tools: [], json: Boolean(body.format) } });
+      const sensitive = sensitiveOf(req, body.model);
+      let pii;
+      try { pii = piiFor(req, () => ollamaGenerateToOpenAI(body, '')); } catch (err) { return oerr(res, 400, err.message); }
+      const candidates = await resolve(body.model, { prompt: body.prompt ?? '', maxTokens: body.options?.num_predict, request: { tools: [], json: Boolean(body.format) }, sensitive });
       await dispatch(res, body.model, candidates, async (entry) => {
         const over = checkBudget(entry, body); if (over) return { failed: over, policy: true };
-        return entry.kind === 'ollama' ? viaOllama(entry, body, res, body.model, '/api/generate') : viaOnp(entry, body, res, body.model, 'generate');
-      });
+        return entry.kind === 'ollama' ? viaOllama(entry, body, res, body.model, '/api/generate') : viaOnp(entry, body, res, body.model, 'generate', pii);
+      }, { sensitive });
     }],
 
     // Local-only Ollama operations (model management, embeddings).
@@ -398,7 +451,8 @@ export async function startOllamaRouter({
     ['GET', '/v1/models', async (req, res) => sendJson(res, 200, { object: 'list', data: [...AUTO_MODEL_NAMES, ...(await catalog()).map((e) => e.name)].map((id) => ({ id, object: 'model', owned_by: 'opennodes-ollama-router' })) })],
     ['POST', '/v1/chat/completions', async (req, res) => {
       const body = await readJson(req, 50_000_000);
-      const want = { messages: body.messages, maxTokens: body.max_tokens, request: { tools: body.tools, json: ['json_object', 'json_schema'].includes(body.response_format?.type) } };
+      const sensitive = sensitiveOf(req, body.model);
+      const want = { messages: body.messages, maxTokens: body.max_tokens, request: { tools: body.tools, json: ['json_object', 'json_schema'].includes(body.response_format?.type) }, sensitive };
       const candidates = await resolve(body.model, want);
       // OpenRouter-compatible fallback list: `models: [...]` adds further models to try, in order.
       if (Array.isArray(body.models)) {
@@ -410,26 +464,35 @@ export async function startOllamaRouter({
         }
       }
       const { models: _fallbacks, ...forwarded } = body;
+      let pii;
+      try { pii = piiFor(req, () => forwarded); } catch (err) { return oerr(res, 400, err.message); }
       await dispatch(res, body.model, candidates, async (entry) => {
         const over = checkBudget(entry, body); if (over) return { failed: over, policy: true };
+        const { masked = null, refused } = entry.kind === 'ollama' ? {} : await pii(entry);   // your own Ollama servers: never masked
+        if (refused) return refused;
         const t0 = performance.now();
         const upstream = entry.kind === 'ollama'
           ? await fetch(`${entry.origin}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...forwarded, model: entry.upstreamModel }), signal: AbortSignal.timeout(600_000) })
-          : await onpFetch(entry, forwarded);
+          : await onpFetch(entry, masked?.body ?? forwarded);
         const firstMs = Math.round(performance.now() - t0);
         if (!upstream.ok) return { failed: `upstream ${upstream.status}` };
         const receiptHeader = upstream.headers.get('onp-receipt');
-        res.writeHead(200, { 'content-type': upstream.headers.get('content-type') ?? 'application/json' });
-        await new Promise((resolve, reject) => { const s = Readable.fromWeb(upstream.body); s.pipe(res); s.on('end', resolve); s.on('error', reject); });
+        res.writeHead(200, { 'content-type': upstream.headers.get('content-type') ?? 'application/json', ...piiMaskedHeader(masked) });
+        if (masked?.vault.size && body.stream) {   // values put back as the answer arrives
+          for await (const text of unmaskSse(upstream.body, masked.vault)) res.write(text);
+          res.end();
+        } else if (masked?.vault.size) {
+          res.end(JSON.stringify(unmaskCompletion(await upstream.json(), masked.vault)));
+        } else await new Promise((resolve, reject) => { const s = Readable.fromWeb(upstream.body); s.pipe(res); s.on('end', resolve); s.on('error', reject); });
         let receipt = null;
         try { if (receiptHeader) receipt = await verifyReceipt(entry, receiptHeader); } catch (err) { log(`[onp-ollama] receipt: ${err.message}`); }
-        record(entry, body.model, receipt, Math.round(performance.now() - t0));
+        record(entry, body.model, receipt, Math.round(performance.now() - t0), { pii_masked: masked?.counts });
         return { done: true, ...(body.stream ? { first_ms: firstMs } : {}) };
-      });
+      }, { sensitive });
     }],
 
     // Router introspection.
-    ['GET', '/router/catalog', async (req, res) => sendJson(res, 200, { local_ollama: ollama, peers: [...peerMap.values()].map((p) => ({ name: p.name, kind: p.kind, origin: p.origin })), registry, policy: pol, models: (await catalog()).map((e) => ({ name: e.name, tier: e.tier, kind: e.kind, origin: e.origin })) })],
+    ['GET', '/router/catalog', async (req, res) => sendJson(res, 200, { local_ollama: ollama, peers: [...peerMap.values()].map((p) => ({ name: p.name, kind: p.kind, origin: p.origin })), registry, policy: pol, trusted_view: trusted, pii_masking: { mode: maskMode, detector: detector.name }, models: (await catalog()).map((e) => ({ name: e.name, tier: e.tier, kind: e.kind, origin: e.origin, pool: trustGaps(e.offering ?? {}, trusted).length ? 'open' : 'trusted' })) })],
     ['GET', '/router/advice', (req, res) => sendJson(res, 200, lastAdvice ?? { model: null, recommendations: [] })],
     ['GET', '/router/reputation', (req, res) => sendJson(res, 200, { note: 'outcome and timing of your own calls through this router; no prompts or answers are kept', offerings: reputation.report() })],
     ['GET', '/router/receipts', (req, res) => sendJson(res, 200, { total_cost: round6(receipts.reduce((s, r) => s + (r.cost ?? 0), 0)), count: receipts.length, entries: receipts.slice(-100) })],
@@ -442,6 +505,7 @@ export async function startOllamaRouter({
   const actualPort = await listen(app, port, host);
   return {
     port: actualPort, origin: `http://${host}:${actualPort}`, receipts, addPeer,
+    pii: { mode: maskMode, detector: detector.name },   // PII masking before the open pool
     get peers() { return [...peerMap.values()]; },
     reputation,
     close: async () => { stopMdns(); reputation.flush(); await closeApp(app); },

@@ -8,7 +8,28 @@ import {
 
 const MODEL_ID = 'onp-echo-1';
 
-function buildCard(origin, revision, claimContextTokens = 8192) {
+// Non-chat offerings a test can add to the card. The fixture lists their models but serves only chat,
+// so a registry that calls one of them gets a 404.
+const EXTRA_OFFERINGS = {
+  embeddings: {
+    offering_id: 'embed-1',
+    modality: 'embedding',
+    model: { name: 'Echo Embed 1', family: 'echo', artifact: 'urn:proprietary:opennodes:echo-embed-1' },
+    serving: { context_window: 512 },
+    binding: { profile: 'onp.openai.embeddings/v1', model_id: 'onp-echo-embed-1' },
+    pricing: { currency: 'USD', input_per_mtok: 0.01, output_per_mtok: 0, schemes: ['free'] },
+  },
+  speech: {
+    offering_id: 'tts-1',
+    modality: 'audio',
+    model: { name: 'Echo Speech 1', family: 'echo', artifact: 'urn:proprietary:opennodes:echo-tts-1' },
+    serving: { context_window: 4096 },
+    binding: { profile: 'onp.audio.speech/v1', model_id: 'onp-echo-tts-1' },
+    pricing: { currency: 'USD', input_per_mtok: 15, output_per_mtok: 0, schemes: ['free'] },
+  },
+};
+
+function buildCard(origin, revision, claimContextTokens = 8192, lineage = null, kinds = ['chat']) {
   return {
     onp: '0.1',
     revision,
@@ -23,10 +44,11 @@ function buildCard(origin, revision, claimContextTokens = 8192) {
       openai: `${origin}/v1`,
       health: `${origin}/onp/health`,
     },
-    offerings: [{
+    offerings: kinds.map((kind) => kind === 'chat' ? {
       offering_id: 'echo-1',
       modality: 'text',
-      model: { name: 'Echo 1', family: 'echo', artifact: 'urn:proprietary:opennodes:echo-1', params_b: 0.001 },
+      model: { name: 'Echo 1', family: 'echo', artifact: 'urn:proprietary:opennodes:echo-1', params_b: 0.001,
+        ...(lineage ? { lineage_origins: lineage } : {}) },
       serving: {
         context_window: claimContextTokens,
         max_output_tokens: 2048,
@@ -39,7 +61,11 @@ function buildCard(origin, revision, claimContextTokens = 8192) {
       pricing: { currency: 'USD', input_per_mtok: 0.10, output_per_mtok: 0.40, schemes: ['free', 'prepaid'] },
       availability: { sla: 0.99, interruptible: false },
       data_policy: { retention: 'none', training_on_inputs: false, region_pinning: ['eu'] },
-    }],
+    } : {
+      ...EXTRA_OFFERINGS[kind],
+      model: { ...EXTRA_OFFERINGS[kind].model, ...(lineage ? { lineage_origins: lineage } : {}) },
+      data_policy: { retention: 'none', training_on_inputs: false, region_pinning: ['eu'] },
+    }),
     hardware: { accelerators: [{ type: 'H100', count: 2, memory_gb: 80 }], basis: 'claimed' },
     payment: {
       schemes: [{ scheme: 'free' }, { scheme: 'prepaid', signup: `${origin}/signup` }],
@@ -56,6 +82,8 @@ export async function startFixtureNode({
   realContextTokens = 8192,          // what the model can actually retrieve from
   claimContextTokens = null,         // what the card claims (null = honest)
   impersonate = false,               // serve different outputs under the same artifact claim
+  lineage = null,                    // model.lineage_origins to declare, e.g. ['FR'] (null = undeclared)
+  offerings = ['chat'],              // offerings on the card, in order: 'chat', 'embeddings', 'speech'
 } = {}) {
   const keys = generateKeypair();
   const state = { challenges: new Map(), card: null, origin: null, requests: 0 };
@@ -96,16 +124,16 @@ export async function startFixtureNode({
       sendJson(res, 200, { status: 'ok', load: 0.1, queue_ms: 5 });
     }],
     ['GET', '/v1/models', (req, res) => {
-      sendJson(res, 200, { object: 'list', data: [{ id: MODEL_ID, object: 'model', owned_by: 'org.opennodes.fixture' }] });
+      sendJson(res, 200, { object: 'list', data: state.card.offerings.map((o) => ({ id: o.binding.model_id, object: 'model', owned_by: 'org.opennodes.fixture' })) });
     }],
     ['POST', '/v1/chat/completions', async (req, res) => {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       const requestBytes = Buffer.concat(chunks);
       const body = requestBytes.length ? JSON.parse(requestBytes.toString('utf8')) : {};
-      if (body.model !== MODEL_ID) return problem(res, 404, 'model-not-found', String(body.model));
+      const offering = state.card.offerings.find((o) => o.binding.model_id === MODEL_ID);
+      if (!offering || body.model !== MODEL_ID) return problem(res, 404, 'model-not-found', String(body.model));
 
-      const offering = state.card.offerings[0];
       const offeringHeader = req.headers['onp-offering'];
       if (offeringHeader && offeringHeader !== `org.opennodes.fixture/${offering.offering_id}`) {
         return problem(res, 409, 'offering-mismatch', offeringHeader);
@@ -163,7 +191,7 @@ export async function startFixtureNode({
 
   const actualPort = await listen(app, port, host);
   state.origin = `http://${host}:${actualPort}`;
-  const unsigned = buildCard(state.origin, new Date().toISOString(), claimContextTokens ?? realContextTokens);
+  const unsigned = buildCard(state.origin, new Date().toISOString(), claimContextTokens ?? realContextTokens, lineage, offerings);
   const errors = validateCard(unsigned);
   if (errors.length) throw new Error('fixture card invalid: ' + errors.join('; '));
   state.card = signCard(unsigned, keys.privateKey);
@@ -178,9 +206,15 @@ export async function startFixtureNode({
     setChallenge: (token) => state.challenges.set(token, true),
     /** Publish a new revision (e.g. price change) — used to test 409 price_changed. */
     reprice: (outputPerMtok) => {
-      const next = buildCard(state.origin, new Date(Date.now() + 1000).toISOString(), claimContextTokens ?? realContextTokens);
+      const next = buildCard(state.origin, new Date(Date.now() + 1000).toISOString(), claimContextTokens ?? realContextTokens, lineage, offerings);
       next.offerings[0].pricing.output_per_mtok = outputPerMtok;
       state.card = signCard(next, keys.privateKey);
+      return state.card.revision;
+    },
+    /** Publish a new revision with these offerings, e.g. ['speech'] to drop chat. */
+    setOfferings: (kinds) => {
+      offerings = kinds;
+      state.card = signCard(buildCard(state.origin, new Date(Date.now() + 1000).toISOString(), claimContextTokens ?? realContextTokens, lineage, kinds), keys.privateKey);
       return state.card.revision;
     },
     close: () => closeApp(app),

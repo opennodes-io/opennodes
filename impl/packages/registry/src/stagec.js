@@ -4,15 +4,22 @@
 // - random blind invocations at unpredictable times (anti-"benchmark mode":
 //   a node cannot serve the real model only when it detects a test window)
 import { fetchJsonCapped } from './safefetch.js';
+import { testable, NO_TESTED_OFFERINGS } from './probes.js';
 
 const OBSERVED_STATES = ['community', 'verified', 'attested'];
+/** Mean gap between liveness sweeps (spec: <=5 min); each gap is drawn from 0.5x-1.5x (jitter). */
+export const LIVENESS_INTERVAL_MS = 300_000;
+/** Mean gap between blind-invocation sweeps: one chat call per node per sweep, same jitter. */
+export const BLIND_INTERVAL_MS = 3_600_000;
+/** Each gap is the mean times a uniform random factor in this range. */
+export const JITTER = [0.5, 1.5];
 
 export function startStageC(store, {
   safeFetch,
   fetchFor = null,                // (nodeId, card) -> fetch that carries the node's probe key
   refreshCard = null,             // re-index a node's card when its revision moved (restart / reprice)
-  livenessIntervalMs = 300_000,   // spec: <=5 min; tests shorten this
-  blindIntervalMs = 3_600_000,
+  livenessIntervalMs = LIVENESS_INTERVAL_MS,   // tests shorten this
+  blindIntervalMs = BLIND_INTERVAL_MS,
   failThreshold = 3,
   recoverThreshold = 3,           // consecutive liveness successes that lift a liveness suspension
 } = {}) {
@@ -77,9 +84,21 @@ export function startStageC(store, {
       await refreshCard?.(node.id);
       const card = await store.latestCard(node.id);
       if (!card) continue;
-      const chatOfferings = card.offerings.filter((o) => o.binding.profile === 'onp.openai.chat/v1');
-      if (!chatOfferings.length) continue;
-      const offering = chatOfferings[Math.floor(Math.random() * chatOfferings.length)];
+      // Blind probes call only offerings the tests can call. A node with none is reported in the
+      // `blind_skipped` observation (node detail, export feed) instead of passing unobserved.
+      const callable = card.offerings.filter(testable);
+      const skipped = (await store.getObservations(node.id, '_node')).blind_skipped ?? null;
+      if (!callable.length) {
+        const profiles = [...new Set(card.offerings.map((o) => o.binding?.profile))];
+        if (skipped?.revision !== card.revision) {
+          await store.setObservation(node.id, '_node', 'blind_skipped', {
+            reason: NO_TESTED_OFFERINGS, profiles, revision: card.revision, since: new Date().toISOString(),
+          });
+        }
+        continue;
+      }
+      if (skipped) await store.setObservation(node.id, '_node', 'blind_skipped', null);
+      const offering = callable[Math.floor(Math.random() * callable.length)];
       try {
         const f = fetchFor ? await fetchFor(node.id, card) : safeFetch;
         const { status, body } = await fetchJsonCapped(f, `${card.endpoints.openai}/chat/completions`, {
@@ -106,7 +125,7 @@ export function startStageC(store, {
     }
   }
 
-  const jitter = (base) => base * (0.5 + Math.random());
+  const jitter = (base) => base * (JITTER[0] + Math.random() * (JITTER[1] - JITTER[0]));
   const loop = (fn, base) => {
     const tick = async () => {
       if (stopped) return;

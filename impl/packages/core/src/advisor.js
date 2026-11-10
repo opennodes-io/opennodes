@@ -426,6 +426,111 @@ export function inJurisdiction(offering, spec) {
   return true;
 }
 
+/* ---------------------------------------------------------------- trusted and open pools (ONP-3 §5e) */
+
+/** `data_policy.retention` values, least to most (ONP-2 §5). An unknown value counts as `logged`. */
+export const RETENTION_LEVELS = Object.freeze(['none', 'ephemeral', 'logged']);
+export const retentionRank = (value) => {
+  const i = RETENTION_LEVELS.indexOf(value);
+  return i < 0 ? RETENTION_LEVELS.length - 1 : i;
+};
+
+/**
+ * Does the offering's data policy meet { retention: at most this level, no_training: true }?
+ * Without a data_policy, or without the field a condition reads, it never does.
+ */
+export function meetsDataPolicy(offering, { retention = null, no_training = false } = {}) {
+  if (!retention && !no_training) return true;
+  const dp = offering?.data_policy;
+  if (!dp) return false;
+  if (retention && (dp.retention == null || retentionRank(dp.retention) > retentionRank(retention))) return false;
+  if (no_training && dp.training_on_inputs !== false) return false;
+  return true;
+}
+
+/**
+ * Lineage policy on `model.lineage_origins`: drop offerings whose lineage includes an `exclude`d
+ * country; with `declared`, drop offerings that declare no lineage too (unknown is not clean).
+ */
+export function lineageAllowed(offering, { exclude = [], declared = false } = {}) {
+  const origins = offering?.model?.lineage_origins;
+  const known = Array.isArray(origins) && origins.length > 0;
+  if (declared && !known) return false;
+  const banned = new Set(exclude.map((c) => String(c).trim().toUpperCase()));
+  return !(known ? origins : []).some((c) => banned.has(String(c).trim().toUpperCase()));
+}
+
+/** Jurisdictions of the trusted pool unless a registry or client configures others. */
+export const DEFAULT_TRUSTED_JURISDICTIONS = 'EU,CA';
+
+/** `ONP_TRUSTED_JURISDICTIONS` (e.g. "EU,CA,CH"), else the default. */
+export function trustedJurisdictionsFrom(env = globalThis.process?.env ?? {}) {
+  const value = String(env.ONP_TRUSTED_JURISDICTIONS ?? '').trim();
+  return value || DEFAULT_TRUSTED_JURISDICTIONS;
+}
+
+/**
+ * The trusted view: operators in the trusted jurisdictions (declared country and, where checked, the
+ * server's country), declared model lineage without CN, tier verified or higher, and a data policy of
+ * no retention and no training on inputs.
+ */
+export function trustedView(jurisdictions = DEFAULT_TRUSTED_JURISDICTIONS) {
+  const codes = [...(jurisdictionCountries(jurisdictions) ?? [])];
+  return Object.freeze({
+    jurisdictions: String(jurisdictions).toUpperCase(),
+    countries: Object.freeze(codes.sort()),
+    exclude_lineage: Object.freeze(['CN']),
+    lineage: 'declared',
+    min_tier: 'verified',
+    retention: 'none',
+    no_training: true,
+  });
+}
+
+/**
+ * Is the offering in the trusted pool? The lineage rule applies to every offering. Models on the
+ * user's own machine or LAN (tiers local / lan, or a local catalogue model) need nothing else: their
+ * data never reaches an operator. Everything else must meet the jurisdiction, tier and data policy.
+ */
+export function inTrustedPool(offering, view = trustedView()) {
+  return trustGaps(offering, view).length === 0;
+}
+
+/** Why an offering is not in the trusted pool, in words (empty when it is). */
+export function trustGaps(offering, view = trustedView()) {
+  const gaps = [];
+  const origins = offering?.model?.lineage_origins;
+  if (view.lineage === 'declared' && !(Array.isArray(origins) && origins.length)) gaps.push('model lineage not declared');
+  else if (!lineageAllowed(offering, { exclude: view.exclude_lineage })) gaps.push(`model lineage includes ${view.exclude_lineage.join('/')}`);
+  if (offering.local || offering.tier === 'local' || offering.tier === 'lan') return gaps;   // nothing reaches an operator
+  if (tierRank(offering.tier) < tierRank(view.min_tier)) gaps.push(`tier ${offering.tier} below ${view.min_tier}`);
+  if (!view.countries.length || !inJurisdiction(offering, view.countries.join(','))) {
+    const where = offering.jurisdiction?.location?.server_country && offering.jurisdiction.location.server_country !== offering.jurisdiction?.country
+      ? `server in ${offering.jurisdiction.location.server_country}` : `operator country ${offering.jurisdiction?.country ?? 'unknown'}`;
+    gaps.push(`${where}, outside ${view.jurisdictions}`);
+  }
+  if (!meetsDataPolicy(offering, view)) {
+    const dp = offering.data_policy;
+    gaps.push(!dp ? 'no data_policy' : `data policy: retention ${dp.retention ?? 'unstated'}, training_on_inputs ${dp.training_on_inputs ?? 'unstated'}`);
+  }
+  return gaps;
+}
+
+/** `trusted` or `open`: which pool an offering belongs to under a trusted view. */
+export const poolOf = (offering, view = trustedView()) => (inTrustedPool(offering, view) ? 'trusted' : 'open');
+
+/** The `onp-sensitive: 1|true|yes` request header: this request carries personal data (gateway, Ollama router). */
+export const sensitiveHeader = (headers = {}) =>
+  ['1', 'true', 'yes'].includes(String(headers['onp-sensitive'] ?? '').trim().toLowerCase());
+
+/** Policy asks for the trusted pool: `sensitive: true` (the request carries personal data) or `trust: 'trusted'`. */
+export function wantsTrusted(policy = {}) {
+  if (policy.trust != null && !['trusted', 'open'].includes(policy.trust)) {
+    throw Object.assign(new Error(`trust must be "trusted" or "open", not ${JSON.stringify(policy.trust)}`), { status: 400 });
+  }
+  return policy.sensitive === true || policy.trust === 'trusted';
+}
+
 /**
  * How long a client should wait for an offering to *start* answering before failing over to the next
  * candidate. Built from what the registry measured (time to first token, throughput), the prompt size,
@@ -457,13 +562,14 @@ export async function fetchWithin(url, init, budgetMs) {
 const AUTO_PRESETS = Object.freeze({ cheap: 'cheap', fast: 'fast', quality: 'quality', private: 'private' });
 
 /** Auto-routing model names listed by the gateway and the Ollama router (any auto-<country> also works). */
-export const AUTO_MODEL_NAMES = Object.freeze(['auto', 'auto-cheap', 'auto-fast', 'auto-quality', 'auto-private', 'auto-eu', 'auto-ca']);
+export const AUTO_MODEL_NAMES = Object.freeze(['auto', 'auto-cheap', 'auto-fast', 'auto-quality', 'auto-private', 'auto-sensitive', 'auto-eu', 'auto-ca']);
 
 /**
- * Parse an auto-routing model name: `auto`, `auto-cheap|fast|quality|private`, or `auto-<where>`
- * with <where> = `eu` / `eea` or a two-letter country code (`auto-ca`, `auto-de`).
+ * Parse an auto-routing model name: `auto`, `auto-cheap|fast|quality|private`, `auto-sensitive`
+ * (the request carries personal data: trusted pool only), or `auto-<where>` with <where> = `eu` /
+ * `eea` or a two-letter country code (`auto-ca`, `auto-de`).
  * `prefix` is the namespace ('onp/' in the gateway, '' in the Ollama router).
- * Returns { preset, jurisdiction } or null when the name isn't an auto model.
+ * Returns { preset, jurisdiction } (plus `sensitive: true` for auto-sensitive) or null when the name isn't an auto model.
  */
 export function parseAutoModel(name, prefix = '') {
   if (typeof name !== 'string' || !name.startsWith(`${prefix}auto`)) return null;
@@ -472,6 +578,7 @@ export function parseAutoModel(name, prefix = '') {
   if (!rest.startsWith('-')) return null;
   const tag = rest.slice(1).toLowerCase();
   if (tag in AUTO_PRESETS) return { preset: AUTO_PRESETS[tag], jurisdiction: null };
+  if (tag === 'sensitive') return { preset: null, jurisdiction: null, sensitive: true };
   if (tag === 'eu' || tag === 'eea') return { preset: null, jurisdiction: 'eea' };
   if (/^[a-z]{2}$/.test(tag)) return { preset: null, jurisdiction: isoCountry(tag) };
   return null;
@@ -484,6 +591,10 @@ export function parseAutoModel(name, prefix = '') {
  */
 export function recommend(offerings, features, policy = {}) {
   const minTier = TIER_ORDER.indexOf(policy.min_tier ?? 'unverified');
+  // sensitive / trust=trusted: only the trusted pool. `policy.trusted` is the host's trusted view
+  // (the registry's or the client's configuration); without one, the default (EU, CA).
+  const trusted = wantsTrusted(policy);
+  const view = policy.trusted ?? trustedView();
   const needCtx = Math.ceil((features.est_input_tokens + features.est_output_tokens) * 1.15);
   const required = [];
   if (features.needs.tools) required.push('tool_calls');
@@ -508,6 +619,7 @@ export function recommend(offerings, features, policy = {}) {
     }
     if (policy.region && !inRegion(o, policy.region)) return reject('region');
     if (policy.jurisdiction && !o.local && !inJurisdiction(o, policy.jurisdiction)) return reject('jurisdiction');
+    if (trusted && !inTrustedPool(o, view)) return reject('trust');
     if (features.locality === 'required' && !o.local) return reject('not_local');
     const budget = memoryBudget(o, policy);
     if (budget && o.local) {
@@ -565,6 +677,7 @@ export function recommend(offerings, features, policy = {}) {
     artifact: c.offering.model?.artifact ?? null,
     node_id: c.offering.node_id,
     tier: c.offering.tier,
+    pool: poolOf(c.offering, view),
     card_revision: c.offering.card_revision,
     endpoint: c.offering.endpoints?.openai ?? null,
     model_id: c.offering.binding?.model_id ?? null,
@@ -583,11 +696,12 @@ export function recommend(offerings, features, policy = {}) {
 
   return {
     features,
-    query: equivalentQuery(features, policy, required, needCtx),
+    query: { ...equivalentQuery(features, policy, required, needCtx), ...(trusted ? { trust: 'trusted' } : {}) },
     weights: w,
     considered: offerings.length,
     eligible: candidates.length,
     rejected,
+    ...(trusted ? { trusted_view: view } : {}),
     recommendations: top,
     scenario: suggestScenario(scored, features, policy),
     tools: suggestTools(features),
@@ -608,7 +722,10 @@ export function recommendEmbedders(offerings, features, policy = {}) {
 function rankEmbedders(offerings, features, policy, minTier, limit = 3) {
   const docs = features.corpus?.documents ?? null;
   const tokens = docs ? docs * TOKENS_PER_DOCUMENT : null;
+  const trusted = wantsTrusted(policy);
+  const view = policy.trusted ?? trustedView();
   const pool = offerings.filter((o) => isEmbedder(o)
+    && (!trusted || inTrustedPool(o, view))
     && (features.locality !== 'required' || o.local)
     && tierRank(o.tier) >= minTier
     && !(policy.local_memory_gb && o.local && localSizes(o).length && !localSizes(o).some((x) => x.memory_gb <= policy.local_memory_gb))
@@ -637,7 +754,7 @@ function rankEmbedders(offerings, features, policy, minTier, limit = 3) {
       : tokens && o.pricing?.input_per_mtok != null ? { usd: round6(tokens * o.pricing.input_per_mtok / 1e6), basis: `${docs.toLocaleString('en-US')} documents × ~${TOKENS_PER_DOCUMENT} tokens at the listed price` }
       : o.pricing?.input_per_mtok == null ? { usd: null, basis: 'price not published' } : null;
     if (o.local?.pulls) reasons.push(`${o.local.pulls} Ollama pulls`);
-    return { offering: `${o.node_id}/${o.offering_id}`, model: o.model?.name, node_id: o.node_id, tier: o.tier, model_id: o.binding?.model_id ?? null,
+    return { offering: `${o.node_id}/${o.offering_id}`, model: o.model?.name, node_id: o.node_id, tier: o.tier, pool: poolOf(o, view), model_id: o.binding?.model_id ?? null,
       endpoint: o.endpoints?.openai ?? null, score, components, reasons, ...(indexing ? { indexing_estimate: indexing } : {}), popularity: pullsOf(o) };
   }).sort((a, b) => b.score - a.score || b.popularity - a.popularity || a.offering.localeCompare(b.offering))
     .map(({ popularity: _p, ...r }) => r);

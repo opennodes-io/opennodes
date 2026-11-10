@@ -1,5 +1,92 @@
 # ONP specification changes
 
+## Reference implementation — 2026-11-10: PII masking and a Ukrainian location seed (no spec change)
+
+- PII masking before the open pool, in `@opennodes/core` 0.1.23 (`pii.js`), `@opennodes/cli` 0.1.32 (gateway and `onp invoke`) and `@opennodes/ollama-router` 0.1.26. Design and limits: `docs/pii-masking.md`.
+  - Before a request goes to an open-pool offering, the client replaces the personal data it finds with placeholders (`[[EMAIL_1]]`) and puts the values back in the answer, streamed or whole. The vault is in memory for one request and never logged or sent.
+  - Detection runs on the user's machine: built-in rules (e-mail, phone, Luhn-checked cards, IBAN, SSN, SIN, postal codes, public IPv4, labelled identifiers), plus optionally a local Presidio service (`ONP_PII_SERVICE`) or a local model (`ONP_PII_LLM`). A detector URL off this machine or the private network is refused.
+  - `--mask-pii open` (default) `| all | off`, `ONP_MASK_PII`, and the `onp-mask-pii` header, which can ask for more masking but not less.
+  - Masking never makes a request trusted: sensitive requests still go to the trusted pool only (revision 8). Receipts hash the masked bytes actually sent.
+  - Tests: `impl/test/pii.test.js`, `impl/test/pii-wiring.test.js` (22 tests).
+- `@opennodes/registry` 0.1.52: location seed `locations-ua.json`, six Ukrainian data centres and GPU clouds. Site-only (none serves models through a public API, so none becomes a node), and no finer than the operator publishes: a city or only the country, never an address. `@opennodes/core` 0.1.23 adds a country point for UA.
+
+## Draft 0.1, revision 9 — 2026-11-09: verification covers only tested profiles
+
+| # | Where | Change |
+|---|---|---|
+| V1 | ONP-3 §4a, §5 | Verification covers only binding profiles that have a defined battery (today `onp.openai.chat/v1`): other offerings never inherit their node's tier (capped to `unverified`, `tested: false`), and a node with no offering the battery can call passes neither Stage A nor Stage B |
+
+- Fixes a reference-registry bug. A node whose offerings were all speech, embeddings or images reached `community` without a functional call. Stage B then passed it to `verified` with nothing measured, and it could enter the trusted pool. Mixed nodes passed their tier on to offerings no test had called.
+- `@opennodes/registry` 0.1.52, changes:
+  - `TESTED_PROFILES` in `probes.js`;
+  - Stage A fails a card with no tested profile (`tested-offerings`), so the node stays `unverified`;
+  - Stage B returns `ok: false` with `reason` and lists `untested`;
+  - Stage C records `blind_skipped` instead of skipping silently;
+  - search adds `tested` and the tier cap;
+  - node detail, the export feed and MCP `get_node` carry `verification`;
+  - the web app shows an UNTESTED chip, a "tested" row on node pages and a coverage note on the qualification page.
+- `@opennodes/core` 0.1.23: `summarizeNode` adds `tested` per offering when the registry sends `verification`.
+- `@opennodes/fixture-node`: `offerings` option (`chat`, `embeddings`, `speech`) and `setOfferings()`.
+- Tests: `impl/test/untested-profiles.test.js` (4 tests).
+
+## Draft 0.1, revision 8 — 2026-11-09: trusted and open pools
+
+Operators outside the EU, the EEA and Canada, including China-based providers, may list. Revision 8 separates what a client may send them. The open pool is every listing, for tasks with no personal data and no security requirement. The trusted pool is for personal data and sensitive work. Revision 8 is additive: existing queries return what they did, plus a `pool` label.
+
+| # | Where | Change |
+|---|---|---|
+| T1 | ONP-3 §5 | Data-policy filters `retention=none\|ephemeral\|logged` (at most this retention; an unknown value counts as `logged`) and `no_training=true`. An offering without a `data_policy`, or without the field read, fails either filter |
+| T2 | ONP-3 §5, §5c | Strict lineage: `lineage=declared` drops offerings, and `/v0/locations` models, that declare no `lineage_origins`; with `exclude_lineage=CN` it is a strict origin policy |
+| T3 | ONP-3 §5e, §5 | The trusted view, as one filter `trust=trusted`: declared lineage without CN; and, for hosted offerings, tier `verified` or higher, an operator in a trusted jurisdiction, and `retention: none` with `training_on_inputs: false`. Models on the user's own machine or LAN need only the lineage rule. Every offering summary and recommendation carries `pool: "trusted" \| "open"` |
+| T4 | ONP-3 §5e | Trusted jurisdictions are the registry's choice, published in `/v0/health` as `trust.trusted`. Reference default `EU,CA`, set by `ONP_TRUSTED_JURISDICTIONS` (Switzerland, the UK and Ukraine are undecided) |
+| T5 | ONP-3 §5b | Recommend `policy.sensitive: true` (or `trust: "trusted"`): trusted pool only, under the registry's own view, which the request cannot replace; the response carries `trusted_view` |
+| T6 | ONP-3 §5e | Sensitive requests in clients: trusted pool only, under the client's own view, checked again before sending, never falling back to the open pool; answers that do not show the trusted view are refused |
+| T7 | ONP-3 §5 | Unknown values of `trust`, `lineage`, `retention` or `no_training` are answered with `400 bad-query`, not ignored |
+
+### Reference implementation changes
+
+- `@opennodes/core` 0.1.23: `meetsDataPolicy`, `lineageAllowed`, `trustedView`, `inTrustedPool`, `trustGaps` (why an offering is open, in words), `poolOf`, `wantsTrusted`, `sensitiveHeader`, `trustedJurisdictionsFrom`, `RETENTION_LEVELS`, `DEFAULT_TRUSTED_JURISDICTIONS`. `recommend` and the embedder ranking take `policy.sensitive` / `policy.trust` and `policy.trusted` (the host's view); they reject offerings outside the pool (`rejected.trust`) and label every candidate with `pool`. New auto model `auto-sensitive`. The MCP tools take `trust`, `lineage`, `retention` and `no_training` (search_offerings), `lineage` (find_locations) and `policy.sensitive` (recommend). `summarizeNode` passes `founding` (revision 7).
+- `@opennodes/registry` 0.1.52: the filters in `/v0/offerings`, estimate `select` and the MCP tools; `lineage=declared` in `/v0/locations` and `find_locations`; `pool` on every offering summary; `trust.trusted` in `/v0/health`; `policy.sensitive` in `/v0/recommend` and MCP `recommend`, always under the registry's view; `trustedJurisdictions` option and `ONP_TRUSTED_JURISDICTIONS`; `400 bad-query` and `400 bad-policy`.
+- `@opennodes/cli` 0.1.32:
+  - `OnpClient` takes `policy.sensitive` and `policy.trusted_jurisdictions`, and adds `checkTrusted` and `trustGapsOf`; `checkPolicy` refuses an open-pool offering for a sensitive request;
+  - the gateway takes `--sensitive` (every request), the `onp-sensitive: 1` header (one request) and `onp/auto-sensitive`. Routing, fallbacks and named offerings stay in the trusted pool. A named open-pool offering is refused with `403 policy-refused`; an auto or virtual model with nothing trusted answers `404 no-trusted-offerings`. Nothing is sent in either case;
+  - the stdio MCP server takes `--sensitive` / `ONP_SENSITIVE=1`, or `policy.sensitive` per task. It narrows search and recommend to the user's trusted jurisdictions, filters search results again on its side, and refuses a recommend answer without `trusted_view` (a registry before 0.1.52);
+  - `onp search` takes the new filters and prints each pool; `onp invoke --sensitive` refuses an open-pool offering.
+- `@opennodes/ollama-router` 0.1.26: `--sensitive` / `ONP_SENSITIVE=1`, the `onp-sensitive` header and `auto-sensitive`. Open-pool entries are refused before anything is sent (`403`), with the reason; `auto-sensitive` with nothing trusted answers `404`. `/router/catalog` shows each model's pool and the router's trusted view.
+- `@opennodes/fixture-node`: `lineage` option (declares `model.lineage_origins`).
+- Known gaps and consequences:
+  - Hardly anything declares lineage yet. Only the curated Canada and Europe seed models do, and they are listing-only. The two reference nodes, and the local and LAN models in the gateway and the router, declare none. So the trusted pool stays empty until verified nodes put `lineage_origins` in their cards, and local models do not qualify for sensitive requests.
+  - A prompt that the advisor itself flags as personal (`features.privacy: sensitive`, from cues such as e-mail addresses or IBANs) still checks only the data policy, as before. Applying the whole trusted view to it is a decision left open.
+  - The Ollama router's `/api/embed` passes straight to the local Ollama and does not apply the mark.
+- Problem types: `no-trusted-offerings`, `bad-policy`.
+- Tests: `impl/test/trusted-pool.test.js` (9 tests).
+- Versions: core 0.1.23, cli 0.1.32, registry 0.1.52, ollama-router 0.1.26.
+
+## Draft 0.1, revision 7 — 2026-11-09: operator marks, request counts, published probe load
+
+Before a registry recruits its first operators, three questions need an answer in the protocol: which labels a registry may put on a node, how often it showed the node to clients, and what its probes cost the node. Revision 7 is additive: no card or client changes meaning.
+
+| # | Where | Change |
+|---|---|---|
+| F1 | ONP-3 §4b, §4 | Operator marks: `institutional` and the new `founding`. Set by the registry, not lifecycle transitions, never rank inputs, never a shortcut through §4a, and only on registered nodes with a verified namespace. Published as booleans in `/v0/nodes`, node detail and search results |
+| F2 | ONP-3 §6.6, §2 | Request counts: per node, ISO week and surface (`search`, `recommend`, `mcp`), each response counting a node once. No query, task, prompt, features or client identifier is stored with them. Counts used in rank must be a published component. Optional `GET /v0/stats/requests` |
+| F3 | ONP-3 §4a | Registries SHOULD publish the probe load of each stage: requests, sizes, cadence and triggers |
+
+### Reference implementation changes
+
+- `@opennodes/registry`:
+  - `POST /v0/admin/nodes/{id}/institutional` and `POST /v0/admin/nodes/{id}/founding` (admin token), with body `{"institutional": true|false}` or `{"founding": true|false}`. Errors: 400 `bad-flag`, 404 `unknown-node`, and 409 `imported-listing` when setting a mark on an unclaimed import (clearing always works). Marks survive re-registration and re-import and leave `updated_at` and the listing history alone;
+  - `founding` in `/v0/nodes`, node detail, every offering summary (search, MCP `search_offerings` and `get_offering`) and MCP `get_node` on both MCP servers (core's `summarizeNode`, core 0.1.23). Node detail's `institutional` is now a boolean (it was 0 or 1);
+  - store: a `founding` column, added in place to existing SQLite and Postgres databases; a `request_counts` table; `setNodeFlag`, `addRequestCounts`, `requestCounts`;
+  - request counts (`src/counts.js`), kept in memory and written every 60 s, before each read and at shutdown: `request_counts` in node detail, and `GET /v0/stats/requests`;
+  - web app: FOUNDING and institutional chips in the catalog list and rows, on the model page, rankings, the Nodes page and the node page. The node page shows how often the node was returned this week, last week and over 12 weeks;
+  - qualification page: a new "Probe load" section lists what each stage sends. The Stage A text said "Re-run every 6 hours and on every card revision"; it now says what the code does (at verification and on each `PUT /v0/nodes/{id}/ping`). The principle "the registry stays within [the probe allowance] or pays like any client" is replaced: the registry does not read `payment.probe_allowance` and does not pay for probes;
+  - `stageb.js` exports `CONTEXT_FRACTIONS` and `CAPACITY_RAMP`, `stagec.js` exports `LIVENESS_INTERVAL_MS`, `BLIND_INTERVAL_MS` and `JITTER`, and `bin.js` uses them. A test holds the qualification page to these values, and another counts the chat calls the fixture node receives in Stage A (1) and Stage B (17 without reference fingerprints, 20 with).
+- Known gaps: Stage A has no timed re-run, although §4a asks for one every 6 h and on every card revision (a new revision seen by Stage C is re-indexed without Stage A). The probe allowance a card declares is not read.
+- Problem types: `bad-flag` and `imported-listing` added to `site/problems/`.
+- Tests: `impl/test/founding.test.js` (7 tests); store conformance covers marks and counts on both drivers.
+- Versions: registry 0.1.52. `deploy/registry/Dockerfile` still pins the published 0.1.51; move it when 0.1.52 is published.
+
 ## Draft 0.1, revision 6 — 2026-11-03: curated seed placements in search
 
 Revision 4 kept curated seeds out of search, and revision 5 made recommend reject offerings with no known location. Together they left every callable listing out of a region request, including providers whose whole API runs in one documented place. Revision 6 lets a seed supply that place, labelled as such.

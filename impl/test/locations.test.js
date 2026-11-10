@@ -120,6 +120,24 @@ test('European seed: EU/EEA, Swiss and UK sites, in-region models only, UK as GB
   assert.ok(greenpt.every((s) => s.region !== 'FR-IDF' || s.models.length === 0));
 });
 
+test('Ukrainian seed: site-only data centres, no finer than a city, never nodes', async (t) => {
+  const registry = await startRegistry({ locationSeeds: true });
+  t.after(() => registry.close());
+
+  const ua = await get(registry.origin, '/v0/locations?country=UA');
+  assert.ok(ua.sites.length >= 6);
+  assert.ok(ua.sites.every((s) => s.country === 'UA' && s.source === 'seed' && s.models.length === 0 && s.models_note));
+  assert.ok(ua.sites.every((s) => ['city', 'country'].includes(s.geo?.precision)));   // wartime: no facility points
+  const kyiv = ua.sites.find((s) => s.node_id === 'import.seed.ua.denovo' && s.region === 'UA-30');
+  assert.deepEqual([kyiv.basis, kyiv.geo.precision], ['documented', 'city']);
+  // an operator that publishes only "Ukraine" gets the derived country point
+  const giga = ua.sites.find((s) => s.node_id === 'import.seed.ua.gigacloud');
+  assert.deepEqual([giga.geo.precision, giga.geo.derived], ['country', true]);
+  // site-only entries never become directory nodes
+  const { nodes } = await get(registry.origin, '/v0/nodes');
+  assert.ok(!nodes.some((n) => n.id.startsWith('import.seed.ua.')));
+});
+
 test('search: region= covers serving sites; location_basis= and exclude_lineage= filters', async (t) => {
   const registry = await startRegistry({ locationSeeds: true });
   t.after(() => registry.close());

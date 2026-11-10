@@ -2,6 +2,7 @@
 // replicate without re-crawling. Each line = { payload, jws } signed by this registry,
 // so provenance survives mirroring.
 import { signJson } from '@opennodes/core';
+import { verificationOf } from './probes.js';
 
 export function exportRoutes(store, registryKeys) {
   return [
@@ -11,11 +12,15 @@ export function exportRoutes(store, registryKeys) {
       for (const node of await store.allNodes()) {
         if (since && node.updated_at <= since) continue;
         const card = await store.latestCard(node.id);
+        const observations = await store.observationsForNode(node.id);
+        const nodeObs = Object.fromEntries(observations.filter((o) => o.offering_id === '_node').map((o) => [o.key, o.value]));
         const payload = {
           type: 'node',
           node: { id: node.id, origin: node.origin, state: node.state, source: node.source, updated_at: node.updated_at },
           card,
-          observations: await store.observationsForNode(node.id),
+          observations,
+          // The node's state covers only the offerings its tests could call (ONP-3 §4a).
+          verification: verificationOf(card, nodeObs),
         };
         const jws = signJson(payload, registryKeys.privateKey, 'registry-1');
         res.write(JSON.stringify({ payload, jws }) + '\n');
