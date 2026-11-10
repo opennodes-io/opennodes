@@ -4,7 +4,7 @@
 import { appendFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
-import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend, recommendEmbedders, isEmbedder, parseAutoModel, AUTO_MODEL_NAMES, responseBudgetMs, fetchWithin } from '@opennodes/core';
+import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend, recommendEmbedders, isEmbedder, parseAutoModel, AUTO_MODEL_NAMES, responseBudgetMs, fetchWithin, sensitiveHeader } from '@opennodes/core';
 import { OnpClient } from './client.js';
 import { loadChecks, DEFAULT_CHECKS_PATH } from './check.js';
 import { Reputation } from './reputation.js';
@@ -46,6 +46,12 @@ export function credentialsFrom(keys = {}, env = process.env) {
 }
 
 const hostOf = (o) => { try { return new URL(o.endpoints.openai).hostname; } catch { return null; } };
+
+/**
+ * Does this request carry personal data? `onp-sensitive: 1|true|yes` marks one request; the gateway's
+ * own `sensitive` policy marks them all. A request can add sensitivity, never remove it.
+ */
+export const sensitiveRequest = (req, always = false) => always || sensitiveHeader(req.headers);
 // a domain is found by its name (api.acme.ai -> "acme"); an IP address has none, so search without a text filter
 const searchHint = (host) => HOST_SEARCH[host] ?? (/^[\d.]+$|^\[/.test(host) ? '' : host.split('.').slice(-2, -1)[0]);
 
@@ -130,11 +136,15 @@ export async function startGateway({
     return res.ok ? res.json() : null;
   }
 
-  /** Resolve a requested model id to an ordered candidate list of offerings. */
-  async function resolve(modelId, body = null) {
+  /**
+   * Resolve a requested model id to an ordered candidate list of offerings. A sensitive request
+   * (or onp/auto-sensitive) is routed in the trusted pool only; every attempt checks it again.
+   */
+  async function resolve(modelId, body = null, { sensitive = false } = {}) {
     await refresh();
     const auto = parseAutoModel(modelId, 'onp/');
     if (auto) {
+      sensitive ||= Boolean(auto.sensitive);
       const messages = body?.messages ?? [];
       const last = [...messages].reverse().find((m) => m.role === 'user');
       const text = typeof last?.content === 'string' ? last.content
@@ -150,8 +160,9 @@ export async function startGateway({
         max_input_per_mtok: policy.max_input_per_mtok,
         jurisdiction: auto.jurisdiction ?? policy.jurisdiction,
         prefer_local: preset === 'private',
+        sensitive, trusted: client.trusted,
       });
-      lastAdvice = { model: modelId, features, recommendations: result.recommendations.map((r) => {
+      lastAdvice = { model: modelId, features, ...(sensitive ? { sensitive: true, trusted_view: client.trusted } : {}), recommendations: result.recommendations.map((r) => {
         const mine = cache.byId.get(r.offering) && withLocalChecks([cache.byId.get(r.offering)])[0]?.checked_by_you;
         const seen = reputation.describe(r.offering);
         return { offering: r.offering, score: r.score, reasons: [...r.reasons, ...(mine ? [`checked by you: ${mine}`] : []), ...(seen ? [seen] : [])] };
@@ -211,8 +222,8 @@ export async function startGateway({
   };
 
   /** One upstream attempt. Returns {done:true} when the response was written, or {retryPricing|failed}. */
-  async function attempt(offering, body, res, requestedModel) {
-    client.checkPolicy(offering, body.max_tokens ?? 1024);
+  async function attempt(offering, body, res, requestedModel, { sensitive = false } = {}) {
+    client.checkPolicy(offering, body.max_tokens ?? 1024, { sensitive });
     const t0 = performance.now();
     // BYOK: attach the operator's key for this upstream host (imported catalogs
     // like OpenRouter/HF need their own credentials; ONP nodes may need none).
@@ -320,18 +331,19 @@ export async function startGateway({
   }
 
   /** Candidates for an embeddings request: auto models rank local, registered and keyed embedders. */
-  async function resolveEmbedding(modelId, body) {
+  async function resolveEmbedding(modelId, body, { sensitive = false } = {}) {
     await refresh();
     const local = await localEmbedders();
     const auto = parseAutoModel(modelId, 'onp/');
     if (auto) {
+      sensitive ||= Boolean(auto.sensitive);
       const remote = [...cache.byId.values()].filter(isEmbedder);
       const pool = reputation.apply(auto.preset === 'private' ? local : [...local, ...remote]);
       const inputs = Array.isArray(body.input) ? body.input : [body.input];
       const sample = inputs.filter((x) => typeof x === 'string').slice(0, 5).join(' ').slice(0, 4000);
       // what gets embedded is the user's own material: treat it as private, so local models lead
       const features = { ...extractFeatures(sample, { request: {} }), corpus: { documents: inputs.length, private: true } };
-      const ranked = recommendEmbedders(pool, features, { min_tier: policy.min_tier, jurisdiction: auto.jurisdiction ?? policy.jurisdiction, limit: 5 });
+      const ranked = recommendEmbedders(pool, features, { min_tier: policy.min_tier, jurisdiction: auto.jurisdiction ?? policy.jurisdiction, limit: 5, sensitive, trusted: client.trusted });
       lastAdvice = { model: modelId, kind: 'embeddings', features, recommendations: ranked.map((r) => {
         const seen = reputation.describe(r.offering);
         return { offering: r.offering, score: r.score, reasons: seen ? [...r.reasons, seen] : r.reasons };
@@ -347,8 +359,9 @@ export async function startGateway({
   }
 
   /** One upstream embeddings call; same contract as attempt(). */
-  async function attemptEmbedding(offering, body, res, requestedModel) {
+  async function attemptEmbedding(offering, body, res, requestedModel, { sensitive = false } = {}) {
     const isLocal = offering.tier === 'local';
+    if (sensitive) client.checkTrusted(offering);   // local models too: the lineage rule applies to every model
     if (!isLocal) client.checkPolicy(offering, 0);
     const t0 = performance.now();
     const upstreamKey = isLocal ? null : creds[new URL(offering.endpoints.openai).hostname];
@@ -401,17 +414,24 @@ export async function startGateway({
     ['POST', '/v1/chat/completions', async (req, res) => {
       if (!authed(req, res)) return;
       const body = await readJson(req, 10_000_000);
-      const candidates = await resolve(body.model, body);
+      // Personal data: the gateway's --sensitive, the onp-sensitive header, or onp/auto-sensitive.
+      const sensitive = sensitiveRequest(req, policy.sensitive) || Boolean(parseAutoModel(body.model, 'onp/')?.sensitive);
+      const candidates = await resolve(body.model, body, { sensitive });
       // OpenRouter-compatible fallback list: `models: [...]` adds further models to try, in order.
       if (Array.isArray(body.models)) {
         const seen = new Set(candidates.map((o) => `${o.node_id}/${o.offering_id}`));
         for (const m of body.models.slice(0, 10)) {
           if (typeof m !== 'string' || m === body.model) continue;
-          for (const o of await resolve(m, body)) {
+          for (const o of await resolve(m, body, { sensitive })) {
             const key = `${o.node_id}/${o.offering_id}`;
             if (!seen.has(key)) { seen.add(key); candidates.push(o); }
           }
         }
+      }
+      if (!candidates.length && sensitive && (parseAutoModel(body.model, 'onp/') || virtuals[body.model])) {
+        return problem(res, 404, 'no-trusted-offerings',
+          `the request is sensitive and nothing this gateway can call is in the trusted pool (${client.trusted.jurisdictions} operators, ` +
+          'declared lineage without CN, tier verified or higher, no retention, no training on inputs); it was not sent anywhere');
       }
       if (!candidates.length && (parseAutoModel(body.model, 'onp/') || virtuals[body.model])) {
         return problem(res, 404, 'no-callable-offerings',
@@ -426,10 +446,10 @@ export async function startGateway({
         const id = `${candidates[i].node_id}/${candidates[i].offering_id}`;
         const t0 = performance.now();
         try {
-          let result = await attempt(offering, body, res, body.model);
+          let result = await attempt(offering, body, res, body.model, { sensitive });
           if (result.retryPricing) {
             offering = await repin(offering);
-            if (offering) result = await attempt(offering, body, res, body.model);
+            if (offering) result = await attempt(offering, body, res, body.model, { sensitive });
             else result = { failed: 'offering gone after reprice' };
           }
           if (result.done) { reputation.record(id, { ok: true, ms: result.ms, first_ms: result.first_ms }); return; }
@@ -450,8 +470,12 @@ export async function startGateway({
       if (!authed(req, res)) return;
       const body = await readJson(req, 50_000_000);
       if (body.input == null || !body.model) return problem(res, 400, 'bad-request', 'embeddings need "model" and "input"');
-      const candidates = await resolveEmbedding(body.model, body);
       const auto = parseAutoModel(body.model, 'onp/');
+      const sensitive = sensitiveRequest(req, policy.sensitive) || Boolean(auto?.sensitive);
+      const candidates = await resolveEmbedding(body.model, body, { sensitive });
+      if (!candidates.length && sensitive && auto) {
+        return problem(res, 404, 'no-trusted-offerings', 'the request is sensitive and no embedding model this gateway can call is in the trusted pool; it was not sent anywhere');
+      }
       if (!candidates.length) {
         return auto
           ? problem(res, 404, 'no-callable-offerings', `no embedding model this gateway can call for ${body.model}: pull one into your local Ollama (ollama pull nomic-embed-text)` +
@@ -463,7 +487,7 @@ export async function startGateway({
         const id = `${offering.node_id}/${offering.offering_id}`;
         const t0 = performance.now();
         try {
-          const r = await attemptEmbedding(offering, body, res, body.model);
+          const r = await attemptEmbedding(offering, body, res, body.model, { sensitive });
           if (r.done) { reputation.record(id, { ok: true, ms: r.ms }); return; }
           reputation.record(id, { ok: false, ms: Math.round(performance.now() - t0), why: r.failed });
           errors.push(`${id}: ${r.failed}`);
@@ -498,6 +522,7 @@ export async function startGateway({
     port: actualPort,
     origin: `http://${host}:${actualPort}`,
     keyHosts: Object.keys(creds),
+    trusted: client.trusted,   // this gateway's trusted view (sensitive requests)
     receipts,
     close: () => { reputation.flush(); return closeApp(app); },
     reputation,

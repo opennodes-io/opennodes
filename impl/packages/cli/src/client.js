@@ -1,10 +1,16 @@
 // OpenNodes client SDK (REQ-002 subset): discover, estimate, invoke with pinning + receipt verification.
-import { verifyJws, keyFromJwk, validateCard, verifyCardSignature, costForUsage, round6 } from '@opennodes/core';
+import { verifyJws, keyFromJwk, validateCard, verifyCardSignature, costForUsage, round6, trustedView, trustedJurisdictionsFrom, trustGaps } from '@opennodes/core';
 
 export class OnpClient {
+  /**
+   * policy: { min_tier, max_input_per_mtok, max_request_cost, sensitive, trusted_jurisdictions }.
+   * `sensitive: true` treats every request as carrying personal data: only the trusted pool, under
+   * this client's trusted view (`trusted_jurisdictions`, else ONP_TRUSTED_JURISDICTIONS, else EU,CA).
+   */
   constructor({ registry, policy = {} }) {
     this.registry = registry.replace(/\/$/, '');
-    this.policy = { max_input_per_mtok: Infinity, max_request_cost: Infinity, min_tier: 'unverified', ...policy };
+    this.policy = { max_input_per_mtok: Infinity, max_request_cost: Infinity, min_tier: 'unverified', sensitive: false, ...policy };
+    this.trusted = trustedView(this.policy.trusted_jurisdictions ?? trustedJurisdictionsFrom());
     this.receipts = [];
   }
 
@@ -35,7 +41,9 @@ export class OnpClient {
     return { card, jwks };
   }
 
-  checkPolicy(offering, maxTokens = 1024) {
+  /** Throws `policy: …` when this client may not send the request to the offering. */
+  checkPolicy(offering, maxTokens = 1024, { sensitive = this.policy.sensitive } = {}) {
+    if (sensitive) this.checkTrusted(offering);
     const tiers = ['unverified', 'community', 'verified', 'attested'];
     if (tiers.indexOf(offering.tier) < tiers.indexOf(this.policy.min_tier)) {
       throw new Error(`policy: tier ${offering.tier} below minimum ${this.policy.min_tier}`);
@@ -46,6 +54,17 @@ export class OnpClient {
     const ceiling = costForUsage(offering.pricing, 8000, maxTokens);
     if (ceiling > this.policy.max_request_cost) {
       throw new Error(`policy: request ceiling ${ceiling} above cap ${this.policy.max_request_cost}`);
+    }
+  }
+
+  /** Why the offering is outside this client's trusted pool (empty when it is inside). */
+  trustGapsOf(offering) { return trustGaps(offering, this.trusted); }
+
+  /** A sensitive request goes only to the trusted pool (ONP-3 §5e); throws `policy: …` otherwise. */
+  checkTrusted(offering) {
+    const gaps = this.trustGapsOf(offering);
+    if (gaps.length) {
+      throw new Error(`policy: ${offering.node_id}/${offering.offering_id} is in the open pool and the request is sensitive (${gaps.join('; ')})`);
     }
   }
 

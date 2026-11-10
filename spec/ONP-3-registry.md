@@ -26,6 +26,7 @@ A registry is any service implementing this API. The architecture copies what wo
 | `GET /v0/offerings/{node_id}/{offering_id}` | Offering detail incl. observations, attestations, rank explanation |
 | `GET /v0/locations` | **Where models run**: serving sites by country, with evidence and the models each serves (§5c) |
 | `GET /v0/residency` | **Residency commitments**: what each provider promises about where data stays (§5d) |
+| `GET /v0/stats/requests` | **Request counts**: how often search, recommend and MCP returned each node, per ISO week (§6.6; optional) |
 | `GET /v0/attestations?subject=…` | VCs known for a node/offering |
 | `GET /v0/health` | Registry self-description: ONP versions, ranking components (§6), federation peers (§8), fee policy |
 
@@ -45,7 +46,7 @@ Identical family to the MCP Registry: prove control of the domain in `node.id` v
 
 **Claiming imported listings.** When a registered node reaches `community` or higher, a registry SHOULD retire imported catalog listings whose API host lies within that node's namespace (state `claimed`, recorded with the claiming node id), so an operator's verified listing replaces its unverified import instead of appearing beside it. The match is bound to the namespace: a node cannot claim listings served from hosts it does not control. Re-submitting a card for a node that is already listed MUST NOT change its state; the listing moves only when the fresh challenge is verified. Registries SHOULD rate-limit registration and verification per client and SHOULD limit how often the admission battery (§4a) can be triggered for a node, since the battery sends real load to the operator.
 
-**Institutional fast-track.** Registries MAY maintain institution allowlists (accredited universities, national/EuroHPC computation centres, government research bodies) keyed on domain class and published membership rosters. A namespace under a listed institution skips nothing technical (§4a still runs) but enters review at `verified`-candidate status and MAY carry an `institutional` badge in search results. This is the intended onboarding path for the first wave of supply.
+**Institutional fast-track.** Registries MAY maintain institution allowlists (accredited universities, national/EuroHPC computation centres, government research bodies) keyed on domain class and published membership rosters. A namespace under a listed institution skips nothing technical (§4a still runs) but enters review at `verified`-candidate status and MAY carry an `institutional` badge in search results. This is the intended onboarding path for the first wave of supply. The badge is an operator mark (§4b).
 
 ## 4a. Admission testing — proof of resource
 
@@ -66,9 +67,22 @@ Registration alone never grants a trust tier. Tiers above `unverified` are gated
 8. Liveness probes at ≥5-minute cadence over a rolling window; availability below the card's declared `sla` blocks promotion. Consecutive liveness failures MAY suspend a node, but a liveness suspension is temporary: registries MUST keep probing a node suspended for liveness and SHOULD restore it to the tier it held after a small number of consecutive successes (the reference registry: 3 failures to suspend, 3 successes to reinstate). Suspensions for disputes, fraud, or operator request are not lifted this way. A transient outage — the operator's or the registry's own — must not become a permanent delisting.
 9. Random low-volume blind invocations at unpredictable times (anti-"benchmark mode": a node cannot serve a bigger model only when it detects testing). Receipt sampling cross-checks `usage` honesty (§6.2).
 
+**Coverage.** Verification covers only binding profiles that have a defined battery, which in the reference registry today is `onp.openai.chat/v1`: a tier is evidence about the offerings the battery could call and no others, so a registry MUST NOT let another offering inherit its node's tier, and a node with no offering it can call passes neither Stage A nor Stage B (the reference registry caps such offerings to `unverified`, marks them `tested: false` in search results, lists them as `verification.untested_offerings` in node detail and the export feed, and reports a Stage C sweep with nothing to call as `verification.blind_skipped`).
+
 **Re-verification.** Stage A re-runs on every card revision and at least every 6 h (the HF cadence); Stage B re-runs on any change to `model`, `serving`, or `hardware` blocks and quarterly otherwise; Stage C runs continuously. Failures demote tier and are visible in listing history (§3).
 
+**Probe load.** Registries SHOULD publish what each stage sends to a node: which requests, how large, how often, and what triggers them, so an operator can size the probe allowance and tell probe traffic from client traffic. The reference registry publishes its load on the qualification page of its web app (`/#/qualification`). Per chat offering it sends 1 blind invocation in Stage A; up to 20 in Stage B (3 identity prompts, 1 calibration call, 3 context probes at 25/50/90% of the claimed window, and one batch each of 1, 4 and 8 parallel requests within a 3-second budget); and per node, in Stage C, a health check every 5 minutes and 1 blind invocation every hour, both on average with randomized gaps.
+
 **Hardware claims** (optional, unlocks `attested` for the `hardware` block): TEE-based attestation where the stack supports it (e.g. NVIDIA confidential-computing quotes), an auditor's `onp:HardwareAttestation` VC, or a linked MLPerf submission. Hardware attestation is never required — measured performance (Stage B) is the primary truth; hardware metadata only explains it.
+
+## 4b. Operator marks
+
+A registry MAY attach marks to a node: labels for facts its admission tests cannot establish. Two are defined:
+
+- `institutional`: the operator is an institution on the registry's allowlist (§4, institutional fast-track).
+- `founding`: the operator is one of the first operators the registry recruited, for example before a public launch.
+
+Marks are set and cleared by the registry, never by the node, and are not lifecycle transitions (§3). They MUST NOT be rank inputs (§6.5) and MUST NOT skip or soften any part of §4a. A registry SHOULD set them only on registered nodes whose namespace it has verified, never on unclaimed imports. A registry that uses marks publishes each as a boolean, `false` when unset, in the node directory (`GET /v0/nodes`), in node detail and in every search result, so clients can show them or ignore them. The reference registry sets them with admin requests `POST /v0/admin/nodes/{id}/institutional` and `POST /v0/admin/nodes/{id}/founding`, with bodies `{"institutional": true|false}` and `{"founding": true|false}`.
 
 ## 5. Search
 
@@ -84,6 +98,10 @@ Registration alone never grants a trust tier. Tiers above `unverified` are gated
 &region=EU                   // residency: pinned regions and live serving sites (else node regions) entirely within this code; EU and EEA include member states
 &location_basis=documented   // minimum evidence for every serving site (ONP-2 §3a)
 &exclude_lineage=CN          // drop offerings whose declared model lineage includes these countries
+&lineage=declared            // also drop offerings that declare no lineage (default: any)
+&retention=none              // data policy: at most this retention (none < ephemeral < logged)
+&no_training=true            // data policy: training_on_inputs is false
+&trust=trusted               // only the trusted pool (§5e); open (default) = both pools
 &jurisdiction=eea            // operator country: eea (alias eu) or ISO 3166-1 codes, e.g. CA or DE,FI
 &scheme=x402                 // payment scheme
 &tier=verified               // minimum trust tier
@@ -98,10 +116,14 @@ Matching rules:
 - `region=X` matches an offering when its residency codes are non-empty and **every** one lies within `X` under the containment rule of ONP-2 §3. The residency codes are all `data_policy.region_pinning` codes plus the regions of all live serving locations (ONP-2 §3a, or a curated seed's placement when the card declares none, §5c); when an offering has neither, the node's `regions`. A residency requirement is only met when no listed location falls outside it, so an offering served from Canada *and* the US does not match `region=CA`, one served from Frankfurt and Paris matches `region=EU` (ONP-2 §3: `EU` contains its member states) but one also served from London does not, and one whose `locations` is an empty list (unknown) matches no region.
 - `location_basis=B` matches an offering that has at least one live serving location and whose every live location has a basis at least as strong as `B` (`claimed` < `documented` < `measured` < `attested`).
 - `exclude_lineage=C1,C2` drops an offering when its `model.lineage_origins` contains any listed country. Offerings that declare no lineage are kept and MUST be shown as unknown, not as compliant.
+- `lineage=declared` drops offerings whose model declares no `lineage_origins` (absent or empty). With `exclude_lineage` it gives a strict origin policy: a declared lineage and none of the listed countries.
+- `retention=R` matches an offering whose `data_policy.retention` is at most `R` (`none` < `ephemeral` < `logged`; an unknown value counts as `logged`). `no_training=true` matches an offering whose `data_policy.training_on_inputs` is `false`. When either filter is used, an offering without a `data_policy`, or without the field the filter reads, does not match.
+- `trust=trusted` keeps only the trusted pool (§5e); `trust=open` or no `trust` keeps both pools.
+- A registry MUST answer `400` (`bad-query`) to an unknown value of `trust`, `lineage`, `retention` or `no_training`, rather than ignore it: these filters protect personal data, and a misspelt value must not widen the result.
 - `lang=fr` matches the tag `fr` and its subtags (`fr-CA`); `lang=fr-CA` matches only `fr-CA`.
 - `jurisdiction` matches the operator's country: as **declared** in a registered node's signed card, or **inferred** by the registry for an unclaimed import of a provider it knows (each offering carries `jurisdiction: {country, regions, basis}` with `basis` = `declared` | `inferred`). Offerings with no country never match. Clients that must not rely on inference filter on `basis` as well.
 
-Responses return offering summaries: the card excerpt, trust tier, the effective serving `locations` (live only) and `residency` codes, the operator `jurisdiction` with the registry's server-location check (§6.4), the **effective hardware allocation** (the offering-level `hardware` override if present, else the node-level declaration — see ONP-2 §6), registry **observations** (measured uptime, TTFT/TPS percentiles from probes, price history), and `rank` with `rank_explanation` (§6). Results MUST distinguish card-claimed vs. registry-observed vs. attested values; performance sorts (`ttft`, `tps`) MUST prefer observed values over claims.
+Responses return offering summaries: the card excerpt, trust tier (with `tested`: whether the admission battery covers this offering, §4a), the effective serving `locations` (live only) and `residency` codes, the operator `jurisdiction` with the registry's server-location check (§6.4), the **effective hardware allocation** (the offering-level `hardware` override if present, else the node-level declaration — see ONP-2 §6), registry **observations** (measured uptime, TTFT/TPS percentiles from probes, price history), the offering's `pool` (`trusted` or `open`, §5e), and `rank` with `rank_explanation` (§6). Results MUST distinguish card-claimed vs. registry-observed vs. attested values; performance sorts (`ttft`, `tps`) MUST prefer observed values over claims.
 
 ## 5a. Estimation
 
@@ -125,7 +147,7 @@ Steps may name a concrete offering or embed a §5 `select` query (the registry r
 
 ## 5b. Recommendation (advisor)
 
-`POST /v0/recommend` turns a task into a ranked shortlist with an enforceable estimate — the primitive an agent calls when it does not want to compose a search query itself (ONP-6 §6). The body carries either `task` (free text) or `features` — the output of a client-side feature extraction (modality, task class, language, estimated input/output tokens, needed capabilities, latency sensitivity, privacy sensitivity) — plus a `policy` (`min_tier`, `max_input_per_mtok`, `max_total_usd`, `region`, `jurisdiction`, `prefer_local`, `preset`); `region` and `jurisdiction` have the §5 meanings (so a hosted offering with no known location does not satisfy `region`), and offerings running on the user's own machine or network always satisfy both. Registries MUST accept `features` so a client never has to disclose its prompt; reference clients (gateway, stdio MCP server) extract features locally and send only those.
+`POST /v0/recommend` turns a task into a ranked shortlist with an enforceable estimate — the primitive an agent calls when it does not want to compose a search query itself (ONP-6 §6). The body carries either `task` (free text) or `features` — the output of a client-side feature extraction (modality, task class, language, estimated input/output tokens, needed capabilities, latency sensitivity, privacy sensitivity) — plus a `policy` (`min_tier`, `max_input_per_mtok`, `max_total_usd`, `region`, `jurisdiction`, `prefer_local`, `preset`, `sensitive`); `region` and `jurisdiction` have the §5 meanings (so a hosted offering with no known location does not satisfy `region`), and offerings running on the user's own machine or network always satisfy both. `sensitive: true` (or `trust: "trusted"`) marks a task that carries personal data: only the trusted pool (§5e) qualifies, under the registry's own trusted view, which the request cannot replace; the response then carries `trusted_view`, and an empty `recommendations` list means nothing qualified. Every recommendation carries its `pool`. Registries MUST accept `features` so a client never has to disclose its prompt; reference clients (gateway, stdio MCP server) extract features locally and send only those.
 
 The response lists recommendations each with `offering`, pinned `card_revision`, `estimate` (§5a bounds), `score`, its `components` (quality prior, price, trust, measured performance) with the `weights` used, and human-readable `reasons`; the equivalent §5 search `query`; counts of considered/eligible offerings with per-filter rejection reasons; optionally a two-step ONP-6 scenario (cheap triage/draft → strong expert/refine) when it would plausibly save money; and MCP tool categories the task likely needs. Hard requirements (capabilities, context, data policy, tier, price) are filters, never score inputs. Quality priors MUST be labeled by basis (size heuristic, claimed benchmark, attested benchmark, or registry-measured task probes once available) and measured performance MUST outweigh claimed performance — the same discipline as §6.
 
@@ -142,6 +164,7 @@ The advisor is deliberately deterministic and reproducible: same catalog, same f
 &status=live         // live | planned; omit for both
 &model=gpt-oss       // substring of a model name or artifact; keeps only sites serving a match
 &exclude_lineage=CN  // drops models whose declared lineage includes these countries
+&lineage=declared    // also drops models that declare no lineage
 &residency=processing // keeps sites covered by a commitment at least this strong (ONP-2 §3b)
 &availability=opt_in // with residency: default < opt_in < enterprise; counts commitments up to this
 &near=45.50,-73.57   // a WGS 84 point: adds distance_km to each site, nearest first
@@ -185,6 +208,31 @@ The advisor is deliberately deterministic and reproducible: same catalog, same f
 
 `summary` counts providers by their strongest commitment, so the share of providers that state nothing is visible.
 
+## 5e. Trusted and open pools
+
+Any operator may list, wherever it is. A registry MAY divide offerings into two pools by what a client may send them:
+
+- the **open pool**: every listed offering. It is for tasks with no personal data and no security requirement;
+- the **trusted pool**: offerings that meet the registry's **trusted view**. Personal data and sensitive work go only here.
+
+The trusted view combines the §5 filters. An offering is in the trusted pool when all of these hold:
+
+1. its model declares a lineage (`lineage=declared`) and the lineage includes none of the excluded countries (reference registry: `CN`);
+2. it runs on the user's own machine or network, or else all of the following hold:
+   - its tier is `verified` or higher;
+   - its operator is in a trusted jurisdiction, with the §5 `jurisdiction` rule (declared or inferred country, and the server's country where the registry checked it, §6.4);
+   - its data policy has `retention: none` and `training_on_inputs: false`.
+
+The trusted jurisdictions are the registry's choice and MUST be published in `GET /v0/health` as `trust.trusted` (the jurisdictions, the expanded country list, the excluded lineage, the minimum tier and the data policy). The reference registry trusts `EU,CA` by default, set by `ONP_TRUSTED_JURISDICTIONS`. As in `jurisdiction=`, `EU` there means every EEA country. Every offering summary and recommendation carries `pool`: `trusted` or `open`. Clients MAY apply their own trusted view on top of the registry's, but MUST NOT treat a registry's `open` result as trusted.
+
+**Sensitive requests (clients).** A client that marks a request as carrying personal data sends it only to an offering in the trusted pool, under the client's own trusted view, and checks this again just before sending. It refuses the request when nothing qualifies, and never falls back to the open pool. A client SHOULD refuse a registry answer that does not show the trusted view was applied (`trusted_view` in recommend, `pool` in search), since a registry that predates this section ignores the filters. The reference clients take the mark in three ways:
+
+- for every request: `--sensitive` or `ONP_SENSITIVE=1`;
+- for one request: the header `onp-sensitive: 1`;
+- by model choice: `auto-sensitive`.
+
+They read their trusted jurisdictions from `ONP_TRUSTED_JURISDICTIONS`.
+
 ## 6. Verification, observations, and ranking
 
 Registries earn their place by turning claims into signals:
@@ -203,6 +251,11 @@ Registries SHOULD check where a node's API host is: (a) geolocation and network 
 
 ### 6.5 Ranking
 Each registry computes `rank` however it wants **but MUST publish, in `GET /v0/health`, the component list and weights** (e.g. `uptime:0.3, price:0.2, attested_quality:0.3, latency:0.2`) and per-result `rank_explanation` with component values. Undisclosed ranking inputs are non-conformant. Paid placement, if any, MUST be labeled `sponsored` and excluded from `rank`.
+
+### 6.6 Request counts
+A registry MAY publish how often it returned each node to clients, so operators can see what a listing brings them. Counts are kept per node, per ISO 8601 week (weeks start Monday 00:00 UTC) and per surface: `search` (`GET /v0/offerings`), `recommend` (`POST /v0/recommend`) and `mcp` (successful MCP `tools/call`). A response counts each node in it once, however many of that node's offerings it holds; a registry SHOULD also count the responses on each surface, so a node's count can be read against the total. A registry that counts MUST NOT store the query, task, prompt, extracted features or anything that identifies the client with the counts: the stored record is node, week, surface and number. A registry that uses counts in `rank` MUST list them as a component (§6.5).
+
+The reference registry adds `request_counts` to node detail (the last 12 weeks, newest first: `week`, `starts`, `search`, `recommend`, `mcp`, `total`) and serves `GET /v0/stats/requests?weeks=1..52&node_id=…&limit=…`: per week, the responses on each surface and the nodes returned, most returned first. Its web app is a client like any other, so pages viewed there count too. Counts are not rank inputs.
 
 ## 7. Attestations
 

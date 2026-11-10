@@ -128,6 +128,10 @@ Content-Type: application/problem+json
     <div class="prob" id="stale-card"><span class="k">stale-card</span><span class="s">409</span><span class="d">The node changed its card revision during the qualification battery; retry.</span></div>
     <div class="prob" id="not-delisted"><span class="k">not-delisted</span><span class="s">409</span><span class="d">Only a delisted node can be restored.</span></div>
     <div class="prob" id="register-again"><span class="k">register-again</span><span class="s">409</span><span class="d">A registered node returns by registering again (<code>POST /v0/nodes</code>).</span></div>
+    <div class="prob" id="bad-flag"><span class="k">bad-flag</span><span class="s">400</span><span class="d">An operator-mark request needs a boolean body named after the mark, e.g. <code>{"founding": true}</code>.</span></div>
+    <div class="prob" id="imported-listing"><span class="k">imported-listing</span><span class="s">409</span><span class="d">An unclaimed catalog import has no verified operator, so it cannot carry an operator mark; clearing one is allowed.</span></div>
+    <div class="prob" id="bad-query"><span class="k">bad-query</span><span class="s">400</span><span class="d">A search or locations filter has a value the registry does not know, e.g. <code>trust=yes</code> or <code>retention=forever</code>. Refused rather than ignored, so a misspelt filter never widens the result.</span></div>
+    <div class="prob" id="bad-policy"><span class="k">bad-policy</span><span class="s">400</span><span class="d">A recommend <code>policy</code> has a value the registry does not know, e.g. <code>trust: "strict"</code>.</span></div>
     <div class="prob" id="missing-steps"><span class="k">missing-steps</span><span class="s">400</span><span class="d">Estimate body must be <code>{"steps": […]}</code>.</span></div>
     <div class="prob" id="bad-step"><span class="k">bad-step</span><span class="s">400</span><span class="d">Each estimate step needs <code>offering</code> or <code>select</code>.</span></div>
     <div class="prob" id="no-offering-matches"><span class="k">no-offering-matches</span><span class="s">404</span><span class="d">No offering matches the step's <code>select</code>.</span></div>
@@ -142,6 +146,7 @@ Content-Type: application/problem+json
   <div class="probs">
     <div class="prob" id="no-callable-offerings"><span class="k">no-callable-offerings</span><span class="s">404</span><span class="d">Something matches the auto-routing model, but nothing this gateway can call: free registered nodes need no key, imported catalogs need a provider key.</span></div>
     <div class="prob" id="policy-refused"><span class="k">policy-refused</span><span class="s">403</span><span class="d">Every candidate was refused by the gateway's own policy, such as <code>--min-tier</code> or a price cap; <code>detail</code> says which rule. Nothing was sent to a node.</span></div>
+    <div class="prob" id="no-trusted-offerings"><span class="k">no-trusted-offerings</span><span class="s">404</span><span class="d">The request is marked sensitive (<code>--sensitive</code>, the <code>onp-sensitive</code> header or <code>onp/auto-sensitive</code>) and nothing this gateway can call is in the trusted pool. Nothing was sent.</span></div>
     <div class="prob" id="all-candidates-failed"><span class="k">all-candidates-failed</span><span class="s">502</span><span class="d">Every candidate offering failed; <code>detail</code> lists each error.</span></div>
     <div class="prob" id="not-implemented"><span class="k">not-implemented</span><span class="s">501</span><span class="d">The gateway does not serve this profile yet.</span></div>
   </div>

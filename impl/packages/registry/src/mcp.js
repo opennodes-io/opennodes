@@ -6,6 +6,8 @@ import { readFileSync } from 'node:fs';
 import { readJson, sendJson, problem, estimateBounds, round6, extractFeatures, recommend, MCP_TOOLS, MCP_INSTRUCTIONS, summarizeNode } from '@opennodes/core';
 import { searchOfferingsPaged, searchOfferings, collectOfferings, pricePublished } from './search.js';
 import { buildLocations, buildResidency } from './locations.js';
+import { nodeIdsIn } from './counts.js';
+import { verificationOf } from './probes.js';
 
 /** Tool arguments -> the query string the REST routes take (null/undefined dropped). */
 const toQuery = (args = {}) => {
@@ -38,13 +40,14 @@ const TOOLS = MCP_TOOLS.map((tool) => {
   };
 });
 
-async function runTool(store, seeds, name, args = {}) {
+async function runTool(store, seeds, name, args = {}, trusted = undefined) {
   switch (name) {
     case 'recommend': {
       const features = args.features ?? (args.task != null
         ? extractFeatures(String(args.task), { est_output_tokens: args.est_output_tokens ?? null }) : null);
       if (!features) throw new Error('recommend needs "task" or "features"');
-      return recommend((await collectOfferings(store)).filter((o) => o.invocable), features, args.policy ?? {});
+      // policy.sensitive applies this registry's trusted view (the caller cannot pass its own)
+      return recommend((await collectOfferings(store)).filter((o) => o.invocable), features, { ...(args.policy ?? {}), ...(trusted ? { trusted } : {}) });
     }
     case 'search_offerings':
       return searchOfferingsPaged(store, toQuery(args));
@@ -61,11 +64,13 @@ async function runTool(store, seeds, name, args = {}) {
     case 'get_node': {
       const node = await store.getNode(args.node_id);
       if (!node) throw new Error(`unknown node: ${args.node_id} (node ids come from search_offerings or recommend results)`);
+      const card = await store.latestCard(node.id);
       return summarizeNode({
         ...node,
-        card: await store.latestCard(node.id),
+        card,
         probes: (await store.probesFor(node.id)).slice(0, 20),
         history: await store.transitionsFor(node.id),
+        verification: verificationOf(card, await store.getObservations(node.id, '_node')),
       }, args.offering_limit ?? 25);
     }
     case 'estimate': {
@@ -102,7 +107,14 @@ async function runTool(store, seeds, name, args = {}) {
   }
 }
 
-async function handleRpc(store, seeds, msg) {
+/** The nodes a tool result hands back to the client (for request counts). */
+function nodesReturned(name, result) {
+  if (name === 'get_node') return [result.id];
+  if (name === 'estimate') return result.steps.map((s) => s.offering.split('/')[0]);
+  return nodeIdsIn(result);
+}
+
+async function handleRpc(store, seeds, msg, onResult, trusted) {
   const { id, method, params } = msg;
   const reply = (result) => ({ jsonrpc: '2.0', id, result });
   const rpcError = (code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
@@ -121,7 +133,8 @@ async function handleRpc(store, seeds, msg) {
       return reply({ tools: TOOLS });
     case 'tools/call':
       try {
-        const result = await runTool(store, seeds, params?.name, params?.arguments);
+        const result = await runTool(store, seeds, params?.name, params?.arguments, trusted);
+        onResult?.(nodesReturned(params.name, result));
         return reply({
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
           structuredContent: result,
@@ -140,13 +153,17 @@ async function handleRpc(store, seeds, msg) {
   }
 }
 
-/** Routes to mount into the registry app. `seeds` = the curated location seeds (find_locations). */
-export function mcpRoutes(store, seeds = []) {
+/**
+ * Routes to mount into the registry app. `seeds` = the curated location seeds (find_locations).
+ * `onResult(nodeIds)` hears which nodes each successful tool call returned (request counts).
+ * `trusted` is the registry's trusted view, used by recommend's `policy.sensitive`.
+ */
+export function mcpRoutes(store, seeds = [], { onResult = null, trusted = undefined } = {}) {
   return [
     ['POST', '/mcp', async (req, res) => {
       const body = await readJson(req, 5_000_000);
       const messages = Array.isArray(body) ? body : [body];
-      const replies = (await Promise.all(messages.map((m) => handleRpc(store, seeds, m)))).filter(Boolean);
+      const replies = (await Promise.all(messages.map((m) => handleRpc(store, seeds, m, onResult, trusted)))).filter(Boolean);
       if (replies.length === 0) { res.writeHead(202); res.end(); return; }
       sendJson(res, 200, Array.isArray(body) ? replies : replies[0]);
     }],

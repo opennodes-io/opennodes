@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { startRegistry } from './src/server.js';
 import { parseSite } from './src/location.js';
+import { LIVENESS_INTERVAL_MS, BLIND_INTERVAL_MS } from './src/stagec.js';
+import { trustedJurisdictionsFrom } from '@opennodes/core';
 
 const dbPath = process.env.ONP_DB ?? ':memory:'; // sqlite path/:memory: or postgres:// URL
 const persistent = dbPath !== ':memory:' && !dbPath.startsWith('postgres');
@@ -15,14 +17,16 @@ const registry = await startRegistry({
   admitCooldownMs: Number(process.env.ONP_ADMIT_COOLDOWN_MS ?? 30 * 60_000),  // Stage B per node
   trustProxy: process.env.ONP_TRUST_PROXY === '1',                            // behind Caddy / a CDN
   adminToken: process.env.ONP_ADMIN_TOKEN ?? null,
+  // Operator jurisdictions of the trusted pool (ONP-3 §5e): "EU,CA" unless set, e.g. "EU,CA,CH".
+  trustedJurisdictions: trustedJurisdictionsFrom(process.env),
   locationSeeds: process.env.ONP_LOCATION_SEEDS !== '0',                      // curated "where models run" seeds
   // Basemap for the locations map: unset = OpenStreetMap, "off" = no map, else an XYZ tile URL template.
   ...(process.env.ONP_MAP_TILES ? { mapTiles: process.env.ONP_MAP_TILES === 'off' ? null : {
     tiles: process.env.ONP_MAP_TILES, attribution: process.env.ONP_MAP_ATTRIBUTION ?? '', max_zoom: 19,
   } } : {}),
   stageC: process.env.ONP_STAGE_C === '0' ? null : {
-    livenessIntervalMs: Number(process.env.ONP_LIVENESS_MS ?? 300_000),
-    blindIntervalMs: Number(process.env.ONP_BLIND_MS ?? 3_600_000),
+    livenessIntervalMs: Number(process.env.ONP_LIVENESS_MS ?? LIVENESS_INTERVAL_MS),
+    blindIntervalMs: Number(process.env.ONP_BLIND_MS ?? BLIND_INTERVAL_MS),
   },
   // Server-location checks: ONP_LOCATION=1, this registry's site, and optional remote probe agents
   // ("FI Helsinki 60.17 24.93 https://host/onp-probe", comma-separated) sharing ONP_PROBE_AGENT_TOKEN.

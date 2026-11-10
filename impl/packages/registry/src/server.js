@@ -3,19 +3,19 @@ import { randomUUID } from 'node:crypto';
 import {
   createApp, listen, closeApp, sendJson, problem, readJson,
   validateCard, verifyCardSignature, keyFromJwk, estimateBounds,
-  extractFeatures, recommend,
+  extractFeatures, recommend, trustedView, DEFAULT_TRUSTED_JURISDICTIONS,
 } from '@opennodes/core';
 import { resolveTxt } from 'node:dns/promises';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { generateKeypair, keypairFromPem } from '@opennodes/core';
 import { createStore } from './store.js';
-import { runStageA } from './probes.js';
+import { runStageA, verificationOf } from './probes.js';
 import { runStageB, captureFingerprints } from './stageb.js';
 import { startStageC } from './stagec.js';
 import { startReimport } from './reimport.js';
 import { makeSafeFetch } from './safefetch.js';
-import { searchOfferings, searchOfferingsPaged, collectOfferings, watchStoreWrites, setSeedPlacements, RANK_COMPONENTS, pricePublished } from './search.js';
+import { searchOfferings, searchOfferingsPaged, collectOfferings, watchStoreWrites, setSeedPlacements, setTrustedView, RANK_COMPONENTS, pricePublished } from './search.js';
 import { mcpRoutes } from './mcp.js';
 import { hostControlsNamespace, isPrivateHost, makeRateLimiter } from './namespace.js';
 import { exportRoutes } from './export.js';
@@ -28,6 +28,7 @@ import {
   HF_ROUTER_URL, HF_HUB_URL, OPENROUTER_URL, OPENROUTER_PROVIDERS_URL, OLLAMA_LIBRARY_URL,
 } from './importers.js';
 import { locationRoutes, loadLocationSeeds, seedPlacements, seedNodeSites, nodeServes } from './locations.js';
+import { makeRequestCounter, nodeIdsIn } from './counts.js';
 
 /** Default basemap. OSM's tile policy asks for attribution and light use; busy registries set their own. */
 export const OSM_TILES = {
@@ -52,8 +53,11 @@ export async function startRegistry({
   location = null,                      // { selfSite, agents, intervalMs, fetchImpl, resolve, rtt } to check server locations
   locationSeeds = false,                // import the bundled curated location seeds (src/data/locations-*.json) at start
   mapTiles = OSM_TILES,                 // basemap for the "Where models run" map: { tiles, attribution, max_zoom }, or null for no map
+  requestCountFlushMs = 60_000,         // how often request counts move from memory to the store (reads flush first)
+  trustedJurisdictions = DEFAULT_TRUSTED_JURISDICTIONS,   // the trusted pool's operator jurisdictions (ONP_TRUSTED_JURISDICTIONS)
 } = {}) {
   const store = watchStoreWrites(await createStore(dbPath)); // sqlite path/:memory: or postgres:// URL; writes refresh the cached catalog
+  const requests = makeRequestCounter(store, { flushMs: requestCountFlushMs });   // node ids + counts only
   const safeFetch = makeSafeFetch({ allowPrivate: allowPrivateTargets });
   const seeds = locationSeeds ? loadLocationSeeds() : [];
   for (const seed of seeds) {
@@ -61,6 +65,9 @@ export async function startRegistry({
     if (result.skipped.length) console.warn(`location seed ${seed.seed}: skipped ${result.skipped.join('; ')}`);
   }
   setSeedPlacements(store, seedPlacements(seeds));
+  const trusted = trustedView(trustedJurisdictions);   // pool labels, trust=trusted, sensitive recommend
+  if (!trusted.countries.length) console.warn(`trusted jurisdictions "${trustedJurisdictions}" name no country: no hosted offering is trusted`);
+  setTrustedView(store, trusted);
   const webApp = readFileSync(fileURLToPath(new URL('./web/index.html', import.meta.url)), 'utf8');
   let registryKeys;
   if (keyPath && existsSync(keyPath)) {
@@ -328,6 +335,7 @@ export async function startRegistry({
           tier: node.state === 'indexed' ? 'unverified' : node.state,
           source: node.source ?? 'registration',
           institutional: Boolean(node.institutional),
+          founding: Boolean(node.founding),
           updated_at: node.updated_at,
           name: card?.node?.name ?? node.id,
           operator: card?.node?.operator?.name ?? null,
@@ -360,17 +368,40 @@ export async function startRegistry({
     ['GET', '/v0/nodes/:id', async (req, res, { params }) => {
       const node = await store.getNode(params.id);
       if (!node) return problem(res, 404, 'unknown-node', params.id);
+      const card = await store.latestCard(params.id);
+      const nodeObs = await store.getObservations(params.id, '_node');
       sendJson(res, 200, {
         ...node,
-        card: await store.latestCard(params.id),
+        institutional: Boolean(node.institutional),
+        founding: Boolean(node.founding),
+        card,
         probes: (await store.probesFor(params.id)).slice(0, 20),
         history: await store.transitionsFor(params.id),
-        location: (await store.getObservations(params.id, '_node')).location ?? null,
+        location: nodeObs.location ?? null,
+        // What the tier covers (ONP-3 §4a): the offerings the tests could not call, and whether
+        // Stage C has had to skip blind probes because none could be called.
+        verification: verificationOf(card, nodeObs),
+        // How often search, recommend and MCP returned this node, last 12 ISO weeks, newest first.
+        request_counts: await requests.forNode(params.id),
+      });
+    }],
+
+    // Request counts (ONP-3 §6.6): per ISO week, the responses on each surface and the nodes they
+    // returned. ?weeks=1..52 (default 4), ?node_id= one node, ?limit= nodes per week (default 50).
+    ['GET', '/v0/stats/requests', async (req, res, { query }) => {
+      const int = (k, dflt, max) => Math.min(max, Math.max(1, Math.floor(Number(query.get(k) ?? dflt)) || dflt));
+      sendJson(res, 200, {
+        counted: 'responses that returned the node, per ISO week (Monday 00:00 UTC): search = GET /v0/offerings, recommend = POST /v0/recommend, mcp = tools/call on /mcp; each response counts a node once. Only node ids and counts are stored, never the query, task or client.',
+        weeks: await requests.stats({ weeks: int('weeks', 4, 52), nodeId: query.get('node_id') || null, limit: int('limit', 50, 500) }),
       });
     }],
 
     ['GET', '/v0/offerings', async (req, res, { query }) => {
-      const { offerings, total, offset, counts } = await searchOfferingsPaged(store, query);
+      let page;
+      try { page = await searchOfferingsPaged(store, query); }
+      catch (err) { if (err.status === 400) return problem(res, 400, 'bad-query', err.message); throw err; }
+      const { offerings, total, offset, counts } = page;
+      requests.count('search', offerings.map((o) => o.node_id));
       // total = matches before `offset`/`limit`; counts = hosted/local matches before the `local` filter
       sendJson(res, 200, { offerings, total, offset, counts });
     }],
@@ -397,7 +428,9 @@ export async function startRegistry({
           if (!offering) return problem(res, 404, 'unknown-offering', step.offering);
         } else if (step.select) {
           const query = new URLSearchParams(step.select);
-          const results = await searchOfferings(store, query);
+          let results;
+          try { results = await searchOfferings(store, query); }
+          catch (err) { if (err.status === 400) return problem(res, 400, 'bad-query', err.message); throw err; }
           if (!results.length) return problem(res, 404, 'no-offering-matches', JSON.stringify(step.select));
           offering = results[0];
         } else {
@@ -429,7 +462,12 @@ export async function startRegistry({
       if (!features) return problem(res, 400, 'missing-task', 'body must carry "task" (text) or "features" (from extractFeatures)');
       // only what a client could actually call: listing-only imports are never recommended
       const all = (await collectOfferings(store)).filter((o) => o.invocable);
-      sendJson(res, 200, recommend(all, features, body.policy ?? {}));
+      // policy.sensitive / policy.trust apply this registry's trusted view; a client cannot replace it
+      let advice;
+      try { advice = recommend(all, features, { ...(body.policy ?? {}), trusted }); }
+      catch (err) { if (err.status === 400) return problem(res, 400, 'bad-policy', err.message); throw err; }
+      requests.count('recommend', nodeIdsIn(advice));   // recommendations, scenario roles, embedders
+      sendJson(res, 200, advice);
     }],
 
     // Delist (admin): operator opt-out of an imported listing, or retiring a node. Search,
@@ -460,6 +498,23 @@ export async function startRegistry({
       await store.setState(node.id, 'indexed', 'relisted by registry admin');
       sendJson(res, 200, { id: node.id, state: 'indexed' });
     }],
+
+    // Operator marks (admin, ONP-3 §4b): body {"institutional": true|false} or {"founding": true|false}.
+    // Labels shown with the listing, never rank inputs. Setting one needs a registered node (an
+    // unclaimed import has no proven operator); clearing always works.
+    ...['institutional', 'founding'].map((flag) => ['POST', `/v0/admin/nodes/:id/${flag}`, async (req, res, { params }) => {
+      if (!adminOk(req, res)) return;
+      const node = await store.getNode(params.id);
+      if (!node) return problem(res, 404, 'unknown-node', params.id);
+      const body = await readJson(req);
+      if (typeof body[flag] !== 'boolean') return problem(res, 400, 'bad-flag', `body must be {"${flag}": true} or {"${flag}": false}`);
+      if (body[flag] && node.source === 'import') {
+        return problem(res, 409, 'imported-listing', `${node.id} is an unclaimed catalog import; the ${flag} mark needs a registered node`);
+      }
+      await store.setNodeFlag(node.id, flag, body[flag]);
+      const updated = await store.getNode(node.id);
+      sendJson(res, 200, { id: node.id, institutional: Boolean(updated.institutional), founding: Boolean(updated.founding) });
+    }]),
 
     // Seed importer (admin): body {catalog} in models.dev shape, or {url} to fetch it.
     ['POST', '/v0/import/models-dev', async (req, res) => {
@@ -548,6 +603,8 @@ export async function startRegistry({
         map: mapTiles,
         signing_key: { ...registryKeys.publicJwk, kid: 'registry-1' },
         stage_c: Boolean(stageC),
+        // What trust=trusted, policy.sensitive and each result's `pool` mean here (ONP-3 §5e).
+        trust: { pools: ['trusted', 'open'], trusted },
       });
     }],
 
@@ -557,7 +614,7 @@ export async function startRegistry({
       res.end(webApp);
     }],
 
-    ...mcpRoutes(store, seeds),
+    ...mcpRoutes(store, seeds, { onResult: (ids) => requests.count('mcp', ids), trusted }),
     ...exportRoutes(store, registryKeys),
     ...locationRoutes(store, seeds),
   ], { cors: true }); // public read API: third-party web clients may call it directly
@@ -604,6 +661,7 @@ export async function startRegistry({
       reimportHandle?.stop();
       locationHandle?.stop();
       await closeApp(app);
+      await requests.stop();   // writes the counts still in memory
       await store.close();
     },
   };

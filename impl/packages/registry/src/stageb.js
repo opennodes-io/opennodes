@@ -2,8 +2,14 @@
 // verification with capping, capacity ramp with measured-over-claimed metrics.
 import { createHash } from 'node:crypto';
 import { fetchJsonCapped } from './safefetch.js';
+import { testable, untestedOfferings, NO_TESTED_OFFERINGS } from './probes.js';
 
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
+
+/** Context probe sizes, as fractions of the claimed window (DS-ADM-03). */
+export const CONTEXT_FRACTIONS = [0.25, 0.5, 0.9];
+/** Capacity ramp (DS-ADM-04): parallel requests per step; one batch per step, all within one time budget. */
+export const CAPACITY_RAMP = { steps: [1, 4, 8], durationMs: 3000 };
 
 /** The fixed identity battery: deterministic prompts, temperature 0. */
 export const FINGERPRINT_PROMPTS = [
@@ -97,7 +103,7 @@ async function probeContext(safeFetch, card, offering) {
   const { charsPerToken, measured } = await calibrate(safeFetch, card, offering);
   const results = [];
   let cap = 0, unbroken = true;
-  for (const fraction of [0.25, 0.5, 0.9]) {
+  for (const fraction of CONTEXT_FRACTIONS) {
     const tokens = Math.floor(claimed * fraction);
     const digits = String(Math.floor(tokens * 7919)); // deterministic per size
     const fact = ` The magic number is ${digits}. `;
@@ -122,7 +128,7 @@ async function probeContext(safeFetch, card, offering) {
 }
 
 /** DS-ADM-04: stepped-concurrency ramp; measures TTFT p50/p95 and rough TPS. */
-async function probeCapacity(safeFetch, card, offering, { steps = [1, 4, 8], durationMs = 3000 } = {}) {
+async function probeCapacity(safeFetch, card, offering, { steps = CAPACITY_RAMP.steps, durationMs = CAPACITY_RAMP.durationMs } = {}) {
   const latencies = [];
   let completed = 0, failed = 0, outputTokens = 0;
   const deadline = Date.now() + durationMs;
@@ -155,14 +161,20 @@ async function probeCapacity(safeFetch, card, offering, { steps = [1, 4, 8], dur
 }
 
 /**
- * Run Stage B for every chat offering. Records probes + observations; returns per-offering verdicts.
+ * Run Stage B for every offering the tests can call (TESTED_PROFILES). Records probes + observations;
+ * returns per-offering verdicts, and in `untested` the offerings it could not call.
  * Identity refs come from await store.getFingerprints(artifact); absence of refs is recorded, not failed
  * (proprietary artifacts are guarded by the vendor-namespace rule instead).
+ * A card with no testable offering fails: nothing was measured, so nothing can be verified.
  */
 export async function runStageB(store, nodeId, card, { safeFetch, capacity = {} } = {}) {
+  const untested = untestedOfferings(card);
+  if (!card.offerings.some(testable)) {
+    return { ok: false, identityFailed: false, reason: NO_TESTED_OFFERINGS, verdicts: [], untested };
+  }
   const verdicts = [];
   for (const offering of card.offerings) {
-    if (offering.binding.profile !== 'onp.openai.chat/v1') continue;
+    if (!testable(offering)) continue;
     const verdict = { offering_id: offering.offering_id, identity: null, context: null, capacity: null };
 
     const refs = await store.getFingerprints(offering.model.artifact);
@@ -170,7 +182,7 @@ export async function runStageB(store, nodeId, card, { safeFetch, capacity = {} 
       verdict.identity = await probeIdentity(safeFetch, card, offering, refs);
       if (verdict.identity.stale) {
         // The node rejected our pinned revision (409). Abort without judging: the caller re-indexes and retries.
-        return { ok: false, identityFailed: false, stale: true, verdicts: [...verdicts, verdict] };
+        return { ok: false, identityFailed: false, stale: true, verdicts: [...verdicts, verdict], untested };
       }
       await store.recordProbe(nodeId, offering.offering_id, 'B', 'identity', verdict.identity.ok,
         `${verdict.identity.matches}/${verdict.identity.total} reference matches`);
@@ -198,5 +210,5 @@ export async function runStageB(store, nodeId, card, { safeFetch, capacity = {} 
 
   const identityFailed = verdicts.some((v) => v.identity && !v.identity.ok);
   const ok = !identityFailed && verdicts.every((v) => v.capacity?.ok);
-  return { ok, identityFailed, verdicts };
+  return { ok, identityFailed, verdicts, untested };
 }

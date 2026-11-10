@@ -4,7 +4,7 @@
 import readline from 'node:readline';
 import { readFileSync } from 'node:fs';
 import { totalmem } from 'node:os';
-import { extractFeatures, MCP_TOOLS, MCP_INSTRUCTIONS, summarizeNode } from '@opennodes/core';
+import { extractFeatures, MCP_TOOLS, MCP_INSTRUCTIONS, summarizeNode, trustedView, trustedJurisdictionsFrom, inTrustedPool } from '@opennodes/core';
 
 export { summarizeNode };
 
@@ -13,8 +13,14 @@ const { version: VERSION } = JSON.parse(readFileSync(new URL('../package.json', 
 /** What a local model could use here: 75% of RAM, leaving the rest to the system (a GPU's VRAM may be less). */
 export const machineMemoryGb = () => Math.max(1, Math.floor((totalmem() / 1e9) * 0.75));
 
-export function createStdioMcp({ registry, input = process.stdin, output = process.stdout }) {
+/**
+ * sensitive: every request carries personal data (ONP_SENSITIVE=1): search and recommend use the
+ * trusted pool only. trustedJurisdictions narrows it to this user's trusted operators (default:
+ * ONP_TRUSTED_JURISDICTIONS, else EU,CA); the registry's own trusted view applies as well.
+ */
+export function createStdioMcp({ registry, input = process.stdin, output = process.stdout, sensitive = false, trustedJurisdictions = trustedJurisdictionsFrom() }) {
   const base = registry.replace(/\/$/, '');
+  const view = trustedView(trustedJurisdictions);
 
   async function runTool(name, args = {}) {
     switch (name) {
@@ -22,23 +28,36 @@ export function createStdioMcp({ registry, input = process.stdin, output = proce
         // This server runs on the user's machine: it can tell how much memory a local model could use.
         const assumed = args.policy?.local_memory_gb == null;
         if (assumed) args = { ...args, policy: { ...args.policy, local_memory_gb: machineMemoryGb() } };
+        // Personal data (this server's setting, or the agent marked the task): the trusted pool, narrowed
+        // to this user's trusted jurisdictions unless the agent asked for a narrower one.
+        const marked = sensitive || args.policy?.sensitive === true;
+        const policy = marked ? { ...args.policy, sensitive: true, jurisdiction: args.policy?.jurisdiction ?? view.jurisdictions } : (args.policy ?? {});
         // Privacy by construction: extract features here, send only those.
         const features = extractFeatures(String(args.task ?? ''), { est_output_tokens: args.est_output_tokens ?? null });
         const res = await fetch(`${base}/v0/recommend`, {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ features, policy: args.policy ?? {} }),
+          body: JSON.stringify({ features, policy }),
         });
         const body = await res.json();
         if (!res.ok) throw new Error(body.detail ?? `status ${res.status}`);
+        // A registry that does not know `sensitive` ignores it and answers from both pools: refuse that answer.
+        if (marked && !body.trusted_view) throw new Error(`the task is sensitive, but ${base} does not apply a trusted view (registry 0.1.52 or later): no recommendation returned`);
         if (assumed) body.local_memory = { gb: args.policy.local_memory_gb, basis: "75% of this machine's RAM; pass policy.local_memory_gb to override (a GPU's VRAM may be smaller)" };
         return body;
       }
       case 'search_offerings': {
+        const marked = sensitive || args.trust === 'trusted';
+        const query = marked ? { ...args, trust: 'trusted', jurisdiction: args.jurisdiction ?? view.jurisdictions } : args;
         const qs = new URLSearchParams();
-        for (const [k, v] of Object.entries(args)) if (v !== undefined && v !== null) qs.set(k, String(v));
+        for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null) qs.set(k, String(v));
         const res = await fetch(`${base}/v0/offerings?${qs}`);
         if (!res.ok) throw new Error(`registry search failed: ${res.status}`);
-        return res.json();
+        const body = await res.json();
+        if (!marked) return body;
+        // Checked here too, under this user's trusted view: an older registry ignores `trust`.
+        const kept = (body.offerings ?? []).filter((o) => inTrustedPool(o, view));
+        const removed = (body.offerings ?? []).length - kept.length;
+        return { ...body, offerings: kept, sensitive: { trusted_view: view, ...(removed ? { removed_by_client: removed } : {}) } };
       }
       case 'find_locations': {
         const qs = new URLSearchParams();

@@ -3,6 +3,23 @@
 import { fetchJsonCapped } from './safefetch.js';
 
 /**
+ * Binding profiles the admission tests can call (ONP-3 §4a). Verification covers only these: an
+ * offering with another profile is never invoked, so a node's tier says nothing about it.
+ */
+export const TESTED_PROFILES = ['onp.openai.chat/v1'];
+/** Whether the registry's tests can call this offering. */
+export const testable = (offering) => TESTED_PROFILES.includes(offering?.binding?.profile);
+/** Offering ids of a card that the tests cannot call. */
+export const untestedOfferings = (card) => (card?.offerings ?? []).filter((o) => !testable(o)).map((o) => o.offering_id);
+export const NO_TESTED_OFFERINGS = `no offerings with a tested profile (${TESTED_PROFILES.join(', ')})`;
+/** The `verification` block of node detail and the export feed; nodeObs = the node's `_node` observations. */
+export const verificationOf = (card, nodeObs = {}) => ({
+  tested_profiles: TESTED_PROFILES,
+  untested_offerings: untestedOfferings(card),
+  blind_skipped: nodeObs.blind_skipped ?? null,
+});
+
+/**
  * Card rules a schema cannot express (ONP-2 §5): every offering declares a data_policy
  * (required from `community` up), and offers only payment schemes the node declares.
  * Returns a list of problems; empty means consistent.
@@ -56,9 +73,14 @@ export async function runStageA(store, nodeId, card, { safeFetch } = {}) {
     await record(null, 'models-agreement', false, String(err.message ?? err));
   }
 
-  // 3. Blind invocation per chat offering
+  // 3. Blind invocation per offering the tests can call. A node with none gives no functional
+  // evidence, so it fails Stage A and stays unverified (ONP-3 §4a item 2).
+  if (!card.offerings.some(testable)) {
+    const profiles = [...new Set(card.offerings.map((o) => o.binding?.profile))].join(', ');
+    await record(null, 'tested-offerings', false, `${NO_TESTED_OFFERINGS}; the card offers ${profiles || 'nothing'}`);
+  }
   for (const offering of card.offerings) {
-    if (offering.binding.profile !== 'onp.openai.chat/v1') continue;
+    if (!testable(offering)) continue;
     try {
       const t0 = performance.now();
       // Generous timeout: CPU-backed nodes legitimately take tens of seconds per completion.

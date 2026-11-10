@@ -2,7 +2,9 @@
 import {
   residencyWithin, residencyCodes, servingLocations, basisRank,
   inJurisdiction, localSizes, pullsOf, specialtyOf, isEmbedder,
+  trustedView, poolOf, inTrustedPool, lineageAllowed, meetsDataPolicy, RETENTION_LEVELS,
 } from '@opennodes/core';
+import { testable } from './probes.js';
 
 /** BCP 47 prefix match (ONP-3 §5): `fr` matches `fr` and `fr-CA`; `fr-CA` matches only itself. */
 export const langMatches = (tag, wanted) => {
@@ -33,6 +35,16 @@ export function setSeedPlacements(store, map) {
   markCatalogStale(store);
 }
 
+// The registry's trusted view (core trustedView: jurisdictions from ONP_TRUSTED_JURISDICTIONS).
+const trustedViews = new WeakMap();   // store -> view
+
+/** Use this trusted view for `pool` labels and `trust=trusted` from now on (the server sets it at start). */
+export function setTrustedView(store, view) {
+  trustedViews.set(store, view);
+  markCatalogStale(store);
+}
+export const trustedViewOf = (store) => trustedViews.get(store) ?? trustedView();
+
 /** Mark the cached catalog stale: the next read rebuilds it. */
 export function markCatalogStale(store) {
   const entry = catalogs.get(store);
@@ -41,7 +53,7 @@ export function markCatalogStale(store) {
 
 /** Wrap the store's write methods so any change to nodes, cards, probes or observations marks the catalog stale. */
 export function watchStoreWrites(store) {
-  for (const name of ['upsertNode', 'setState', 'saveRevision', 'recordProbe', 'addFingerprints', 'setObservation']) {
+  for (const name of ['upsertNode', 'setState', 'setNodeFlag', 'saveRevision', 'recordProbe', 'addFingerprints', 'setObservation']) {
     const write = store[name];
     if (typeof write !== 'function' || write.__marksCatalogStale) continue;
     const wrapped = async function (...args) {
@@ -69,6 +81,7 @@ export async function collectOfferings(store) {
 /** Flatten indexed nodes into searchable offering summaries. */
 async function buildOfferings(store) {
   const out = [];
+  const view = trustedViewOf(store);
   for (const node of await store.allNodes()) {
     if (['delisted', 'suspended', 'submitted', 'challenged', 'disputed', 'claimed'].includes(node.state)) continue;
     const card = await store.latestCard(node.id);
@@ -101,12 +114,17 @@ async function buildOfferings(store) {
         serving.context_window = obs.context_cap;
         serving.context_capped_from = offering.serving.context_window;
       }
+      // Verification covers only profiles the tests can call (ONP-3 §4a): another offering does
+      // not inherit the node's tier. Imported listings are never tested.
+      const covered = testable(offering);
       out.push({
         node_id: node.id,
         offering_id: offering.offering_id,
-        tier,
+        tier: covered ? tier : 'unverified',
+        tested: covered && node.source !== 'import',
         source: node.source ?? 'registration',
         institutional: Boolean(node.institutional),
+        founding: Boolean(node.founding),   // admin-set label (ONP-3 §4b), never a rank input
         card_revision: card.revision,
         modality: offering.modality,
         modalities: offering.modalities ?? null,
@@ -146,10 +164,18 @@ async function buildOfferings(store) {
         // false for listing-only imports (no known API endpoint): shown, never called
         invocable: Boolean(card.endpoints?.openai),
       });
+      // Trusted or open pool (ONP-3 §5e), under this registry's trusted view.
+      out.at(-1).pool = poolOf(out.at(-1), view);
     }
   }
   return out;
 }
+
+const bad = (message) => Object.assign(new Error(message), { status: 400 });
+const oneOf = (name, value, allowed) => {
+  if (value != null && !allowed.includes(value)) throw bad(`${name} must be ${allowed.join(' or ')}, not ${JSON.stringify(value)}`);
+  return value;
+};
 
 /** Whether an offering publishes a per-token price (imports with no known price leave it out). */
 export const pricePublished = (pricing) => pricing?.input_per_mtok != null || pricing?.output_per_mtok != null;
@@ -180,10 +206,21 @@ export async function searchOfferingsPaged(store, query) {
     const min = basisRank(q('location_basis'));
     items = items.filter((o) => o.locations.length && o.locations.every((l) => basisRank(l.basis) >= min));
   }
-  if (q('exclude_lineage')) {
-    // Origin policy on declared lineage; offerings that declare none are kept (unknown).
-    const banned = q('exclude_lineage').toUpperCase().split(',');
-    items = items.filter((o) => !(o.model.lineage_origins ?? []).some((c) => banned.includes(c)));
+  // Origin policy on declared lineage: offerings that declare none are kept (unknown), unless
+  // lineage=declared asks for a declared lineage.
+  const declared = oneOf('lineage', q('lineage'), ['declared', 'any']) === 'declared';
+  if (q('exclude_lineage') || declared) {
+    const exclude = (q('exclude_lineage') ?? '').split(',').filter(Boolean);
+    items = items.filter((o) => lineageAllowed(o, { exclude, declared }));
+  }
+  // Data policy (ONP-2 §5): at most this retention, no training on inputs. No data_policy fails.
+  const retention = oneOf('retention', q('retention'), RETENTION_LEVELS);
+  const noTraining = oneOf('no_training', q('no_training'), ['true', 'false']) === 'true';
+  if (retention || noTraining) items = items.filter((o) => meetsDataPolicy(o, { retention, no_training: noTraining }));
+  // The trusted pool (ONP-3 §5e): every condition of the registry's trusted view at once.
+  if (oneOf('trust', q('trust'), ['trusted', 'open']) === 'trusted') {
+    const view = trustedViewOf(store);
+    items = items.filter((o) => inTrustedPool(o, view));
   }
   if (q('tier')) {
     const order = ['unverified', 'community', 'verified', 'attested'];

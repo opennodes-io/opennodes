@@ -9,7 +9,10 @@ import { createStdioMcp } from './src/mcpserver.js';
 const [cmd, ...args] = process.argv.slice(2);
 // Default: the hosted OpenNodes registry. Point ONP_REGISTRY at http://127.0.0.1:4300 for a local one.
 const registry = process.env.ONP_REGISTRY ?? 'https://registry.opennodes.io';
-const client = new OnpClient({ registry });
+// Personal data: --sensitive or ONP_SENSITIVE=1 keeps every request in the trusted pool
+// (operators in ONP_TRUSTED_JURISDICTIONS, default EU,CA; see ONP-3 §5e).
+const sensitive = args.includes('--sensitive') || ['1', 'true', 'yes'].includes(String(process.env.ONP_SENSITIVE ?? '').toLowerCase());
+const client = new OnpClient({ registry, policy: { sensitive } });
 
 const flag = (name, fallback) => {
   const i = args.indexOf(`--${name}`);
@@ -20,13 +23,16 @@ try {
   switch (cmd) {
     case 'search': {
       const params = {};
-      for (const key of ['modality', 'family', 'min_context', 'supports', 'max_input_price', 'scheme', 'tier', 'lang', 'q', 'sort']) {
+      for (const key of ['modality', 'family', 'min_context', 'supports', 'max_input_price', 'scheme', 'tier', 'lang', 'q', 'sort',
+        'jurisdiction', 'region', 'exclude_lineage', 'lineage', 'retention', 'no_training', 'trust']) {
         const v = flag(key);
         if (v !== undefined) params[key] = v;
       }
-      const offerings = await client.search(params);
+      if (sensitive) params.trust = 'trusted';
+      let offerings = await client.search(params);
+      if (sensitive) offerings = offerings.filter((o) => !client.trustGapsOf(o).length);   // an older registry ignores trust
       for (const o of offerings) {
-        console.log(`${o.node_id}/${o.offering_id}  [${o.tier}]  ${o.model.name}  ` +
+        console.log(`${o.node_id}/${o.offering_id}  [${o.tier}${o.pool ? `, ${o.pool}` : ''}]  ${o.model.name}  ` +
           `$${o.pricing.input_per_mtok}/$${o.pricing.output_per_mtok} per MTok  rank=${o.rank}`);
       }
       if (!offerings.length) console.log('(no offerings match)');
@@ -63,15 +69,17 @@ try {
         const binPath = new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
         // Installed from npm → portable npx form; running from a checkout → absolute path.
         const installed = /[\\/]node_modules[\\/]@opennodes[\\/]cli[\\/]/.test(binPath);
+        const env = { ONP_REGISTRY: registry, ...(sensitive ? { ONP_SENSITIVE: '1' } : {}),
+          ...(process.env.ONP_TRUSTED_JURISDICTIONS ? { ONP_TRUSTED_JURISDICTIONS: process.env.ONP_TRUSTED_JURISDICTIONS } : {}) };
         const server = installed
-          ? { command: 'npx', args: ['-y', '@opennodes/cli', 'mcp'], env: { ONP_REGISTRY: registry } }
-          : { command: process.execPath, args: [binPath, 'mcp'], env: { ONP_REGISTRY: registry } };
+          ? { command: 'npx', args: ['-y', '@opennodes/cli', 'mcp'], env }
+          : { command: process.execPath, args: [binPath, 'mcp'], env };
         console.log('Add to Cursor (~/.cursor/mcp.json), VS Code (mcp.json), or Claude Desktop config:');
         console.log(JSON.stringify({ mcpServers: { opennodes: server } }, null, 2));
         break;
       }
       // Stdio MCP server for editor hosts. stdout carries protocol messages only.
-      createStdioMcp({ registry });
+      createStdioMcp({ registry, sensitive });
       await new Promise(() => {}); // run until the host closes stdin / kills us
       break;
     }
@@ -100,7 +108,7 @@ try {
         aliases,
         virtuals,
         keys,
-        policy: minTier ? { min_tier: minTier } : {},
+        policy: { ...(minTier ? { min_tier: minTier } : {}), sensitive },
         reputationPath: args.includes('--no-reputation') ? null : flag('reputation', DEFAULT_REPUTATION_PATH),
         // embeddings go to the local Ollama's embedding models first (not OLLAMA_HOST: that may be the router)
         ollama: args.includes('--no-ollama') ? null : flag('ollama', 'http://127.0.0.1:11434'),
@@ -112,6 +120,9 @@ try {
         ? `keys for: ${gw.keyHosts.join(', ')} (each sent only to its own host)`
         : 'no provider keys: onp/auto uses free registered nodes only (add --key host=KEY or set OPENROUTER_API_KEY / HF_TOKEN)');
       console.log(`point Cursor / VS Code / Open WebUI base URL here`);
+      console.log(sensitive
+        ? `sensitive: every request stays in the trusted pool (${gw.trusted.jurisdictions} operators, declared lineage without CN, verified+, no retention, no training)`
+        : 'sensitive requests: send header "onp-sensitive: 1" or use model onp/auto-sensitive (trusted pool only); --sensitive marks every request');
       if (Object.keys(aliases).length) console.log('aliases:', aliases);
       if (Object.keys(virtuals).length) console.log('virtual models:', virtuals);
       await new Promise(() => {}); // run until Ctrl+C
@@ -157,16 +168,18 @@ try {
     default:
       console.log(`onp — OpenNodes client (MVP)
 usage:
-  onp search [--modality text] [--tier community] [--lang en:strong] [--sort price|rank] ...
+  onp search [--modality text] [--tier community] [--lang en:strong] [--sort price|rank] [--trust trusted] [--retention none] [--no_training true] [--lineage declared] ...
   onp estimate --offering <node_id>/<offering_id> [--in 1000] [--out 500]
-  onp invoke --offering <node_id>/<offering_id> [--prompt "..."]
+  onp invoke --offering <node_id>/<offering_id> [--prompt "..."] [--sensitive]
   onp card <node-origin-url>
   onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--no-env-keys] [--min-tier unverified|community|verified] [--no-reputation] [--ollama http://127.0.0.1:11434 | --no-ollama] [--ledger receipts.jsonl]
   onp check <node_id>/<offering_id> [--key host=KEY] [--max-usd 0.02] [--context 8192|full] [--json] [--no-save]
   onp check --url https://api.example.com/v1 --model <id>    # any OpenAI-compatible endpoint
-  onp mcp [--print-config]    # stdio MCP server for Cursor / VS Code / Claude Desktop
+  onp mcp [--print-config] [--sensitive]    # stdio MCP server for Cursor / VS Code / Claude Desktop
   onp health
-env: ONP_REGISTRY (default https://registry.opennodes.io; a local registry runs at http://127.0.0.1:4300)`);
+--sensitive (or ONP_SENSITIVE=1): the requests carry personal data, so only the trusted pool is used
+env: ONP_REGISTRY (default https://registry.opennodes.io; a local registry runs at http://127.0.0.1:4300),
+     ONP_TRUSTED_JURISDICTIONS (operators of the trusted pool; default EU,CA)`);
   }
 } catch (err) {
   console.error('error:', err.message);
