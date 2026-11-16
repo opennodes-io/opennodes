@@ -1,0 +1,10 @@
+{
+  "name": "opennodes",
+  "version": "0.1.0",
+  "description": "Before bulk or repeatable AI work, compare priced options across providers (your current model, verified nodes, cheap listings, your own machine) and run the one you pick.",
+  "author": { "name": "OpenNodes", "url": "https://opennodes.io" },
+  "homepage": "https://opennodes.io/integrations",
+  "repository": "https://github.com/opennodes-io/opennodes",
+  "license": "Apache-2.0",
+  "keywords": ["inference", "llm", "cost", "routing", "mcp", "data-residency", "ollama"]
+}

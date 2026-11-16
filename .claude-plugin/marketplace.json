@@ -1,0 +1,16 @@
+{
+  "name": "opennodes",
+  "owner": { "name": "OpenNodes", "url": "https://opennodes.io" },
+  "metadata": {
+    "description": "Plugins from the OpenNodes project: price AI work across providers before you run it."
+  },
+  "plugins": [
+    {
+      "name": "opennodes",
+      "source": "./plugins/opennodes",
+      "description": "Before bulk or repeatable AI work, compare priced options across providers (your current model, verified nodes, cheap listings, your own machine) and run the one you pick.",
+      "category": "development",
+      "homepage": "https://opennodes.io/integrations"
+    }
+  ]
+}
