@@ -144,6 +144,11 @@
   <h3>Cursor <span class="kind">MCP</span></h3>
   <p class="install"><a class="btn primary" href="cursor://anysphere.cursor-deeplink/mcp/install?name=opennodes&amp;config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBvcGVubm9kZXMvY2xpIiwibWNwIl19">Add to Cursor</a> <span>opens Cursor, which asks you to confirm</span></p>
   <p>Or add to <code>~/.cursor/mcp.json</code> (or Settings → MCP → Add new server):</p><pre><code>{ "mcpServers": { "opennodes": { "command": "npx", "args": ["-y", "@opennodes/cli", "mcp"] } } }</code></pre>
+  <p><b>Quote before run.</b> Add the rule to a project, and before bulk AI work Cursor's agent shows a priced table of options (what you use now, your own machine, checked hosts, the cheapest, an in-region one), each with what it means for your data, and runs nothing until you choose. Then it can pilot the chosen option through the local gateway. From the project folder:</p><pre><code>mkdir -p .cursor/rules
+curl -fsSL -o .cursor/rules/opennodes-quote.mdc https://raw.githubusercontent.com/opennodes-io/opennodes/main/plugins/cursor/opennodes-quote.mdc</code></pre>
+  <p>In Windows PowerShell:</p><pre><code>New-Item -ItemType Directory -Force .cursor\rules | Out-Null
+Invoke-WebRequest -OutFile .cursor\rules\opennodes-quote.mdc https://raw.githubusercontent.com/opennodes-io/opennodes/main/plugins/cursor/opennodes-quote.mdc</code></pre>
+  <p>Then ask, for example, <i>quote translating the 2,000 files in ./docs into German</i>.</p>
 </div>
 <div class="card" id="vs-code-copilot-agent-mode">
   <h3>VS Code (Copilot agent mode) <span class="kind">MCP</span></h3>
