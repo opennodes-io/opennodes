@@ -1,7 +1,9 @@
 # Bielik 1.5B v3 Instruct (SpeakLeash, Apache-2.0) with the ChatML template its tokenizer uses.
-# The SpeakLeash Ollama upload ships a Llama-3 style template (<|start_header_id|>, <|eot_id|>),
-# but this model's vocabulary has <|im_start|> / <|im_end|> (eos = <|im_end|>, id 4): prompts in the
-# wrong format made it ramble, leak "<|end_response_id|>" and fail retrieval.
+# Until 8 Nov 2026 the SpeakLeash Ollama upload shipped a Llama-3 style template (<|start_header_id|>,
+# <|eot_id|>), but this model's vocabulary has <|im_start|> / <|im_end|> (eos = <|im_end|>, id 4):
+# prompts in the wrong format made it ramble, leak "<|end_response_id|>" and fail retrieval.
+# The upload now ships ChatML (speakleash/bielik-tools#55; theirs puts a space after <|im_start|>).
+# This file is the template our reference node was verified with; the upload works as it is too.
 #   docker compose exec ollama ollama pull SpeakLeash/bielik-1.5b-v3.0-instruct:Q8_0
 #   docker compose cp models/bielik-1.5b-v3.Modelfile ollama:/tmp/Modelfile
 #   docker compose exec ollama ollama create bielik-1.5b-v3.0-instruct -f /tmp/Modelfile

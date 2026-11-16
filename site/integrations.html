@@ -131,8 +131,10 @@
 </div></header>
 <section><div class="wrap"><h2>Editors and assistants (MCP)</h2><p class="lede-s">Any MCP host gets seven read-only tools — <code>recommend</code>, <code>search_offerings</code>, <code>get_offering</code>, <code>get_node</code>, <code>estimate</code>, <code>find_locations</code>, <code>find_residency</code> — from one stdio server. The advisor extracts features from your prompt locally and sends only those to the registry; the prompt itself never leaves your machine.</p><div class="grid2">
 <div class="card" id="claude-code">
-  <h3>Claude Code <span class="kind">MCP</span></h3>
-  <p>One command:</p><pre><code>claude mcp add --scope user opennodes -- npx -y @opennodes/cli mcp</code></pre>
+  <h3>Claude Code <span class="kind">Plugin</span></h3>
+  <p>The plugin adds the same tools plus <code>/opennodes:quote</code>: before bulk AI work it shows a priced table (what you use now, your own machine, checked hosts, the cheapest option, an in-region one), each with what it means for your data, and runs nothing until you choose. In a Claude Code terminal:</p><pre><code>/plugin marketplace add opennodes-io/opennodes
+/plugin install opennodes@opennodes</code></pre>
+  <p>Only the MCP tools, with one command:</p><pre><code>claude mcp add --scope user opennodes -- npx -y @opennodes/cli mcp</code></pre>
 </div>
 <div class="card" id="claude-desktop">
   <h3>Claude Desktop <span class="kind">MCP</span></h3>

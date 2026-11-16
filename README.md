@@ -69,6 +69,7 @@ MCP standardized how AI applications reach *tools*; the OpenAI API shape standar
 
 Clients and products consuming ONP — independent of the standard, listed here for discovery:
 
+- **[Claude Code plugin](plugins/opennodes/README.md)** — `/plugin marketplace add opennodes-io/opennodes`, then `/plugin install opennodes@opennodes`. Before bulk AI work it quotes the options across providers (what you use now, your own machine, checked hosts, the cheapest, an in-region one), each with a data label, and runs nothing until you choose; an agent then pilots the chosen option through the local gateway.
 - **[Surge](https://github.com/opennodes-io/surge)** (desktop client, pre-release — [Windows installer](https://github.com/opennodes-io/surge/releases); macOS and Linux build from source) — a desktop "browser for MCP" and the reference OpenNodes client: the model picker is fed live from the registry (trust tier, measured latency, price), **Auto** runs the advisor on your machine to pick a node per prompt, and every call is pinned to the node's card revision and comes back with a signed receipt Surge verifies. A spend policy is on from first launch, a dashboard keeps the ledger, and one click switches to private mode (local Ollama and LAN only). The first client to span both discovery layers (models via ONP, tools via MCP).
 
   ![Surge: OpenNodes models with verified receipts, a spend dashboard and one-click private mode](docs/media/surge-demo.gif)
