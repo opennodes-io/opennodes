@@ -1,4 +1,4 @@
-// Admission hardening after the Two Minds review (18 Nov 2026, sections 4.2, 4.3, 4.3a, 4.6):
+// Admission hardening after the expert review (18 Nov 2026, sections 4.2, 4.3, 4.3a, 4.6):
 // Stage B only on the registry's schedule or by an admin, disputes that survive re-registration,
 // no identity reference = not verified, the vendor-namespace rule, no verified tier for an unsigned
 // card, probe prompts from a private corpus, and blind probes whose 409s and failures count.

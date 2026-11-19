@@ -1,8 +1,8 @@
 # ONP Draft 0.1 — known issues and what happens to them
 
-Three independent reviews of Draft 0.1 raised the points below: two technical reviews in October 2026, and a review of node validation and trust by Two Minds (Mark Lindley) on 18 November 2026. This page records each point and its outcome: **fixed** (in the errata of 2026-10-23 or in a later revision), **planned** for Draft 0.2, **open**, or **not adopted** with the reason. New reports are welcome as [GitHub issues](https://github.com/opennodes-io/opennodes/issues).
+Three independent reviews of Draft 0.1 raised the points below: two technical reviews in October 2026, and a review of node validation and trust by an expert reviewer on 18 November 2026. This page records each point and its outcome: **fixed** (in the errata of 2026-10-23 or in a later revision), **planned** for Draft 0.2, **open**, or **not adopted** with the reason. New reports are welcome as [GitHub issues](https://github.com/opennodes-io/opennodes/issues).
 
-## Two Minds review (2026-11-18): node validation and trust
+## Expert review (2026-11-18): node validation and trust
 
 The review found that "verified" could not yet carry personal data: the admission battery could be timed, avoided or cleared, and the Ollama router treated any LAN peer as the user's own network. Its "Now" items for the Ollama router (section 4.11) are fixed in revision 10, and those for the registry and the Node Kit (sections 4.2, 4.3, 4.3a, 4.6) in revision 11 ([CHANGES](CHANGES.md)); the rest is listed with its status. Section numbers are the review's.
 
@@ -14,7 +14,7 @@ The review found that "verified" could not yet carry personal data: the admissio
 | 4.3a Scheduled Stage A (6 h) and Stage B (quarterly) were not implemented | **Fixed** (rev. 11): Stage A at least every 6 h and on every revision; Stage B after `community`, on change, and at a random time 1–91 days after a pass | ONP-3 §4a re-verification |
 | 4.3 A missing identity reference counted as a pass | **Fixed** (rev. 11): identity unverified, no `verified` | ONP-3 §4a.4 |
 | 4.3 Identity prompts were fixed and public | **Fixed** (rev. 11): references from a private corpus, a random subset per run; old references ignored | ONP-3 §4a |
-| 4.3 The Node Kit named open-weight models `urn:proprietary:…`, so they never had a reference | **Fixed** (rev. 11): `ollama:{name}` / `hf:{org}/{repo}`, operator override, warning for the fallback | ONP-2 §5; Node Kit |
+| 4.3 The Node Kit named open-weight models `urn:proprietary:…`, so they never had a reference | **Fixed** (rev. 11): `ollama:{name}[:{tag}]` (the optional tag names the quantization) / `hf:{org}/{repo}`, operator override, warning for the fallback | ONP-2 §5; Node Kit |
 | 4.3 The vendor-namespace rule was specified but not enforced | **Fixed** (rev. 11): vendor table, Stage A `artifact-namespace` | ONP-3 §6.3 |
 | 4.3 A disputed node cleared itself by registering again (demo node, 4 Oct) | **Fixed** (rev. 11): a dispute ends only with a recorded resolution | ONP-3 §3, §4 |
 | 4.2 An unsigned card could reach `verified` | **Fixed** (rev. 11): refused at Stage B; a `verified` node with a failing re-fetched card is demoted | ONP-2 §8 |
@@ -54,7 +54,7 @@ The review found that "verified" could not yet carry personal data: the admissio
 | Criteria for the `attested` tier | Which attestation types, from which attesters, how fresh |
 | Settlement API | Deposit, token issue, redeem, statements (OpenAPI companion) |
 | Identity checks across heterogeneous hardware | Two-tier: distribution/logprob comparison where exposed, behavioral signature otherwise |
-| `model.artifact` cannot name a file or revision inside a repository (e.g. one GGUF quantization) | Optional `:{tag}` / `@{revision}` suffix; schema pattern widened |
+| `model.artifact` cannot name a file or revision inside a repository (e.g. one GGUF quantization) | Done for Ollama artefacts in revision 11: `ollama:{name}[:{tag}]`, the tag naming the quantization (ONP-2 §5). Still planned for `hf:{org}/{repo}`: an optional `:{tag}` / `@{revision}` suffix, with the schema pattern widened |
 | Operator country vs. where an offering runs; endpoints per offering | Per-offering execution location (ISO 3166-1) and optional per-offering endpoints |
 | Receipts for audits | Optional account binding (hash of the buyer account or a client nonce) and execution location in the signed receipt — still operator statements, not proof |
 | Attested residency | An auditor credential for residency (the network checks above are signals, not proof); operator identity checks (registered EU company, sanctions screening) before an "EU operator" label |
