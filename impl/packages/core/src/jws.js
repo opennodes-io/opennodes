@@ -1,5 +1,5 @@
 // Compact JWS (EdDSA/Ed25519) over detached JSON payloads, using node:crypto only.
-import { generateKeyPairSync, sign as edSign, verify as edVerify, createPublicKey, createPrivateKey } from 'node:crypto';
+import { generateKeyPairSync, sign as edSign, verify as edVerify, createPublicKey, createPrivateKey, createHash } from 'node:crypto';
 
 const b64u = (buf) => Buffer.from(buf).toString('base64url');
 const fromB64u = (s) => Buffer.from(s, 'base64url');
@@ -36,6 +36,20 @@ export function keypairFromPem(pem) {
 
 export function keyFromJwk(jwk) {
   return createPublicKey({ key: jwk, format: 'jwk' });
+}
+
+// RFC 7638: the members that identify a public key, by key type.
+const THUMBPRINT_MEMBERS = { OKP: ['crv', 'kty', 'x'], EC: ['crv', 'kty', 'x', 'y'], RSA: ['e', 'kty', 'n'] };
+
+/**
+ * JWK thumbprint (RFC 7638, SHA-256, base64url): a short, stable name for a public key. Clients pin
+ * a LAN peer by the thumbprint of the key that signs its card (ONP-3 §5b).
+ */
+export function jwkThumbprint(jwk) {
+  const members = THUMBPRINT_MEMBERS[jwk?.kty];
+  if (!members || members.some((m) => typeof jwk[m] !== 'string')) throw new Error(`cannot take the thumbprint of a ${jwk?.kty ?? 'malformed'} key`);
+  const canonical = '{' + members.map((m) => `${JSON.stringify(m)}:${JSON.stringify(jwk[m])}`).join(',') + '}';
+  return createHash('sha256').update(canonical).digest('base64url');
 }
 
 /** Sign a JSON payload; returns compact JWS string header.payload.signature. */

@@ -28,9 +28,12 @@ export async function readJson(req, limit = 1_000_000) {
  * Handler signature: (req, res, { params, query, url }).
  * opts.cors enables permissive CORS (public read APIs and inference nodes serving
  * browser clients — ONP headers and receipts are exposed to cross-origin pages).
+ * opts.before(req, res) runs first on every request; when it returns true it has answered (an
+ * access check refused the request, or a CORS preflight was handled) and no route runs.
  */
-export function createApp(routes, { cors = false } = {}) {
+export function createApp(routes, { cors = false, before = null } = {}) {
   return createServer(async (req, res) => {
+    if (before && before(req, res)) return;
     if (cors) {
       res.setHeader('access-control-allow-origin', '*');
       res.setHeader('access-control-allow-headers', 'content-type, authorization, onp-offering, onp-card-revision');

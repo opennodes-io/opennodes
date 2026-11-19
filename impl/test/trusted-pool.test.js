@@ -92,11 +92,14 @@ test('trust rules: data policy, lineage, the trusted view and why an offering is
   assert.ok(inTrustedPool(variant({ jurisdiction: { country: 'GB' } }), trustedView('EU,CA,UK')), 'UK means GB');
   assert.ok(!inTrustedPool(TRUSTED, trustedView('')), 'no trusted country: no hosted offering is trusted');
 
-  // the user's own machine or LAN: nothing reaches an operator, but the lineage rule still applies
+  // the user's own machine or a LAN peer pinned by card key: nothing reaches an operator, but the lineage rule still applies
   const local = { node_id: 'local', offering_id: 'tiny', tier: 'local', model: { name: 'tiny' }, data_policy: null };
   assert.deepEqual(trustGaps(local), ['model lineage not declared']);
   assert.ok(inTrustedPool({ ...local, model: { name: 'tiny', lineage_origins: ['US'] } }, trustedView('')));
-  assert.ok(inTrustedPool({ ...local, tier: 'lan', model: { name: 'x', lineage_origins: ['FR'] } }));
+  assert.ok(inTrustedPool({ ...local, tier: 'lan', lan: { pinned: true }, model: { name: 'x', lineage_origins: ['FR'] } }));
+  // an unpinned LAN peer is an operator the client knows nothing about (ONP-3 §5b)
+  assert.deepEqual(trustGaps({ ...local, tier: 'lan', model: { name: 'x', lineage_origins: ['FR'] } }),
+    ['LAN peer not pinned by its card key', 'operator country unknown, outside EU,CA', 'no data_policy']);
 
   assert.equal(trustedJurisdictionsFrom({}), 'EU,CA');
   assert.equal(trustedJurisdictionsFrom({ ONP_TRUSTED_JURISDICTIONS: ' EU,CA,CH ' }), 'EU,CA,CH');
@@ -296,10 +299,10 @@ test('ollama router: a sensitive request skips open-pool models, local ones incl
   assert.equal(refused.status, 403);
   assert.match((await refused.json()).error, /open pool, the request is sensitive \(model lineage not declared\)/);
   assert.equal((await chat(router, 'auto-sensitive')).status, 200);
-  const advice = await (await fetch(`${router.origin}/router/advice`)).json();
+  const advice = await (await fetch(`${router.origin}/router/advice`, { headers: { authorization: `Bearer ${router.token}` } })).json();
   assert.equal(advice.sensitive, true);
   assert.deepEqual(advice.recommendations.map((r) => r.offering), [`${FIXTURE}/echo-1`], 'the local model without lineage is left out');
-  const catalog = await (await fetch(`${router.origin}/router/catalog`)).json();
+  const catalog = await (await fetch(`${router.origin}/router/catalog`, { headers: { authorization: `Bearer ${router.token}` } })).json();
   assert.equal(catalog.models.find((m) => m.name === 'tiny:latest').pool, 'open');
 
   const caOnly = await start({ trustedJurisdictions: 'CA', policy: { sensitive: true } });

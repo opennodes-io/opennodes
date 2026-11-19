@@ -3,13 +3,14 @@
 Shared building blocks of the OpenNodes Protocol (ONP) reference implementation:
 
 - **Node Card** — JSON Schema validation (`validateCard`) and signature verification (`verifyCardSignature`).
-- **JWS** — Ed25519 sign/verify with a stable canonical serialization that byte-matches across the JS and Python implementations (`signJson`, `verifyJws`, `generateKeypair`, `keypairFromPem`, `keyFromJwk`).
+- **JWS** — Ed25519 sign/verify with a stable canonical serialization that byte-matches across the JS and Python implementations (`signJson`, `verifyJws`, `generateKeypair`, `keypairFromPem`, `keyFromJwk`), and `jwkThumbprint` (RFC 7638) for pinning a key.
 - **Pricing** — `costForUsage`, `estimateBounds`, `round6`: the arithmetic behind enforceable estimates and receipt checks (`amount = usage × pinned price`).
 - **Advisor** — `extractFeatures` (task → routing features, never the text) and `recommend` (deterministic ranking with filters, weighted components, labeled quality basis, explanations, optional scenario, MCP tool categories).
 - **Trusted and open pools** (ONP-3 §5e):
   - `trustedView(jurisdictions)` (default `EU,CA`, or `trustedJurisdictionsFrom(env)` for `ONP_TRUSTED_JURISDICTIONS`), `inTrustedPool`, `poolOf`, and `trustGaps`, which says in words why an offering is open;
   - the filters behind it: `meetsDataPolicy` (`retention`, `no_training`) and `lineageAllowed` (`exclude`, `declared`);
-  - `recommend(…, { sensitive: true, trusted })` keeps only the trusted pool, and `sensitiveHeader` reads `onp-sensitive`.
-- **HTTP helpers** — tiny router with CORS, problem+json errors, graceful close.
+  - `recommend(…, { sensitive: true, trusted })` keeps only the trusted pool, and `sensitiveHeader` reads `onp-sensitive`;
+  - `onOwnNetwork`: the user's own machine, or a LAN peer (tier `lan`) marked `lan.pinned: true` because its card key is pinned (ONP-3 §5b). Any other `lan` offering ranks and filters as `unverified`.
+- **HTTP helpers** — tiny router with CORS, a `before` hook for access checks, problem+json errors, graceful close.
 
 Used by `@opennodes/cli` and `@opennodes/registry`. Part of [OpenNodes](https://opennodes.io) · Apache-2.0.

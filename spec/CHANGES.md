@@ -1,5 +1,58 @@
 # ONP specification changes
 
+## Draft 0.1, revision 10 — 2026-11-19: the user's own network means a pinned LAN peer
+
+This revision answers the two High findings on the Ollama router in the Two Minds review of 18 November 2026 (section 4.11). First, any web page could add a "LAN" peer, read receipts and spend the user's keys. Second, an mDNS peer with any origin counted as the user's own network for private, EU and sensitive routing.
+
+| # | Where | Change |
+|---|---|---|
+| L1 | ONP-3 §5b, §5e | A LAN peer is the user's own network only when the user pinned the key that signs its card and the peer answers at the origin that card names, so a copied card served elsewhere is not pinned. The client checks this again whenever it reloads the card. Only a pinned peer satisfies `region`, `jurisdiction`, a private-only preset and §5e item 2. A peer added by address alone, or a plain server with no card, is an offering of unknown operator, location and data policy, and it ranks as `unverified` |
+| L2 | ONP-3 §5b | A missing `data_policy` is unknown. It is never read as `retention: none` or `training_on_inputs: false` |
+| L3 | ONP-3 §5b | Discovery is off by default, and a discovered peer is used only when it is pinned. An advertised origin on another host than the sender is ignored. LAN peers are invoked at the origin the client reached |
+| L4 | ONP-3 §5b | A client's local API: no wildcard CORS. Routes that add peers or show the catalogue, receipts or advice need a credential. Model routes may serve the same machine without one, given a loopback Host and a local or allowed Origin. A client listening on other interfaces needs the credential from other machines |
+
+### Reference implementation changes
+
+- `@opennodes/ollama-router` 0.1.27:
+  - **Access:**
+    - The router no longer sends `Access-Control-Allow-Origin: *`.
+    - `/router/*` needs `authorization: Bearer <token>`. The token comes from `--token` or `ONP_ROUTER_TOKEN`, else the router keeps one in `~/.opennodes/ollama-router-token`. The library returns it as `router.token`.
+    - The Ollama and OpenAI routes serve this machine without the token when two things hold. The Host must be a local name: loopback, `localhost`, `host.docker.internal`, the machine's name, or one added with `--allow-host`. Any Origin must be a local page, a desktop app shell that Ollama also accepts (`app:`, `tauri:`, `vscode-webview:`, `vscode-file:`), or one added with `--allow-origin` or `ONP_ROUTER_ORIGINS`. `*` and `null` are refused.
+    - `--public-bind` refuses to start without `--token`. Requests from other machines then need the token on every route.
+  - **mDNS** is off by default and turned on with `--mdns`. `--no-mdns` is still accepted and changes nothing. The TXT `origin` is used only when it names the host that sent the answer. Answers from outside private and link-local ranges are ignored. A discovered node is used only when it is pinned; otherwise it is listed under `discovered` in `/router/catalog`, with its key and its card's endpoint.
+  - **Pinning:**
+    - The router takes `--pin <thumbprint>` (RFC 7638), `POST /router/peers {"origin", "pin"}` and `--show-pin <origin>`.
+    - A pin holds only when the card is signed by the pinned key and the peer answers at the origin its card names in `endpoints.openai`, however the peer was added. `POST /router/peers` with a pin refuses (`422`) a card signed by another key or served away from its origin.
+    - Peers carry `source` (`added` or `mdns`), `pinned` and `key`. `/router/catalog` lists `peers`, `discovered`, `pins` and `mdns`, and marks each LAN model `pinned`.
+    - The pin is checked again each time the catalogue is reloaded (every 30 s while in use). A card signed by another key loses the pin.
+  - **LAN entries:**
+    - A LAN card has no default data policy.
+    - A plain Ollama peer no longer carries `local` or a data policy.
+    - ONP peers are invoked at the reached origin, keeping the card's path.
+    - Receipts from a LAN node are verified with the key that signed its card.
+  - **Routing:** `auto-private` uses this machine and pinned peers only. `auto-<jurisdiction>` and sensitive requests leave unpinned peers out, and a sensitive request to one by name gets `403 … LAN peer not pinned by its card key`.
+- `@opennodes/core` 0.1.24:
+  - New `onOwnNetwork(offering)`. Tier `lan` counts as the user's own network only with `lan.pinned: true`. Otherwise it ranks and filters as `unverified` in `recommend`, the embedder ranking, `inRegion` and `trustGaps`, which gains the gap `LAN peer not pinned by its card key`.
+  - New `jwkThumbprint` (RFC 7638) and a `before` hook in `createApp`.
+  - `needsMasking` still exempts every LAN peer (see the known gaps below).
+- `@opennodes/cli` 0.1.33 and `@opennodes/registry` 0.1.53 only move to core 0.1.24; their behaviour is unchanged. The hosted registry stays on 0.1.52 (`deploy/registry/Dockerfile`).
+- Tests: `impl/test/router-lan-trust.test.js` (10 tests). The existing router, advisor and trusted-pool tests are updated for the token and the pinned mark.
+- **Compatibility (router users):**
+  - Scripts that read `/router/*` or add peers must send the token.
+  - `--public-bind` needs `--token`, and apps on other machines must send it. Many Ollama apps cannot send a bearer header.
+  - LAN discovery needs `--mdns` plus a pin.
+  - Peers added with `--peer`, and every plain Ollama peer, no longer serve `auto-private`, `auto-<country>` or sensitive requests. A plain Ollama server cannot be pinned; put a Node Kit node in front of it.
+  - A Node Kit node whose card names a public URL, but which the router reaches by its LAN address, cannot be pinned. Set its `--public-url` to the LAN address, or add it at the origin its card names.
+  - Added peers rank as unverified, so plain `auto` may prefer a public node over them.
+  - Requests without the token are refused when the Host is not a local name, for example behind a reverse proxy or when the router is reached by the machine's LAN address.
+  - A browser origin other than a local page or an app shell needs `--allow-origin`.
+  - In `@opennodes/core`, `tier: 'lan'` without `lan.pinned: true` no longer counts as the user's network.
+- Known gaps:
+  - LAN traffic is still never PII-masked. Peers are now only the ones the user added or pinned. Masking plain Ollama peers would drop native Ollama options and refuse images on the passthrough path. Masking unpinned ONP peers is a possible follow-up.
+  - A pin authenticates the card, not each response. Over plain HTTP, an attacker on the network path who takes over a pinned peer's address receives its requests. The failed receipt check is logged only afterwards. TLS would close this.
+  - `--show-pin` needs Node.js on the node's machine, which runs the Python Node Kit. Running it over the LAN is trust on first use. The Node Kit should print its own thumbprint.
+  - The gateway's loopback Host and Origin check (review 4.11, Medium) is separate work.
+
 ## Reference implementation — 2026-11-10: PII masking and a Ukrainian location seed (no spec change)
 
 - PII masking before the open pool, in `@opennodes/core` 0.1.23 (`pii.js`), `@opennodes/cli` 0.1.32 (gateway and `onp invoke`) and `@opennodes/ollama-router` 0.1.26. Design and limits: `docs/pii-masking.md`.
