@@ -5,8 +5,28 @@ import { startGateway, TIERS, credentialsFrom } from './src/gateway.js';
 import { checkOffering, saveCheck, DEFAULT_CHECKS_PATH } from './src/check.js';
 import { DEFAULT_REPUTATION_PATH } from './src/reputation.js';
 import { createStdioMcp } from './src/mcpserver.js';
-import { piiDetectorFrom, describeMaskCounts } from '@opennodes/core';
+import { piiDetectorFrom, describeMaskCounts, newToken } from '@opennodes/core';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
 
+const { version: VERSION } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+const GATEWAY_TOKEN_PATH = join(homedir(), '.opennodes', 'gateway-token');
+
+/** The gateway API token (ONP-3 §5b): kept in ~/.opennodes/gateway-token, created on first start, like the router's. */
+function keptGatewayToken() {
+  try {
+    if (existsSync(GATEWAY_TOKEN_PATH)) { const kept = readFileSync(GATEWAY_TOKEN_PATH, 'utf8').trim(); if (kept) return { token: kept, where: `kept in ${GATEWAY_TOKEN_PATH}` }; }
+    mkdirSync(dirname(GATEWAY_TOKEN_PATH), { recursive: true });
+    const token = newToken();
+    writeFileSync(GATEWAY_TOKEN_PATH, token + '\n', { mode: 0o600 });
+    return { token, where: `kept in ${GATEWAY_TOKEN_PATH}` };
+  } catch (err) {
+    const token = newToken();
+    console.error(`could not keep the gateway token in ${GATEWAY_TOKEN_PATH} (${err.message}). For this run only it is: ${token}`);
+    return { token, where: 'printed above, for this run only' };
+  }
+}
 const [cmd, ...args] = process.argv.slice(2);
 // Default: the hosted OpenNodes registry. Point ONP_REGISTRY at http://127.0.0.1:4300 for a local one.
 const registry = process.env.ONP_REGISTRY ?? 'https://registry.opennodes.io';
@@ -78,12 +98,13 @@ try {
     case 'mcp': {
       if (args.includes('--print-config')) {
         const binPath = new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
-        // Installed from npm → portable npx form; running from a checkout → absolute path.
+        // Installed from npm → portable npx form, pinned to this exact version (an unpinned npx would run
+        // whatever is published next, on every start); running from a checkout → absolute path.
         const installed = /[\\/]node_modules[\\/]@opennodes[\\/]cli[\\/]/.test(binPath);
         const env = { ONP_REGISTRY: registry, ...(sensitive ? { ONP_SENSITIVE: '1' } : {}),
           ...(process.env.ONP_TRUSTED_JURISDICTIONS ? { ONP_TRUSTED_JURISDICTIONS: process.env.ONP_TRUSTED_JURISDICTIONS } : {}) };
         const server = installed
-          ? { command: 'npx', args: ['-y', '@opennodes/cli', 'mcp'], env }
+          ? { command: 'npx', args: ['-y', `@opennodes/cli@${VERSION}`, 'mcp'], env }
           : { command: process.execPath, args: [binPath, 'mcp'], env };
         console.log('Add to Cursor (~/.cursor/mcp.json), VS Code (mcp.json), or Claude Desktop config:');
         console.log(JSON.stringify({ mcpServers: { opennodes: server } }, null, 2));
@@ -98,8 +119,12 @@ try {
       const aliases = {};
       const virtuals = {};
       const keys = {};
+      const allowOrigins = [];
+      const allowHosts = [];
       for (let i = 0; i < args.length; i++) {
-        if (args[i] === '--alias') {
+        if (args[i] === '--allow-origin') allowOrigins.push(args[++i]);
+        else if (args[i] === '--allow-host') allowHosts.push(args[++i]);
+        else if (args[i] === '--alias') {
           const [name, target] = args[++i].split('=');
           aliases[name] = target;
         } else if (args[i] === '--virtual') {
@@ -112,10 +137,13 @@ try {
       }
       const minTier = flag('min-tier');
       if (minTier && !TIERS.includes(minTier)) throw new Error(`--min-tier must be one of ${TIERS.join(', ')}`);
+      const token = flag('token', null);
+      const api = token ? { token, where: 'your --token' } : keptGatewayToken();   // what /gateway/* needs
       const gw = await startGateway({
         registry,
         port: Number(flag('port', 4141)),
-        token: flag('token', null),
+        token,
+        apiToken: api.token,
         aliases,
         virtuals,
         keys,
@@ -124,13 +152,21 @@ try {
         // embeddings go to the local Ollama's embedding models first (not OLLAMA_HOST: that may be the router)
         ollama: args.includes('--no-ollama') ? null : flag('ollama', 'http://127.0.0.1:11434'),
         ledgerPath: flag('ledger', null),
-        env: args.includes('--no-env-keys') ? {} : process.env,
+        // Provider key variables (OPENROUTER_API_KEY, HF_TOKEN, ...) only with --env-keys; --no-env-keys is the default now.
+        envKeys: args.includes('--env-keys') && !args.includes('--no-env-keys'),
+        allowOrigins,
+        allowHosts,
         ...pii,
       });
       console.log(`onp gateway (OpenAI-compatible) at ${gw.origin}/v1`);
       console.log(gw.keyHosts.length
         ? `keys for: ${gw.keyHosts.join(', ')} (each sent only to its own host)`
-        : 'no provider keys: onp/auto uses free registered nodes only (add --key host=KEY or set OPENROUTER_API_KEY / HF_TOKEN)');
+        : 'no provider keys: onp/auto uses free registered nodes only (add --key host=KEY, or --env-keys to use OPENROUTER_API_KEY, HF_TOKEN, ... from the environment)');
+      if (gw.envKeysIgnored.length) console.log(`not used: ${gw.envKeysIgnored.join(', ')} (set in the environment; pass --env-keys to use them)`);
+      console.log(token
+        ? 'access: every request needs "authorization: Bearer <token>"'
+        : `access: apps on this machine; browser pages only from localhost${allowOrigins.length ? ` and ${allowOrigins.join(', ')}` : ''} (--allow-origin adds one)`);
+      console.log(`gateway API (/gateway/receipts, /gateway/advice, /gateway/reputation) needs "authorization: Bearer <token>"; the token is ${api.where}`);
       console.log(`point Cursor / VS Code / Open WebUI base URL here`);
       console.log(sensitive
         ? `sensitive: every request stays in the trusted pool (${gw.trusted.jurisdictions} operators, declared lineage without CN, verified+, no retention, no training)`
@@ -189,7 +225,11 @@ usage:
   onp estimate --offering <node_id>/<offering_id> [--in 1000] [--out 500]
   onp invoke --offering <node_id>/<offering_id> [--prompt "..."] [--sensitive] [--mask-pii off|open|all] [--pii-service <url>] [--pii-llm <model>[@<url>]]
   onp card <node-origin-url>
-  onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--no-env-keys] [--min-tier unverified|community|verified] [--no-reputation] [--ollama http://127.0.0.1:11434 | --no-ollama] [--ledger receipts.jsonl] [--mask-pii off|open|all] [--pii-service <url>] [--pii-llm <model>[@<url>]]
+  onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--env-keys] [--allow-origin http://app.example:3000]... [--allow-host proxy.internal]... [--min-tier unverified|community|verified] [--no-reputation] [--ollama http://127.0.0.1:11434 | --no-ollama] [--ledger receipts.jsonl] [--mask-pii off|open|all] [--pii-service <url>] [--pii-llm <model>[@<url>]]
+     --env-keys: also use the provider keys set in the environment (OPENROUTER_API_KEY, HF_TOKEN, OPENAI_API_KEY, ...); off by default.
+     Without --token: apps on this machine, by a local Host (127.0.0.1, localhost); browser pages only from localhost or an --allow-origin.
+     The gateway API (/gateway/receipts, /advice, /reputation) needs the token kept in ~/.opennodes/gateway-token (or your --token).
+     POST bodies must be "content-type: application/json".
   onp check <node_id>/<offering_id> [--key host=KEY] [--max-usd 0.02] [--context 8192|full] [--json] [--no-save]
   onp check --url https://api.example.com/v1 --model <id>    # any OpenAI-compatible endpoint
   onp mcp [--print-config] [--sensitive]    # stdio MCP server for Cursor / VS Code / Claude Desktop

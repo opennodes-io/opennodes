@@ -258,7 +258,7 @@ test('gateway: a sensitive request is routed and sent only inside the trusted po
   t.after(() => after.close());
   assert.equal((await chat(after, 'onp/auto', { 'onp-sensitive': '1' })).status, 200);
   assert.equal((await chat(after, 'onp/auto-sensitive')).status, 200);
-  const advice = await (await fetch(`${after.origin}/gateway/advice`)).json();
+  const advice = await (await fetch(`${after.origin}/gateway/advice`, { headers: { authorization: `Bearer ${after.apiToken}` } })).json();
   assert.equal(advice.sensitive, true);
   assert.equal(advice.recommendations[0].offering, `${FIXTURE}/echo-1`);
 

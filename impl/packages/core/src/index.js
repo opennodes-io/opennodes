@@ -1,6 +1,7 @@
 export * from './jws.js';
 export * from './card.js';
 export * from './http.js';
+export * from './access.js';
 export * from './pricing.js';
 export * from './regions.js';
 export * from './geo.js';

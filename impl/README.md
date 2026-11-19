@@ -17,9 +17,9 @@ Requires Node ≥ 22.5 (uses `node:sqlite`, built-in Ed25519). Zero runtime depe
 ## Install (published)
 
 ```
-npx @opennodes/registry                  # registry: web app + API + MCP on :4300
-npx @opennodes/cli mcp --print-config    # stdio MCP server config for Cursor / VS Code / Claude Desktop
-npx @opennodes/cli gateway --port 4141   # OpenAI-compatible gateway with onp/auto routing
+npx @opennodes/registry@0.1.53                  # registry: web app + API + MCP on :4300
+npx @opennodes/cli@0.1.33 mcp --print-config    # stdio MCP server config for Cursor / VS Code / Claude Desktop
+npx @opennodes/cli@0.1.33 gateway --port 4141   # OpenAI-compatible gateway with onp/auto routing
 ```
 
 ## Develop
@@ -48,12 +48,12 @@ node packages/cli/bin.js invoke --offering org.opennodes.fixture/echo-1 --prompt
 `onp mcp` is a stdio MCP server exposing `recommend` (the advisor — features are extracted
 locally, the prompt never leaves the machine) / `search_offerings` / `get_offering` / `get_node` / `estimate`
 across everything the registry knows — registered nodes plus the imported OpenRouter,
-Hugging Face, models.dev, and Ollama catalogs. Editor config (`npx @opennodes/cli mcp --print-config`):
+Hugging Face, models.dev, and Ollama catalogs. Editor config (`npx @opennodes/cli@0.1.33 mcp --print-config`):
 
 ```json
 { "mcpServers": { "opennodes": {
     "command": "npx",
-    "args": ["-y", "@opennodes/cli", "mcp"],
+    "args": ["-y", "@opennodes/cli@0.1.33", "mcp"],
     "env": { "ONP_REGISTRY": "http://127.0.0.1:4300" } } } }
 ```
 
@@ -62,14 +62,19 @@ Hugging Face, models.dev, and Ollama catalogs. Editor config (`npx @opennodes/cl
 ### Gateway: use discovered nodes from Cursor / VS Code / any OpenAI client
 
 ```
-npx @opennodes/cli gateway --port 4141 --token dev-secret --virtual "eu-cheap=modality=text&sort=price"
+npx @opennodes/cli@0.1.33 gateway --port 4141 --token dev-secret --virtual "eu-cheap=modality=text&sort=price"
 ```
 
 Then in the third-party client set the OpenAI-compatible base URL to `http://127.0.0.1:4141/v1`
 (API key: `dev-secret`) — discovered offerings, aliases, query-defined virtual models, and the
 advisor-routed `onp/auto`, `onp/auto-cheap`, `onp/auto-fast`, `onp/auto-quality`, `onp/auto-private`
 appear in its model list; every request is pinned, policy-checked, receipted, and logged. Spend so far:
-`GET /gateway/receipts`; the last routing decision: `GET /gateway/advice`.
+`GET /gateway/receipts`; the last routing decision: `GET /gateway/advice`. Both need the gateway token
+(`authorization: Bearer dev-secret` here; without `--token`, the one kept in `~/.opennodes/gateway-token`):
+
+```
+curl -H "authorization: Bearer dev-secret" http://127.0.0.1:4141/gateway/receipts
+```
 
 ## Deliberate MVP-0 shortcuts (tracked against requirements)
 

@@ -3,6 +3,10 @@ name: Publish to the MCP Registry
 # Lists the OpenNodes MCP server (io.github.opennodes-io/opennodes) in the official MCP Registry.
 # Token-free: authenticates with GitHub OIDC, which proves this workflow runs in the opennodes-io org.
 # Run manually after a new @opennodes/cli version is on npm and server.json carries that version.
+#
+# mcp-publisher is downloaded at a pinned version and checked against its SHA-256 before it runs.
+# To move to a newer release, take both values from that release's registry_<version>_checksums.txt
+# (https://github.com/modelcontextprotocol/registry/releases); see deploy/RELEASING.md.
 
 on:
   workflow_dispatch:
@@ -11,14 +15,22 @@ permissions:
   contents: read
   id-token: write
 
+env:
+  MCP_PUBLISHER_VERSION: v1.8.9
+  MCP_PUBLISHER_SHA256: 4d527ca8f1ced0394c962dc925c2a4a4addef441cbefd62501c875e9481823a8   # mcp-publisher_linux_amd64.tar.gz
+
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Install mcp-publisher
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install mcp-publisher (pinned, checksum verified)
         run: |
-          curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          set -eu
+          curl -fsSL -o mcp-publisher_linux_amd64.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${MCP_PUBLISHER_SHA256}  mcp-publisher_linux_amd64.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher_linux_amd64.tar.gz mcp-publisher
           ./mcp-publisher --help | head -1
       - name: Validate server.json
         working-directory: impl/packages/cli

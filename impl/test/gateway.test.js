@@ -53,7 +53,7 @@ test('plain OpenAI client works through the gateway: models, chat, receipts ledg
   }
 
   // Receipts were verified and logged with cost
-  const ledger = await (await fetch(`${gw.origin}/gateway/receipts`)).json();
+  const ledger = await (await fetch(`${gw.origin}/gateway/receipts`, { headers: { authorization: `Bearer ${gw.apiToken}` } })).json();
   assert.equal(ledger.count, 3);
   assert.ok(ledger.total_cost > 0);
   assert.ok(ledger.entries.every((e) => e.receipt_id && e.cost !== null));
@@ -77,7 +77,7 @@ test('streaming passes through with usage in final chunk', async (t) => {
   // The streamed receipt (published by URL after the stream) is fetched, verified and recorded.
   let ledger;
   for (let i = 0; i < 20; i++) {
-    ledger = await (await fetch(`${gw.origin}/gateway/receipts`)).json();
+    ledger = await (await fetch(`${gw.origin}/gateway/receipts`, { headers: { authorization: `Bearer ${gw.apiToken}` } })).json();
     if (ledger.count) break;
     await new Promise((r) => setTimeout(r, 50));
   }
@@ -153,6 +153,7 @@ test('onp/auto with nothing callable explains how to add keys', async (t) => {
   assert.equal(res.status, 404);
   const body = await res.json();
   assert.match(JSON.stringify(body), /OPENROUTER_API_KEY/);
+  assert.match(JSON.stringify(body), /--env-keys/, 'env keys are opt-in, and the hint says how');
 });
 
 test('--min-tier: auto-routing honours it, and so does an explicitly named node', async (t) => {

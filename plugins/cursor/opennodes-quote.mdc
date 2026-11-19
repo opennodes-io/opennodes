@@ -69,9 +69,9 @@ Ask which option they want. **Stop there.** Don't change code, start servers, or
 ## 4. After they choose
 
 - **What they use now**: carry on as before.
-- **Code changes**: the OpenNodes gateway speaks the OpenAI API. Start it with `npx -y @opennodes/cli gateway --port 4141`, point the code at `http://127.0.0.1:4141/v1`, and use the chosen `node_id/offering_id` as the model (or `onp/auto-eu`, `onp/auto-cheap`, `onp/auto-private` to let it route). Provider keys come from environment variables the user sets themselves.
+- **Code changes**: the OpenNodes gateway speaks the OpenAI API. Start it with `npx -y @opennodes/cli@0.1.33 gateway --port 4141`, point the code at `http://127.0.0.1:4141/v1`, and use the chosen `node_id/offering_id` as the model (or `onp/auto-eu`, `onp/auto-cheap`, `onp/auto-private` to let it route). Provider keys come from environment variables the user sets themselves; from cli 0.1.34 the gateway uses them only when started with `--env-keys` (or one key with `--key host=KEY`).
 - **Run the batch for them**: confirm the spend limit and where results go, then:
-  1. Check the gateway (`curl -s http://127.0.0.1:4141/v1/models`); start it if needed. If the chosen provider's key isn't set, say which environment variable to set, and stop.
+  1. Check the gateway (`curl -s http://127.0.0.1:4141/v1/models`); start it if needed, with `--env-keys` only when the chosen option needs the user's provider key. If that key isn't set, say which environment variable to set, and stop.
   2. Write a small script in the project's language that sends each item to the gateway with the chosen model, writes each result next to its item, records `usage` per item, retries an item at most twice, and skips items that already have a result.
   3. **Pilot first:** 3 items (or 1%, at most 20). Show 2–3 sample outputs, measured tokens and cost per item, the projected total against the spend limit, and any failures. Ask before running the rest.
   4. Full run only after a yes: keep a running cost total and stop before the spend limit. Finish with items done and failed, total tokens, total cost from listed prices, and where the results are.
@@ -80,7 +80,7 @@ Ask which option they want. **Stop there.** Don't change code, start servers, or
 
 ## Rules
 
-- **Keys**: never ask the user to paste a key into the chat. Keys go in environment variables (`OPENROUTER_API_KEY`, `HF_TOKEN`, `MISTRAL_API_KEY`, …) or `--key host=KEY` when they start the gateway themselves.
+- **Keys**: never ask the user to paste a key into the chat. Keys go in environment variables (`OPENROUTER_API_KEY`, `HF_TOKEN`, `MISTRAL_API_KEY`, …), which the gateway reads only with `--env-keys` from cli 0.1.34 (always before), or `--key host=KEY` when they start the gateway themselves.
 - **Neutral**: rank by fit for their job. Don't steer towards or away from any provider, including the one you run on.
 - **Honest numbers**: imported listings are unverified; prices can be stale; say so when an option's price or speed comes only from a catalogue.
 - **Small jobs**: if the whole job costs under about $0.50 on what they use now, say the saving isn't worth the switch, show the one-line comparison, and move on.

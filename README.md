@@ -14,11 +14,11 @@
 ## Quick start
 
 ```bash
-npx @opennodes/ollama-router            # OpenNodes for Ollama: one Ollama endpoint over local + LAN + verified public models
-npx @opennodes/cli mcp --print-config   # MCP tools for Cursor / VS Code / Claude Desktop / Kiro (or use https://registry.opennodes.io/mcp)
-npx @opennodes/cli gateway --port 4141  # OpenAI-compatible gateway with onp/auto routing; base URL http://127.0.0.1:4141/v1
-npx @opennodes/registry                 # run your own registry: web app + API + MCP on http://127.0.0.1:4300
-pipx install onp-node                   # Node Kit: list a vLLM / Ollama / TGI deployment, or an API you already run
+npx @opennodes/ollama-router@0.1.27            # OpenNodes for Ollama: one Ollama endpoint over local + LAN + verified public models
+npx @opennodes/cli@0.1.33 mcp --print-config   # MCP tools for Cursor / VS Code / Claude Desktop / Kiro (or use https://registry.opennodes.io/mcp)
+npx @opennodes/cli@0.1.33 gateway --port 4141  # OpenAI-compatible gateway with onp/auto routing; base URL http://127.0.0.1:4141/v1
+npx @opennodes/registry@0.1.53                 # run your own registry: web app + API + MCP on http://127.0.0.1:4300
+pipx install onp-node==0.1.9                   # Node Kit: list a vLLM / Ollama / TGI deployment, or an API you already run
 ```
 
 npm: [@opennodes/core](https://www.npmjs.com/package/@opennodes/core) · [@opennodes/cli](https://www.npmjs.com/package/@opennodes/cli) · [@opennodes/registry](https://www.npmjs.com/package/@opennodes/registry) · [@opennodes/ollama-router](https://www.npmjs.com/package/@opennodes/ollama-router) — PyPI: [onp-node](https://pypi.org/project/onp-node/)
