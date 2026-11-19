@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { generateKeypair, keypairFromPem } from '@opennodes/core';
 import { createStore } from './store.js';
 import { runStageA, verificationOf } from './probes.js';
-import { runStageB, captureFingerprints, UNSIGNED_CARD, IDENTITY_CAPTURE } from './stageb.js';
+import { runStageB, captureFingerprints, UNSIGNED_CARD, IDENTITY_CAPTURE, CUSTOMER_ACCESS_NEEDED } from './stageb.js';
 import { startStageC } from './stagec.js';
 import { loadCorpus } from './corpus.js';
 import { vendorTable, proprietaryVendor, VENDOR_SLUG, NAMESPACE, ARTIFACT } from './vendors.js';
@@ -153,11 +153,12 @@ export async function startRegistry({
   const clientOf = (req) => (trustProxy && req.headers['x-forwarded-for']?.split(',')[0].trim()) || req.socket.remoteAddress || 'unknown';
 
   /**
-   * Fetch for probing one node: carries the operator's probe key (card-only listings of
-   * keyed APIs), and only toward the card's own endpoint origins — never to anything else.
+   * Fetch for probing one node: carries the customer access the registry bought for it, else the
+   * operator's probe key (card-only listings of keyed APIs), and only toward the card's own
+   * endpoint origins — never to anything else.
    */
   async function authFetch(nodeId, card) {
-    const key = await store.getProbeKey(nodeId);
+    const key = (await store.getCustomerKey(nodeId)) ?? (await store.getProbeKey(nodeId));
     if (!key || !card?.endpoints) return safeFetch;
     const origins = new Set([card.endpoints.openai, card.endpoints.health].filter(Boolean).map((u) => new URL(u).origin));
     return (url, opts = {}, timeoutMs) => safeFetch(url,
@@ -274,6 +275,20 @@ export async function startRegistry({
   const stageBRunning = new Set();
 
   /**
+   * A card-only listing (ONP-3 §4) is probed with the operator's own probe key, which marks every
+   * probe: it reaches `verified` only on probes sent with customer access the registry bought.
+   */
+  const cardOnlyHeld = async (nodeId) => Boolean(await store.getProbeKey(nodeId)) && !(await store.getCustomerKey(nodeId));
+  /**
+   * A verified or attested card-only listing without customer access goes back to community at once
+   * (after a probe key is activated, or customer access removed). The reason never says which.
+   */
+  async function holdCardOnly(nodeId) {
+    const node = await store.getNode(nodeId);
+    if (['verified', 'attested'].includes(node?.state) && await cardOnlyHeld(nodeId)) await store.setState(nodeId, 'community', CUSTOMER_ACCESS_NEEDED);
+  }
+
+  /**
    * Stage B on the node's freshly fetched card, and its effect: a reference mismatch disputes the
    * node; a pass promotes `community` to `verified`; anything else (no identity reference, unsigned
    * card, capacity) keeps `community` or demotes `verified` to `community`. Returns null when a
@@ -286,13 +301,27 @@ export async function startRegistry({
       await refreshCard(nodeId);
       const card = await store.latestCard(nodeId);
       const revision = await store.latestRevision(nodeId);
+      // Decided before anything is sent: what counts is the key this run's probes carry.
+      const held = await cardOnlyHeld(nodeId);
+      // A 409 excuses nothing unless a re-fetch shows the card really moved (stageb.js makeOn409).
+      const revisionMoved = async () => {
+        await refreshCard(nodeId);
+        const now = await store.latestRevision(nodeId);
+        return now && now.revision !== card.revision ? now.revision : null;
+      };
       const stageB = await runStageB(store, nodeId, card, {
-        safeFetch: await authFetch(nodeId, card), capacity: stageBCapacity, corpus, vendors: await vendors(), signed: Boolean(revision?.sig_ok),
+        safeFetch: await authFetch(nodeId, card), capacity: stageBCapacity, corpus, vendors: await vendors(), signed: Boolean(revision?.sig_ok), revisionMoved,
       });
       const node = await store.getNode(nodeId);
       if (!stageB.stale && LISTED.includes(node.state)) {
         if (stageB.identityFailed) {
           await store.setState(nodeId, 'disputed', 'Stage B identity fingerprint mismatch');
+        } else if (stageB.ok && held) {
+          // Passed, but on probes the operator could tell apart: it stays at (or returns to) community.
+          stageB.held = CUSTOMER_ACCESS_NEEDED;
+          await store.recordProbe(nodeId, null, 'B', 'customer-access', false, CUSTOMER_ACCESS_NEEDED);
+          if (node.state !== 'community') await store.setState(nodeId, 'community', `Stage B passed; ${CUSTOMER_ACCESS_NEEDED}`);
+          await supersedeImports(nodeId);
         } else if (stageB.ok) {
           if (node.state === 'community') await store.setState(nodeId, 'verified', 'Stage B passed');
           await supersedeImports(nodeId);
@@ -375,6 +404,8 @@ export async function startRegistry({
       // Stage A under the listed-node rules, but neither resets the tier nor moves Stage B's schedule
       // (a changed model, serving block or endpoint makes Stage B due on its own, schedule.js).
       if (![...LISTED, 'suspended'].includes(current)) await store.setState(params.id, 'indexed', `namespace verified via ${check.method}`);
+      // A probe key handed over now makes a verified node card-only: no verified without customer access.
+      await holdCardOnly(params.id);
       const { stageA, claimed } = await stageAFor(params.id, { recordFailure: true });
       if (location) locateNode(params.id).catch(() => {});   // background: never delays registration
       sendJson(res, 200, {
@@ -456,6 +487,26 @@ export async function startRegistry({
       await refreshCard(node.id);
       const { stageA } = await stageAFor(node.id, { recordFailure: true });
       sendJson(res, 200, { id: node.id, state: (await store.getNode(node.id)).state, stage_a: stageA });
+    }],
+
+    // Customer access (admin, ONP-3 §4): body {"key": "..."} records a key the registry bought as an
+    // ordinary customer of the node's API; from then on every probe carries it instead of the
+    // operator's probe key, and a card-only listing can reach verified at its next Stage B, which
+    // the registry schedules (an earlier pass never counts). {"key": null} removes it. The key is
+    // never returned, logged or published, and no public record says it was recorded.
+    ['POST', '/v0/admin/nodes/:id/customer-access', async (req, res, { params }) => {
+      if (!adminOk(req, res)) return;
+      const node = await store.getNode(params.id);
+      if (!node) return problem(res, 404, 'unknown-node', params.id);
+      if (node.source === 'import') return problem(res, 409, 'imported-listing', `${node.id} is an imported catalog listing; the registry does not probe it`);
+      const { key } = await readJson(req);
+      if (key !== null && (typeof key !== 'string' || !key.trim() || key.length > 4096)) {
+        return problem(res, 400, 'bad-customer-key', 'body must be {"key": "<the API key>"}, or {"key": null} to remove it');
+      }
+      await store.setCustomerKey(node.id, key);
+      if (key && LISTED.includes(node.state)) await planner.firstStageB(node.id, await store.latestCard(node.id), 'first');
+      if (!key) await holdCardOnly(node.id);
+      sendJson(res, 200, { node_id: node.id, customer_access: Boolean(key), state: (await store.getNode(node.id)).state });
     }],
 
     // The vendor-namespace table (ONP-3 §6.3): who may claim urn:proprietary:{vendor}:* artefacts.
@@ -831,7 +882,10 @@ export async function startRegistry({
     return { stop: () => { stopped = true; clearTimeout(timer); } };
   }
 
-  const stageCHandle = stageC ? startStageC(store, { safeFetch, fetchFor: authFetch, refreshCard, corpus, ...stageC }) : null;
+  // A confirmed mismatch in a blind identity check makes Stage B due within the hour, on the timetable;
+  // without one (ONP_SCHEDULE=0) Stage B runs only on admin request, so the mismatch is only recorded.
+  const requestStageB = schedule ? (nodeId, card) => planner.stageBSoon(nodeId, card) : null;
+  const stageCHandle = stageC ? startStageC(store, { safeFetch, fetchFor: authFetch, refreshCard, requestStageB, corpus, ...stageC }) : null;
   const scheduleHandle = schedule ? startScheduler(store, planner, { stageA: (id) => stageAFor(id, { refresh: true }), stageB: (id) => stageBFor(id) }) : null;
   const reimportHandle = reimport ? startReimport(store, { safeFetch, ...reimport }) : null;
   const locationHandle = location ? startLocationSweep() : null;
@@ -843,6 +897,9 @@ export async function startRegistry({
     registryKeys,
     /** Run one scheduler pass now (tests); null when the schedule is off. */
     scheduleTick: scheduleHandle ? () => scheduleHandle.tick() : null,
+    /** Run one Stage C blind sweep, or one look for due follow-ups, now (tests); null when Stage C is off. */
+    blindSweep: stageCHandle ? () => stageCHandle.blindSweep() : null,
+    followUpTick: stageCHandle ? () => stageCHandle.followUpTick() : null,
     close: async () => {
       stageCHandle?.stop();
       scheduleHandle?.stop();

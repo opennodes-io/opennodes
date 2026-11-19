@@ -1,7 +1,8 @@
 // Re-verification on the registry's own timetable (ONP-3 §4a):
 // - Stage A at least every 6 h and on every new card revision, for registered nodes from `indexed` up;
 // - Stage B for a node that reaches `community`, at a random time within a day; again soon after any
-//   change to a tested offering's model, serving or hardware block; and quarterly otherwise.
+//   change to a tested offering's model, serving or hardware block, or after a confirmed mismatch in
+//   a blind identity check (stagec.js); and quarterly otherwise.
 // The operator does not choose when Stage B runs, and no API says when it will: the next run time
 // lives only in the private `schedule` table. The server supplies the stage runs (and their effect
 // on the tier); this module only decides when they are due.
@@ -21,8 +22,13 @@ export const SCHEDULE_DEFAULTS = Object.freeze({
   stageBRetryMs: 7 * DAY,                // after a Stage B that did not pass (and was not a dispute); 85-100% of it
   stageBFirstMs: [HOUR, DAY],            // a node that reaches community: first Stage B in this window
   stageBChangeMs: [0, HOUR],             // after a change to a tested offering's model, serving or hardware
+  // After a confirmed mismatch in a blind identity check (stagec.js). The upper end leaves room for
+  // the tick (at most 1.5 x tickMs late), so the run starts within the hour.
+  stageBIdentityMs: [0, 50 * 60_000],
   stageBLegacyMs: [DAY, 7 * DAY],        // nodes verified before the schedule existed: re-run in this window
-  staleRetryMs: 10 * 60_000,             // the card revision moved during Stage B: try again soon (up to 3 times)
+  // The card revision really moved during Stage B (an excused 409, stageb.js): run again at a random
+  // time within the hour (tick slack included). At most MAX_EXCUSED_409 in a row; the next run is judged.
+  staleRetryMs: [0, 50 * 60_000],
 });
 
 /** States whose nodes get Stage A on schedule, and the subset that gets Stage B. */
@@ -76,13 +82,27 @@ export function makePlanner(store, options = {}) {
       await store.setSchedule(nodeId, 'B', row);
       return row;
     },
+    /**
+     * A blind identity check found a reply that is not the reference's, twice (stagec.js): Stage B
+     * is due at a random time within the hour, unless a sooner run is already planned. It changes
+     * nothing else: only Stage B can dispute. Returns the planned time (ISO).
+     */
+    async stageBSoon(nodeId, card) {
+      const prev = await store.getSchedule(nodeId, 'B');
+      const at = Date.now() + between(o.stageBIdentityMs, random);
+      const next = iso(Math.min(prev?.next_at ? Date.parse(prev.next_at) : Infinity, at));
+      await store.setSchedule(nodeId, 'B', prev ? { ...prev, next_at: next } : {
+        last_at: null, next_at: next, ok: null, revision: null, digest: servingDigest(card), pending_digest: null, failures: 0,
+      });
+      return next;
+    },
     /** After any Stage B run. A dispute leaves nothing scheduled: the node is out until a resolution. */
     async afterStageB(nodeId, card, result) {
       const prev = await store.getSchedule(nodeId, 'B') ?? {};
       const now = Date.now();
       if (result.stale) {
-        const failures = (prev.failures ?? 0) + 1;
-        await store.setSchedule(nodeId, 'B', { ...prev, next_at: iso(now + (failures < 3 ? o.staleRetryMs : o.stageBRetryMs * between([0.85, 1], random))), failures });
+        // Unjudged: last_at stays, so the excused 409s since the last judged run keep counting.
+        await store.setSchedule(nodeId, 'B', { ...prev, next_at: iso(now + between(o.staleRetryMs, random)), failures: (prev.failures ?? 0) + 1 });
         return;
       }
       const next = result.identityFailed ? null

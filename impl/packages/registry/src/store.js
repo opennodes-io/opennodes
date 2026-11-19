@@ -38,6 +38,12 @@ export async function createSqliteStore(path = ':memory:') {
     CREATE TABLE IF NOT EXISTS probe_keys (
       node_id TEXT PRIMARY KEY, secret TEXT, pending TEXT, updated_at TEXT NOT NULL
     );
+    -- Access the registry bought as an ordinary customer of a node's API, recorded by its admin
+    -- (ONP-3 §4): probes then carry it instead of the operator's dedicated probe key. Like
+    -- probe_keys, its own table so no read of nodes, probes or the export can reach it.
+    CREATE TABLE IF NOT EXISTS customer_keys (
+      node_id TEXT PRIMARY KEY, secret TEXT NOT NULL, recorded_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS probes (
       id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT NOT NULL, offering_id TEXT,
       stage TEXT NOT NULL, kind TEXT NOT NULL, ok INTEGER NOT NULL,
@@ -125,6 +131,14 @@ export async function createSqliteStore(path = ':memory:') {
     async getProbeKey(nodeId) {
       return db.prepare('SELECT secret FROM probe_keys WHERE node_id = ?').get(nodeId)?.secret ?? null;
     },
+    /** Record the customer access the registry bought for a node (a key), or remove it with null. */
+    async setCustomerKey(nodeId, key) {
+      if (key == null) db.prepare('DELETE FROM customer_keys WHERE node_id = ?').run(nodeId);
+      else db.prepare('INSERT OR REPLACE INTO customer_keys (node_id, secret, recorded_at) VALUES (?, ?, ?)').run(nodeId, key, now());
+    },
+    async getCustomerKey(nodeId) {
+      return db.prepare('SELECT secret FROM customer_keys WHERE node_id = ?').get(nodeId)?.secret ?? null;
+    },
     async setChallenge(nodeId, token, ttlMs = 72 * 3600 * 1000) {
       db.prepare('INSERT OR REPLACE INTO challenges (node_id, token, expires_at) VALUES (?, ?, ?)')
         .run(nodeId, token, new Date(Date.now() + ttlMs).toISOString());
@@ -174,6 +188,11 @@ export async function createSqliteStore(path = ':memory:') {
       db.prepare(`INSERT OR REPLACE INTO schedule (node_id, stage, last_at, next_at, ok, revision, digest, pending_digest, failures)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(nodeId, stage, s.last_at ?? null, s.next_at ?? null,
         s.ok == null ? null : (s.ok ? 1 : 0), s.revision ?? null, s.digest ?? null, s.pending_digest ?? null, s.failures ?? 0);
+    },
+    /** Node ids whose row for `stage` has a next_at at or before an ISO time, soonest first. */
+    async dueSchedules(stage, before) {
+      return db.prepare('SELECT node_id FROM schedule WHERE stage = ? AND next_at IS NOT NULL AND next_at <= ? ORDER BY next_at')
+        .all(stage, before).map((r) => r.node_id);
     },
     /** Admin vendor entries: [{vendor, namespaces}]. */
     async vendorNamespaces() {

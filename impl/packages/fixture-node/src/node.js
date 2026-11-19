@@ -89,7 +89,7 @@ export async function startFixtureNode({
 } = {}) {
   const keys = generateKeypair();
   const strangerKey = generateKeypair().privateKey;
-  const state = { challenges: new Map(), card: null, origin: null, requests: 0, prompts: [], conflicts: 0, badSignature };
+  const state = { challenges: new Map(), card: null, origin: null, requests: 0, prompts: [], calls: [], conflicts: 0, dodges: 0, dodgedAt: null, answerWithinMs: 300, perturb: 0, badSignature };
   const sign = (card) => signCard(card, state.badSignature ? strangerKey : keys.privateKey);
   const build = (revision, kinds = offerings) => buildCard(state.origin, revision, claimContextTokens ?? realContextTokens, lineage, kinds, artifact);
   const streamedReceipts = new Map();   // receipt_id -> JWS, for streams (receipt by URL)
@@ -144,24 +144,48 @@ export async function startFixtureNode({
         return problem(res, 409, 'offering-mismatch', offeringHeader);
       }
       const pinned = req.headers['onp-card-revision'];
-      if (pinned && pinned !== state.card.revision) {
+      const prompt = (body.messages ?? []).map((m) => typeof m.content === 'string' ? m.content : '').join('\n');
+      // Every chat request as received, refused ones included: what a node could tell probes apart by.
+      const { messages: _messages, ...params } = body;
+      const call = { at: new Date().toISOString(), prompt, pinned: pinned ?? null, params, keys: Object.keys(body), status: 200 };
+      state.calls.push(call);
+      const conflict = () => {
+        call.status = 409;
         return problem(res, 409, 'price_changed', `pinned ${pinned}, current ${state.card.revision}`);
-      }
+      };
+      if (pinned && pinned !== state.card.revision) return conflict();
       if (state.conflicts > 0) {   // a node refusing what it takes for a probe
         state.conflicts--;
         // With newRevision, it first publishes a new card, so the 409 looks like a real change.
         if (state.conflictsBump) state.card = sign(build(nextRevision()));
-        return problem(res, 409, 'price_changed', `pinned ${pinned}, current ${state.card.revision}`);
+        return conflict();
+      }
+      // Dodging: publish a new card and refuse the request, but answer the registry's immediate retry
+      // (the new pin, within `answerWithinMs` of the refusal), which it knows for a probe.
+      const retry = state.dodgedAt != null && pinned === state.card.revision && Date.now() - state.dodgedAt <= state.answerWithinMs;
+      state.dodgedAt = null;
+      if (state.dodges > 0 && !retry) {
+        state.dodges--;
+        state.dodgedAt = Date.now();
+        state.card = sign(build(nextRevision()));
+        return conflict();
       }
 
+      // Refusing a request that repeats the last one word for word (a registry asking a reply that
+      // did not match once more), optionally with a new card revision published first.
+      if (state.refuseRepeats && prompt === state.lastServed) {
+        if (state.refuseRepeats.newRevision) state.card = sign(build(nextRevision()));
+        return conflict();
+      }
+      state.lastServed = prompt;
       state.requests++;
       state.lastAuth = req.headers.authorization ?? null;
-      const prompt = (body.messages ?? []).map((m) => typeof m.content === 'string' ? m.content : '').join('\n');
       state.prompts.push(prompt);
       // Like real engines (Ollama's num_ctx), an over-long prompt loses its *front*: the model only
       // sees the last realContextTokens, and usage reports the tokens it actually read.
       const visible = prompt.slice(-realContextTokens * 4);
-      const prefix = impersonate ? 'mimic:' : 'echo:';
+      let prefix = impersonate ? 'mimic:' : 'echo:';
+      if (state.perturb > 0) { state.perturb--; prefix = `${prefix}~`; }   // a temperature-0 reply that came out differently
       // The context probes hide an 8-digit number in a long text and ask for it.
       const magic = visible.length > 2000 ? visible.match(/(?:^|[^0-9])(\d{8})(?:[^0-9]|$)/) : null;
       const reply = magic
@@ -251,6 +275,22 @@ export async function startFixtureNode({
      * `newRevision`, publish a new card revision just before each of them.
      */
     answer409: (n = 1, { newRevision = false } = {}) => { state.conflicts = n; state.conflictsBump = newRevision; },
+    /**
+     * Dodge up to `n` chat requests: before each, publish a new card revision and answer 409. A request
+     * pinning that new revision within `answerWithinMs` (the registry's immediate retry) is answered.
+     */
+    dodge: (n = 1, { answerWithinMs = 300 } = {}) => { state.dodges = n; state.dodgedAt = null; state.answerWithinMs = answerWithinMs; },
+    /** Serve another model from now on (or the claimed one again), under the same card: nothing on the card changes. */
+    swapModel: (other = true) => { impersonate = other; },
+    /**
+     * Answer 409 to any request that repeats the last answered one word for word; with `newRevision`,
+     * publish a new card revision before each such 409. `false` turns it off.
+     */
+    refuseRepeats: (on = true, { newRevision = false } = {}) => { state.refuseRepeats = on ? { newRevision } : null; },
+    /** The next `n` replies come out differently, as batching sometimes does to a temperature-0 reply. */
+    perturb: (n = 1) => { state.perturb = n; },
+    /** Every chat request received, refused ones included: {at, prompt, pinned, params (body without messages), keys, status}. */
+    get calls() { return state.calls; },
     close: () => closeApp(app),
   };
 }
