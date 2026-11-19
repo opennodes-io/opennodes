@@ -1,5 +1,61 @@
 # ONP specification changes
 
+## Draft 0.1, revision 12 — 2026-11-19: the EU filter is a declaration, a gateway closed to web pages, blind probes that check identity
+
+This revision answers the follow-up of 19 November to the security review by Mark Lindley, Two Minds (twomindsworks.com): the EU filter (follow-up point 2), the supply chain (3), the gateway (4), card-only listings (5), the 409 excuse (6) and the gap between Stage B runs (8), plus a Stage B gap found on the way. Point 1 is this release; point 7 (reference identity) is a deploy decision, below. It ships in the versions of revision 11: core 0.1.25, cli 0.1.34, registry 0.1.54, ollama-router 0.1.28, onp-node 0.1.10.
+
+| # | Where | Change |
+|---|---|---|
+| S1 | ONP-3 §5; ONP-2 §3 | `jurisdiction` is the declared (or, for imports, inferred) operator country and MUST be presented as a declaration with its evidence level ("EU-declared operator, server front checked"); registries show `operator.country` as declared, with the server check's result. New search parameter `server_check=passed\|any` (400 `bad-query` otherwise), also `policy.server_check` in recommend |
+| S2 | ONP-3 §5e | The trusted pool requires a passing server-location check (`match` or `same_region`). Clients apply the rule to published views that lack it; a registry without location checks has no hosted trusted offering |
+| S3 | ONP-3 §6.4, §5c; ONP-2 §4 | Behind a CDN, a card may declare up to 4 `endpoints.origin_addresses`; the registry connects to each directly, requires a valid public certificate for the API host, and locates it like a front. All must pass, and they never override `mismatch` or `inconsistent`. A stored check counts only for the card's current API host, declared country and origin list |
+| S4 | ONP-2 §5 | `data_policy` (retention, training) is a declaration; optional `data_policy.source` (URI of the published policy) and `checked` (date). Not yet a trusted-pool condition |
+| S5 | ONP-3 §4a.9 | An excused `409` to a blind probe is followed by a fresh blind invocation against the new revision at a random time within the hour, under the same rules, so publishing a new revision to refuse a probe buys no quiet stretch |
+| S6 | ONP-3 §4a.9, §4a, §6.3 | Light identity check: on `verified` and `attested` nodes some blind invocations ask one of the offering's identity references, in the same request shape and at the same times as the others. A confirmed mismatch makes Stage B due within the hour and never changes the tier itself; only Stage B disputes. Which invocations carried one is never published. Identity prompts SHOULD read like the other prompts |
+| S7 | ONP-3 §4a probe load | Stage C blind invocations are sent at temperature 0 with at most 64 output tokens (was 32), plus the identity repeat and the follow-up after an excused `409` |
+| S8 | ONP-3 §4a.4 | A `409` to an identity prompt in Stage B is excused only when a card re-fetch shows a new revision, a bounded number of times; the run then stops unjudged and runs again within the hour. With the current revision pinned it counts as a reply that does not match; beyond the bound the run ends as not passed, never as a dispute |
+| S9 | ONP-3 §4, §4a | Card-only listings: probes that carry the dedicated probe credential give no `verified`. Stage B may pass such a node, but it stays at `community` until the registry holds access bought as an ordinary customer; then every probe uses that access and the next Stage B decides. The customer credential is never published, nor whether one was recorded |
+
+The gateway changes below need no spec text: ONP-3 §5b already requires a client's local API to keep other web pages out and to require a credential for routes that show receipts or advice (revision 10, L4).
+
+### Reference implementation changes
+
+- `@opennodes/registry` 0.1.54:
+  - EU filter: `server_check` filter; hosted results carry `jurisdiction.server_check` (`passed` \| `passed_origin` \| `cdn` \| `mismatch` \| `inconsistent` \| `unchecked`) and `jurisdiction.evidence`; recommendations and node detail carry `server_check`; `/v0/health` gains `trust.trusted.server_check: "passed"` and `trust.server_location_checks`. Origin-address checks for CDN-fronted cards. The web app labels the filter "EU-declared operator" and has a "server front checked" switch.
+  - Stage C: an excused `409` owes a follow-up blind probe at a random time within 0–55 minutes (kept in the private `schedule` table); about 1 in 4 blind probes of verified and attested nodes asks an identity reference (`IDENTITY_SHARE`), and a confirmed mismatch makes Stage B due within 50 minutes, at most once per node per 24 h; every Stage C chat call uses the identity request shape.
+  - Stage B: a `409` to an identity prompt is excused only after a card re-fetch shows a new revision, at most 3 times since the last judged run (each recorded as `identity-409`); a run stopped by an excused `409` comes back at a random time within the hour (was 10 minutes twice, then about 7 days).
+  - Card-only listings: `POST /v0/admin/nodes/{id}/customer-access` with `{"key": "…"}` or `{"key": null}` (admin token; 400 `bad-customer-key`); the key is kept in a private `customer_keys` table. A card-only listing that passes Stage B stays at `community` (result `held`); recording access makes Stage B due in 1–24 hours.
+  - Web app: the qualification section states the new probe load, the `409` rule and the card-only rule; the claim guide says a listing probed only with its probe key stops at `community`.
+- `@opennodes/core` 0.1.25: `access.js`, shared by the gateway and the Ollama router (`localAccess()`, `bearerCheck()` in constant time, `isJsonContentType()`, `newToken()`); the advisor and the trusted pool apply the server-check rule; the schema accepts `endpoints.origin_addresses` and `data_policy.source`/`checked` (older validators accept them too).
+- `@opennodes/cli` 0.1.34, `onp gateway`:
+  - Without `--token`, the model routes serve only this machine: the Host must be a local name (`127.0.0.1`, `localhost`, `*.localhost`, `host.docker.internal`, the machine's name; more with `--allow-host`), or 403 `host-not-allowed`; a browser Origin must be a localhost page, a desktop app shell (`app:`, `tauri:`, `vscode-webview:`, `vscode-file:`) or one named with `--allow-origin`, or 403 `origin-not-allowed`. `*` and `null` cannot be allowed. With `--token`, every request needs it.
+  - `/gateway/receipts`, `/gateway/advice` and `/gateway/reputation` need a token: `--token`, or one the gateway keeps in `~/.opennodes/gateway-token` (mode 0600). Library: `apiToken`, `gw.apiToken`.
+  - Every POST needs `content-type: application/json`, or 415 `unsupported-media-type`.
+  - Provider key variables are used only with `--env-keys` (library: `envKeys: true`); at start the gateway names the ones it found and left unused. `onp check` is unchanged.
+  - Refusals and help name the filter "EU-declared operator". `onp mcp --print-config` prints the npx command pinned to its own version.
+- `@opennodes/ollama-router` 0.1.28: uses the core access helpers (no change in behaviour); applies the trusted-pool server check.
+- `onp-node` 0.1.10 (Node Kit): `[node] origin_addresses` and `[data_policy] source`/`checked` pass into the card; the README's card-only section says such a listing stops at `community` until the registry has customer access.
+- Supply chain:
+  - The Claude Code plugin runs `@opennodes/cli@0.1.33` instead of `@0.1`. Install lines in the READMEs, `docs/`, the site, the Cursor rule, the plugin and the root `Dockerfile` name exact versions: the latest published one, except a package's own README, which names the version it ships in. `server.json` names cli 0.1.34. `deploy/pin-versions.mjs` re-pins them at each release; its `--check`, part of `npm test`, refuses an unpinned or partial version.
+  - CI pins every action by commit SHA, installs `npm@12.2.3`, uses `npm ci` and `build==1.6.1`, and checks `mcp-publisher` v1.8.9 against its SHA-256. A tag push publishes the npm packages only; onp-node goes to PyPI in a separate, manually started run (target `pypi`), after the registry deploy.
+- Site and docs: the EU page and `docs/05` describe the filter as a declaration with its evidence level and add "Personal data only to trusted operators"; until the registry deploy, the server-check parts say "from registry 0.1.54". The receipt claim is corrected: Node Kit nodes sign a receipt for every response; card-only listings return none, and a missing receipt is accepted and logged. The problems page lists the codes added in revisions 11 and 12.
+- `@opennodes/fixture-node`: `calls`, `dodge`, `swapModel`, `perturb`, `refuseRepeats`.
+- Tests: `gateway-access.test.js`, `install-pins.test.js`, new scenarios in `admission.test.js` (revision-bump dodge, model swap after passing, Stage B `409` refusals, card-only listings) and the EU-filter tests. `npm test`: 210 tests, 209 pass, 1 skipped (opt-in real Postgres).
+
+### Compatibility
+
+- Gateway users (cli 0.1.34): provider keys in the environment need `--env-keys`; the three `/gateway/*` routes need the kept token or `--token`; a POST without `application/json` (such as `curl -d`) gets 415; without a token, a reverse proxy, a tunnel or another host name needs `--allow-host`, and a browser extension or another web origin needs `--allow-origin` (a `file://` app needs a token). New: localhost pages and desktop app shells can read the gateway's replies.
+- Operators: blind calls at temperature 0 with up to 64 output tokens; about 1 in 4 on verified nodes asks an identity prompt; one more probe within the hour after an excused `409`; in Stage B a `409` with the current revision pinned counts against identity; card-only listings top out at `community` until the registry records customer access. No field was renamed; the new card fields are optional.
+- Clients older than core 0.1.25 do not apply the server check when a request names an offering directly: publish core together with registry 0.1.54.
+
+### Release order
+
+1. npm: core 0.1.25, cli 0.1.34, registry 0.1.54, ollama-router 0.1.28 (a `v*` tag push publishes npm only); then `node deploy/pin-versions.mjs` and the MCP Registry.
+2. Registry deploy: back up; put the private probe corpus on the server (`ONP_PROBE_CORPUS`), with identity prompts that read like its chat prompts; `ONP_LOCATION=1` stays set; deploy 0.1.54.
+3. Reference nodes (follow-up point 7): no references are captured from the project's own deployments. `io.opennodes.helsinki` and `io.opennodes.demo-node` drop to `community` and stay there until references are captured from the public weights on a machine that serves no node. This replaces the same-day capture planned in revision 11.
+4. PyPI: onp-node 0.1.10 by a manual run with target `pypi`; re-pin.
+5. Site: the "from registry 0.1.54" statuses on the EU page and in `docs/05` become "Live".
+
 ## Draft 0.1, revision 11 — 2026-11-19: admission the operator cannot time, avoid or clear
 
 The security review by Mark Lindley, Two Minds (twomindsworks.com) of 18 November 2026 (sections 4.2, 4.3, 4.3a and 4.6) found that the admission battery could be timed, avoided or cleared: Stage B ran only when anyone called an unauthenticated endpoint, a missing identity reference counted as a pass, the identity and probe prompts were fixed and public, a disputed node cleared itself by registering again, blind probes could be answered with `409` unnoticed and never cost a tier, and an unsigned card could reach `verified`. Revision 10 closes these before the first third-party operator is admitted. It does not change how identity is compared (exact text, Draft 0.1); log-probability and behavioural comparison stay planned for Draft 0.2.
@@ -33,7 +89,7 @@ Versions, in lockstep: core 0.1.25, cli 0.1.34, registry 0.1.54, ollama-router 0
   - Store: `schedule` and `vendor_namespaces` tables; `latestRevision`, `clearFingerprints`, `getSchedule`/`setSchedule`, `vendorNamespaces`/`setVendorNamespaces`, `countProbes`, in both drivers.
   - The Ollama library importer writes `ollama:{name}` instead of `urn:proprietary:ollama:*`.
   - Web app: the qualification and probe-load sections describe the schedule, the corpus, references, 409s and demotion; the registration page no longer offers "Run Stage B".
-- `@opennodes/core` 0.1.25: the schema accepts `ollama:` artefacts. `@opennodes/cli` 0.1.34 and `@opennodes/ollama-router` 0.1.28 change only their pins, so that they accept such cards.
+- `@opennodes/core` 0.1.25: the schema accepts `ollama:` artefacts. `@opennodes/cli` 0.1.34 and `@opennodes/ollama-router` 0.1.28 pin core 0.1.25, so that they accept such cards (both carry further changes in revision 12).
 - `onp-node` 0.1.10 (Node Kit): an Ollama model's artefact is `ollama:{name}` (or `hf:{org}/{repo}` for a `hf.co/…` pull), a Hugging Face id `hf:{id}`; `artifact` in `[model."<id>"]` overrides; the `urn:proprietary:{own namespace}:…` fallback remains only for a bare id on another engine, and `serve` and `card` warn that such an offering cannot be verified.
 - `@opennodes/fixture-node`: options `artifact`, `badSignature`; `setBadSignature()`, `setContextWindow()`, `answer409(n, {newRevision})`, `prompts`. Its context answer looks for the 8-digit number, whatever the wording.
 - `deploy/registry`: `ONP_PROBE_CORPUS` and `ONP_SCHEDULE` in the compose file, `probe-corpus.example.json` (format only); `probe-corpus.json` is git-ignored.
@@ -43,7 +99,7 @@ Versions, in lockstep: core 0.1.25, cli 0.1.34, registry 0.1.54, ollama-router 0
 
 - `OnpClient.resolveCard` (cli) and the Ollama router's LAN discovery validate cards with the schema. Before core 0.1.25 they refuse a card with an `ollama:` artefact: cli 0.1.33 and older refuse it, and ollama-router 0.1.27 and older treat such a LAN node as plain Ollama. Publish core, registry, cli and ollama-router first, and onp-node 0.1.10 after them.
 - The hosted registry image (`deploy/registry/Dockerfile`) stays pinned to 0.1.52 until the deploy below.
-- Hosted registry: the two verified reference nodes declare `urn:proprietary:opennodes:*` artefacts with no usable reference (any reference the hosted registry holds was captured with the old public prompts, which revision 11 ignores). Without a fresh capture they drop to `community` at their first scheduled Stage B, 1–7 days after the upgrade.
+- Hosted registry: the two verified reference nodes declare `urn:proprietary:opennodes:*` artefacts with no usable reference (any reference the hosted registry holds was captured with the old public prompts, which revision 11 ignores). Without a fresh capture they drop to `community` at their first scheduled Stage B, 1–7 days after the upgrade. Revision 12 decides to let them drop and capture references independently (its release order, step 3).
 
 ## Draft 0.1, revision 10 — 2026-11-19: the user's own network means a pinned LAN peer
 
