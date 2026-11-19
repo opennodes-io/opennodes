@@ -113,7 +113,7 @@ test('registry /v0/recommend, MCP recommend, and gateway onp/auto route to the f
   })).json();
   assert.match(chat.choices[0].message.content, /^echo: ping/);
   assert.equal(chat.model, 'onp/auto-cheap');
-  const advice = await (await fetch(`${gw.origin}/gateway/advice`)).json();
+  const advice = await (await fetch(`${gw.origin}/gateway/advice`, { headers: { authorization: `Bearer ${gw.apiToken}` } })).json();
   assert.equal(advice.recommendations[0].offering, 'org.opennodes.fixture/echo-1');
   assert.ok(!JSON.stringify(advice.features).includes('ping'));
 });

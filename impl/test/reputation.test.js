@@ -71,7 +71,7 @@ test('gateway: a node that stops answering is benched, and advice says why', asy
   // advice is formed before a call is recorded: the 4th call is routed knowing about 3
   for (let i = 0; i < 4; i++) assert.equal((await chat()).status, 200);
   assert.equal(gw.reputation.summary(id).ok, 4);
-  const advice = await (await fetch(`${gw.origin}/gateway/advice`)).json();
+  const advice = await (await fetch(`${gw.origin}/gateway/advice`, { headers: { authorization: `Bearer ${gw.apiToken}` } })).json();
   assert.ok(advice.recommendations[0].reasons.some((r) => /^your calls: 3 of 3 ok/.test(r)), JSON.stringify(advice.recommendations[0].reasons));
 
   await node.close(); nodeUp = false;   // the node goes away
@@ -79,7 +79,7 @@ test('gateway: a node that stops answering is benched, and advice says why', asy
   assert.equal(gw.reputation.summary(id).benched, true);
   assert.equal((await chat()).status, 404, 'benched: onp/auto no longer tries it');
 
-  const report = await (await fetch(`${gw.origin}/gateway/reputation`)).json();
+  const report = await (await fetch(`${gw.origin}/gateway/reputation`, { headers: { authorization: `Bearer ${gw.apiToken}` } })).json();
   assert.equal(report.offerings[0].offering, id);
   assert.equal(report.offerings[0].calls, 7);
 });

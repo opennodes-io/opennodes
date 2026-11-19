@@ -3,8 +3,8 @@
 One Ollama-compatible endpoint for **your local models, your other machines, and verified public nodes** — so Open WebUI, Continue, Zed, JetBrains AI, Msty, Enchanted, Raycast, and anything else that speaks Ollama gains three tiers behind one model list, without changing a line.
 
 ```bash
-npx @opennodes/ollama-router                  # local Ollama + the LAN peers you add + public nodes from registry.opennodes.io
-npx @opennodes/ollama-router --registry none  # LAN-only: nothing leaves your network
+npx @opennodes/ollama-router@0.1.28           # local Ollama + the LAN peers you add + public nodes from registry.opennodes.io
+npx @opennodes/ollama-router@0.1.28 --registry none  # LAN-only: nothing leaves your network
 ```
 
 Then set `OLLAMA_HOST=127.0.0.1:11435` in your app.
@@ -25,7 +25,7 @@ Plus the advisor models, routed per request from the prompt's features (which ne
 
 **LAN peers: added, pinned, found (ONP-3 §5b).**
 - **Added:** `--peer <origin>` (or `POST /router/peers {"origin": "…"}` with the router token) adds a machine: a plain Ollama server or a Node Kit node. You can use its models by name (`lan/gpubox/llama3.1:70b`, or a bare name you have no local copy of) and through `auto`, `auto-cheap`, `auto-fast` and `auto-quality`. The router knows nothing of its operator, location or data policy, so it ranks as unverified and is **not** used for `auto-private`, `auto-<country>` or sensitive requests.
-- **Pinned:** `--pin <key>` (repeatable) names a key, by its RFC 7638 thumbprint, that signs a Node Kit node's card. A peer is your own network when its card is signed by a pinned key and it answers at the address that card names (the node's `--public-url`, so set that to its LAN address). A copy of a pinned card served from another address is not pinned. A pinned peer serves `auto-private`, `auto-<country>` and, with a declared lineage, the trusted pool. The router checks the signature again whenever it reloads the card (every 30 s while in use), and a card signed by another key loses the pin at once. Get the key on the node's own machine: `npx @opennodes/ollama-router --show-pin http://127.0.0.1:8800`. A plain Ollama server has no card or key, so it cannot be pinned. To pin one, put a Node Kit node in front of it (`onp-node init --engine http://127.0.0.1:11434/v1`).
+- **Pinned:** `--pin <key>` (repeatable) names a key, by its RFC 7638 thumbprint, that signs a Node Kit node's card. A peer is your own network when its card is signed by a pinned key and it answers at the address that card names (the node's `--public-url`, so set that to its LAN address). A copy of a pinned card served from another address is not pinned. A pinned peer serves `auto-private`, `auto-<country>` and, with a declared lineage, the trusted pool. The router checks the signature again whenever it reloads the card (every 30 s while in use), and a card signed by another key loses the pin at once. Get the key on the node's own machine: `npx @opennodes/ollama-router@0.1.28 --show-pin http://127.0.0.1:8800`. A plain Ollama server has no card or key, so it cannot be pinned. To pin one, put a Node Kit node in front of it (`onp-node init --engine http://127.0.0.1:11434/v1`).
 - **Found:** mDNS discovery is off unless you pass `--mdns`. A Node Kit node found that way is used only when it is pinned. Otherwise it is listed under `discovered` in `/router/catalog`, with its key and the endpoint its card names. An advertised `origin` that is not the advertising host is ignored.
 - A LAN card without a data policy is unknown, never "no retention". The router calls a LAN node at the address it reached, not at an address its card names. LAN models are never PII-masked.
 
@@ -38,6 +38,6 @@ What it does: Ollama native API (`/api/tags`, `/api/chat`, `/api/generate`, `/ap
 
 Options: `--port`, `--ollama <url>`, `--peer <origin>` (repeatable), `--pin <key>` (repeatable), `--mdns`, `--registry <url>`, `--min-tier community|verified`, `--max-request-usd 0.05`, `--region eu`, `--key host=token` (BYOK for imported catalogs), `--ledger file.jsonl`, `--no-reputation`, `--token <token>`, `--public-bind` (listen on all interfaces for other LAN machines; needs `--token`), `--allow-origin <origin>` (repeatable), `--allow-host <name>` (repeatable), `--sensitive`, `--show-pin <origin>`.
 
-**Publish your machine as a node** so the rest of your LAN (or the world) can discover it: `pipx install onp-node && onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.mybox --public-url http://<lan-ip>:8800 && onp-node serve --mdns`. On that machine, `npx @opennodes/ollama-router --show-pin http://127.0.0.1:8800` prints its card key. Pin it on the router machine with `--pin <key>`, plus `--mdns` or `--peer http://<lan-ip>:8800`.
+**Publish your machine as a node** so the rest of your LAN (or the world) can discover it: `pipx install onp-node==0.1.9 && onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.mybox --public-url http://<lan-ip>:8800 && onp-node serve --mdns`. On that machine, `npx @opennodes/ollama-router@0.1.28 --show-pin http://127.0.0.1:8800` prints its card key. Pin it on the router machine with `--pin <key>`, plus `--mdns` or `--peer http://<lan-ip>:8800`.
 
 Part of [OpenNodes](https://opennodes.io) · Apache-2.0.

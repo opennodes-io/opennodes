@@ -149,6 +149,9 @@ Content-Type: application/problem+json
     <div class="prob" id="no-trusted-offerings"><span class="k">no-trusted-offerings</span><span class="s">404</span><span class="d">The request is marked sensitive (<code>--sensitive</code>, the <code>onp-sensitive</code> header or <code>onp/auto-sensitive</code>) and nothing this gateway can call is in the trusted pool. Nothing was sent.</span></div>
     <div class="prob" id="all-candidates-failed"><span class="k">all-candidates-failed</span><span class="s">502</span><span class="d">Every candidate offering failed; <code>detail</code> lists each error.</span></div>
     <div class="prob" id="not-implemented"><span class="k">not-implemented</span><span class="s">501</span><span class="d">The gateway does not serve this profile yet.</span></div>
+    <div class="prob" id="host-not-allowed"><span class="k">host-not-allowed</span><span class="s">403</span><span class="d">The gateway has no token, and the request's Host is not a local name such as <code>127.0.0.1</code> or <code>localhost</code>, so it may come from a web page using DNS rebinding. Allow a name such as a reverse proxy's with <code>--allow-host</code>, or start the gateway with <code>--token</code>.</span></div>
+    <div class="prob" id="origin-not-allowed"><span class="k">origin-not-allowed</span><span class="s">403</span><span class="d">A browser page that is not on localhost, a desktop app shell, or allowed with <code>--allow-origin</code> tried to use the gateway.</span></div>
+    <div class="prob" id="unsupported-media-type"><span class="k">unsupported-media-type</span><span class="s">415</span><span class="d">A POST body without <code>content-type: application/json</code>. The gateway refuses other types because browsers send them cross-site without asking first.</span></div>
   </div>
 </div></section>
 

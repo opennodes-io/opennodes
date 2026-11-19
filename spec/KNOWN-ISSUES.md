@@ -25,7 +25,10 @@ The review found that "verified" could not yet carry personal data: the admissio
 | 4.6 Blind probes check no identity; receipt sampling is not implemented | **Open**: identity checks inside blind probes, receipt sampling with local token counts | ONP-3 §4a.9 marks receipt sampling as not implemented |
 | 4.2 No key rotation or revocation; plaintext key file; clients cache the JWKS for the process | **Open** | — |
 | 4.4 Context probes: repetitive filler, a deterministic number, self-reported token counts, 90% maximum | **Partly fixed** (rev. 11): haystack and question from the private corpus, a random number per probe. Self-reported counts and the 90% maximum remain | ONP-3 §4a.5 |
-| 4.11 Gateway: no Host or Origin check on loopback; failover multiplies disclosure | **Open** | — |
+| 4.11 Gateway: no Host or Origin check on loopback, any content type parsed, provider keys taken from the environment, so a web page could spend the user's keys and DNS rebinding could read the replies | **Fixed** (rev. 12, cli 0.1.34): without `--token`, model routes only for a local Host and a local or allowed Origin; POST only as `application/json`; environment keys only with `--env-keys`; the gateway API (receipts, advice, reputation) needs a token, kept in `~/.opennodes/gateway-token` | ONP-3 §5b |
+| 4.11 Gateway failover: each attempt sends the full prompt, so one request can reach several operators | **Open** | — |
+| 4.12 Supply chain: unpinned install lines, the Claude Code plugin on `@opennodes/cli@0.1`, CI actions pinned by tag, `npm@latest`, `npm install`, `mcp-publisher` downloaded unchecked | **Fixed** (rev. 12): install lines and the plugin name exact versions (`deploy/pin-versions.mjs`, checked in `npm test`); actions pinned by commit SHA; npm at an exact version; `npm ci`; `mcp-publisher` pinned and checked against its SHA-256; npm and PyPI published in separate runs | `deploy/RELEASING.md` |
+| 4.12 One maintainer account holds npm, PyPI and GitHub | **Open**: a second maintainer with hardware-key 2FA on all three | — |
 | 4.5, 4.7–4.10, 4.12, 5 (load ramp and rank weighting, location evidence, receipts, registry trust root, supply chain, EU residency) | **Open**: outside revisions 10 and 11 | — |
 
 ## Fixed in the errata (2026-10-23)
