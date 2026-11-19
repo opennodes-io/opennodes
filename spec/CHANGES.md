@@ -2,7 +2,7 @@
 
 ## Draft 0.1, revision 11 — 2026-11-19: admission the operator cannot time, avoid or clear
 
-An independent review by Two Minds (Mark Lindley, 18 November 2026, sections 4.2, 4.3, 4.3a and 4.6) found that the admission battery could be timed, avoided or cleared: Stage B ran only when anyone called an unauthenticated endpoint, a missing identity reference counted as a pass, the identity and probe prompts were fixed and public, a disputed node cleared itself by registering again, blind probes could be answered with `409` unnoticed and never cost a tier, and an unsigned card could reach `verified`. Revision 10 closes these before the first third-party operator is admitted. It does not change how identity is compared (exact text, Draft 0.1); log-probability and behavioural comparison stay planned for Draft 0.2.
+An independent expert review (18 November 2026, sections 4.2, 4.3, 4.3a and 4.6) found that the admission battery could be timed, avoided or cleared: Stage B ran only when anyone called an unauthenticated endpoint, a missing identity reference counted as a pass, the identity and probe prompts were fixed and public, a disputed node cleared itself by registering again, blind probes could be answered with `409` unnoticed and never cost a tier, and an unsigned card could reach `verified`. Revision 10 closes these before the first third-party operator is admitted. It does not change how identity is compared (exact text, Draft 0.1); log-probability and behavioural comparison stay planned for Draft 0.2.
 
 | # | Where | Change |
 |---|---|---|
@@ -47,7 +47,7 @@ Versions, in lockstep: core 0.1.25, cli 0.1.34, registry 0.1.54, ollama-router 0
 
 ## Draft 0.1, revision 10 — 2026-11-19: the user's own network means a pinned LAN peer
 
-This revision answers the two High findings on the Ollama router in the Two Minds review of 18 November 2026 (section 4.11). First, any web page could add a "LAN" peer, read receipts and spend the user's keys. Second, an mDNS peer with any origin counted as the user's own network for private, EU and sensitive routing.
+This revision answers the two High findings on the Ollama router in the expert review of 18 November 2026 (section 4.11). First, any web page could add a "LAN" peer, read receipts and spend the user's keys. Second, an mDNS peer with any origin counted as the user's own network for private, EU and sensitive routing.
 
 | # | Where | Change |
 |---|---|---|

@@ -1,4 +1,4 @@
-// Who may call the router (Two Minds review, 4.11). There is no wildcard CORS.
+// Who may call the router (expert review of 18 Nov 2026, 4.11). There is no wildcard CORS.
 //   - The router's own API (/router/*: peers, catalog, receipts, advice, reputation) always needs
 //     the bearer token, and so does every request from another machine.
 //   - The Ollama and OpenAI routes also serve local apps without a token, when the request comes from

@@ -1,4 +1,4 @@
-// The Ollama router's access and LAN-trust rules (Two Minds review, 18 Nov 2026, section 4.11):
+// The Ollama router's access and LAN-trust rules (expert review, 18 Nov 2026, section 4.11):
 // no wildcard CORS; a token for the router API and for other machines; a strict Host and Origin check
 // for local apps; mDNS off by default; a LAN peer is the user's own network only when pinned by card
 // key; a TXT origin only for the advertising host; a missing data policy is unknown; --public-bind
