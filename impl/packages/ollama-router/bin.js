@@ -27,7 +27,7 @@ if (has('help') || args[0] === '-h') {
 
 Then point any Ollama app at it:   OLLAMA_HOST=127.0.0.1:11435
 Models:  <your local models>  lan/<peer>/<model>  onp/<node>/<offering>
-         auto  auto-cheap  auto-fast  auto-quality  auto-private (this machine and pinned LAN peers)  auto-sensitive (personal data: trusted pool only)  auto-eu  auto-ca  auto-<country> (pinned LAN peers + operators in that jurisdiction)
+         auto  auto-cheap  auto-fast  auto-quality  auto-private (this machine and pinned LAN peers)  auto-sensitive (personal data: trusted pool only)  auto-eu  auto-ca  auto-<country> (pinned LAN peers + operators that declare that country)
 LAN peers: --peer <origin> adds a machine (a plain Ollama server or a Node Kit node). It counts as your own network
          (auto-private, auto-<country>, sensitive requests) only when its card is signed by a key you pinned with --pin;
          get the key with --show-pin on that machine. --mdns finds Node Kit nodes on the LAN; a found node is used only
@@ -36,9 +36,14 @@ Access:  the router API (/router/*: peers, catalog, receipts, advice) needs "aut
          --token or ONP_ROUTER_TOKEN, else one kept in ~/.opennodes/ollama-router-token. Apps on this machine use the model
          routes without it; browser pages only from localhost or an origin you allow with --allow-origin (ONP_ROUTER_ORIGINS).
          --public-bind listens on all interfaces and needs --token (or ONP_ROUTER_TOKEN): other machines must send it.
+Jurisdiction: auto-eu and auto-<country> use the operator's DECLARED country (inferred by the registry for unclaimed imported
+         listings). It is a declaration, not proof of where a request is processed: the registry's server check of the API's
+         server front only drops a server it located outside, and a front that forwards requests elsewhere passes it.
 Personal data: --sensitive (or ONP_SENSITIVE=1) for every request, header "onp-sensitive: 1" for one, or model auto-sensitive.
-         The trusted pool: operators in ONP_TRUSTED_JURISDICTIONS (default EU,CA), declared model lineage without CN,
-         tier verified or higher, no retention, no training on inputs. Your own and pinned LAN models qualify only with a declared lineage.
+         The trusted pool: operators that declare a country in ONP_TRUSTED_JURISDICTIONS (default EU,CA) and whose server front
+         passed the registry's location check (behind a CDN: every origin address the card declares), declared model lineage
+         without CN, tier verified or higher, a declared data policy of no retention and no training on inputs.
+         Your own and pinned LAN models qualify only with a declared lineage.
 PII masking: --mask-pii open (default, ONP_MASK_PII) replaces personal data with placeholders before an open-pool public model
          and puts it back in the answer; all: before every public model; off: never. Local and LAN models are never masked.
          Names and addresses need a local detector: --pii-service <url> (Presidio, ONP_PII_SERVICE) or --pii-llm <model>[@<url>] (ONP_PII_LLM).

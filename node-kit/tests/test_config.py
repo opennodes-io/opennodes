@@ -21,6 +21,21 @@ def test_hardware_section_lands_in_card():
     assert card["hardware"]["basis"] == "claimed"
 
 
+def test_origin_addresses_and_the_dated_policy_link_land_in_card():
+    # by default neither is declared
+    plain = build_card(tomllib.loads(DEFAULT_CONFIG.format(**FILL)), ["m"])
+    assert "origin_addresses" not in plain["endpoints"]
+    assert plain["offerings"][0]["data_policy"] == {"retention": "none", "training_on_inputs": False}
+    text = (DEFAULT_CONFIG.format(**FILL)
+            .replace('# origin_addresses = ["203.0.113.10"]', 'origin_addresses = ["203.0.113.10", " origin.box.example.org "]')
+            .replace('# source = "https://example.com/privacy"', 'source = "https://box.example.org/privacy"')
+            .replace('# checked = "2026-11-19"', 'checked = 2026-11-19'))   # a bare TOML date
+    card = build_card(tomllib.loads(text), ["m"])
+    assert card["endpoints"]["origin_addresses"] == ["203.0.113.10", "origin.box.example.org"]
+    assert card["offerings"][0]["data_policy"]["source"] == "https://box.example.org/privacy"
+    assert card["offerings"][0]["data_policy"]["checked"] == "2026-11-19"
+
+
 # ---- model.artifact: the public record registries check identity against (ONP-2 §5, ONP-3 §6.3)
 from onp_node.config import artifact_for, unverifiable
 

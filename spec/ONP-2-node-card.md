@@ -53,7 +53,7 @@ The Node Card is the self-description document of an AI Node. It is the unit reg
 - `id` — reverse-DNS, MUST be under a domain the operator controls (verified per ONP-3 §4, same challenge family as the MCP Registry).
 - `did` — OPTIONAL W3C DID; `did:web` RECOMMENDED so the DID resolves through the same origin that hosts the card.
 - `regions` (and `data_policy.region_pinning`, §5) — region codes SHOULD be ISO 3166-1 alpha-2 (`CA`, `DE`), ISO 3166-2 subdivisions (`CA-QC`), or the ISO-reserved `EU`; `EEA` (the EU with Iceland, Liechtenstein and Norway) is also accepted. Matching is case-insensitive, and a code **contains** its subdivisions: a requirement of `CA` is met by `CA-QC`, but a requirement of `CA-QC` is not met by `CA`. `EU` and `EEA` also contain their member states and those states' subdivisions, and `EEA` contains `EU`: a requirement of `EU` is met by `DE-HE` but not by `NO` or `CH`; a requirement of `EEA` is met by `NO`; a requirement of `DE` is not met by `EU`. Free-form legacy values (`eu-central`) are tolerated and follow the same rule (`eu` contains `eu-central`), but new cards SHOULD use ISO codes.
-- `operator.country` — ISO 3166-1 alpha-2 country of the **operator** (its legal jurisdiction), as declared by the operator. It is not a statement of where the hardware runs: that is `locations` (§3a), which also delivers the per-offering execution location [KNOWN-ISSUES.md](KNOWN-ISSUES.md) planned for Draft 0.2. Registries present this value as *declared*; jurisdiction filters (ONP-3 §5) use it.
+- `operator.country` — ISO 3166-1 alpha-2 country of the **operator** (its legal jurisdiction), as declared by the operator. It is not a statement of where the hardware runs: that is `locations` (§3a), which also delivers the per-offering execution location [KNOWN-ISSUES.md](KNOWN-ISSUES.md) planned for Draft 0.2. Registries present this value as *declared*, together with what their server-location check found (ONP-3 §6.4), for example "EU-declared operator, server front checked", and never as proof of residency; jurisdiction filters (ONP-3 §5) use it.
 - One origin hosts exactly one card (§1): an operator with several sites or regions publishes one card per host (e.g. `fi.inference.example.com`, `de.inference.example.com`), each with its own node id under the operator's domain.
 
 ## 3a. `locations` — where serving happens, and how we know
@@ -137,6 +137,18 @@ The Node Card is the self-description document of an AI Node. It is the unit reg
 ```
 
 `health` is REQUIRED: `GET` returns `200` with `{"status":"ok","load":0.42,"queue_ms":120}` (fields beyond `status` optional). Registries probe it (ONP-3 §6).
+
+`origin_addresses` (OPTIONAL, 1 to 4 entries) — for an `openai` endpoint behind a CDN or other anycast front: the addresses (IP literals or DNS names) of the servers that serve it.
+
+```json
+"endpoints": {
+  "openai": "https://api.example-lab.ai/v1",
+  "health": "https://api.example-lab.ai/onp/health",
+  "origin_addresses": ["203.0.113.10", "origin-fi.example-lab.ai"]
+}
+```
+
+A registry cannot locate a CDN edge, so it checks these addresses instead (ONP-3 §6.4): each must be a public address, accept a TLS connection for the `openai` host with a certificate valid for that name under the public CA roots, and answer a request for the `health` endpoint (or `{openai}/models` when `health` is on another host) with any HTTP status below 500 when connected to directly. List every address that serves the endpoint: the check passes only when all of them pass. An origin reachable only through a tunnel (no public address) cannot be checked. Declaring an address is the operator's signed statement that the CDN forwards to it; registries cannot see the forwarding itself.
 
 ## 5. `offerings` — Model Offerings
 
@@ -227,6 +239,7 @@ Field rules:
   - `ephemeral`: content may be held for a bounded time for abuse monitoring or caching, and `retention_max_seconds` is REQUIRED;
   - `logged`: content may be stored without a declared bound.
   Registries MUST check that `data_policy` is present before promoting a node to `community` (Stage A, ONP-3 §4a).
+- `data_policy` is the operator's **declaration**: no probe can see what happens to a request after it is answered, so registries and clients present `retention` and `training_on_inputs` as declared, never as verified, wherever they show or filter on them (ONP-3 §5, §5e). `data_policy.source` (OPTIONAL, URI) links the operator's published privacy policy, data processing terms or contract clause that states the policy, and `data_policy.checked` (OPTIONAL, `YYYY-MM-DD`) dates that version, as `source` and `checked` do for locations (§3a) and commitments (§3b). Operators SHOULD give both, so a client can read what the operator committed to; the binding commitment for personal data is still the contract between controller and processor (GDPR Art. 28), which a card cannot replace.
 
 **Agent offerings** (`modality: "agent"`): the offering wraps an A2A endpoint; `binding.profile` is `onp.a2a/v1` and the card links the A2A Agent Card. This lets ONP registries index agents without competing with A2A — A2A describes *how to talk to it*, ONP describes *what it costs and how it ranks*.
 

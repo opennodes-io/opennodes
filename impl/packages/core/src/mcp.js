@@ -19,13 +19,14 @@ const FILTERS = {
   location_basis: { ...LOCATION_BASIS, description: 'Minimum evidence for the serving locations: claimed < documented (the provider\'s own dated page) < measured (registry probes) < attested. Offerings without known locations are excluded.' },
   exclude_lineage: { type: 'string', description: 'Comma-separated ISO country codes; drops offerings whose declared model lineage includes any of them, e.g. "CN". Offerings that declare no lineage are kept unless lineage is "declared".' },
   lineage: { type: 'string', enum: ['declared', 'any'], description: '"declared": drop offerings whose model declares no lineage (unknown origin is not clean). Combine with exclude_lineage for a strict origin policy.' },
-  retention: { type: 'string', enum: ['none', 'ephemeral', 'logged'], description: 'Maximum data retention: "none" keeps offerings whose data_policy stores nothing beyond the request; "ephemeral" also allows bounded holding. Offerings without a data_policy are excluded.' },
-  no_training: { type: 'boolean', description: 'true: only offerings whose data_policy says training_on_inputs is false. Offerings without a data_policy are excluded.' },
-  trust: { type: 'string', enum: ['trusted', 'open'], description: '"trusted": only the trusted pool, for personal data and sensitive work: operators in the registry\'s trusted jurisdictions (see /v0/health trust), declared lineage without CN, tier verified or higher, no retention and no training on inputs. "open" (or omitted): both pools. Each result carries pool: "trusted" or "open".' },
+  retention: { type: 'string', enum: ['none', 'ephemeral', 'logged'], description: 'Maximum data retention as the operator declares it in data_policy (a declaration: probing cannot verify it; data_policy.source links the published policy where the card gives one): "none" keeps offerings that declare storing nothing beyond the request; "ephemeral" also allows bounded holding. Offerings without a data_policy are excluded.' },
+  no_training: { type: 'boolean', description: 'true: only offerings whose declared data_policy says training_on_inputs is false (a declaration, not verifiable by probing). Offerings without a data_policy are excluded.' },
+  trust: { type: 'string', enum: ['trusted', 'open'], description: '"trusted": only the trusted pool, for personal data and sensitive work: operators that declare a country in the registry\'s trusted jurisdictions (see /v0/health trust) and whose server front passed the registry\'s location check, declared lineage without CN, tier verified or higher, a declared data policy of no retention and no training on inputs. "open" (or omitted): both pools. Each result carries pool: "trusted" or "open".' },
+  server_check: { type: 'string', enum: ['passed', 'any'], description: '"passed": only offerings whose API server front the registry located in the operator\'s declared country or region (or, behind a CDN, every origin address the card declares). A network tripwire, not proof: a front that forwards requests elsewhere passes it. Each hosted result carries jurisdiction.server_check: passed | passed_origin | cdn | mismatch | inconsistent | unchecked.' },
   q: { type: 'string', description: 'Free-text match against the model metadata, offering id, and node id, e.g. "bielik" or "coder".' },
   local: { type: 'boolean', description: "true: only models that run on the user's own machine (the Ollama library: no server, free, ranked by Ollama pulls, with local.sizes_memory per size). false: only hosted offerings. Omit for both (hosted listed first). The result's counts give { hosted, local }." },
   memory_gb: { type: 'number', minimum: 1, description: 'RAM/VRAM the user can give a local model, in GB: keeps local models with a size that fits (4-bit estimate). Hosted offerings are unaffected.' },
-  jurisdiction: { type: 'string', description: 'Only operators that declare a country inside it: "eea" (EU + Iceland, Liechtenstein, Norway) or comma-separated ISO country codes, e.g. "DE,FI". Registered nodes declare their country; imported listings of known providers carry an inferred one (jurisdiction.basis = "inferred"); listings without a country are excluded.' },
+  jurisdiction: { type: 'string', description: 'Only operators that DECLARE a country inside it: "eea" (EU + Iceland, Liechtenstein, Norway) or comma-separated ISO country codes, e.g. "DE,FI". Registered nodes declare their country in their signed card; imported listings of known providers carry one the registry inferred (jurisdiction.basis = "inferred"); listings without a country are excluded. A declaration, not proof of where requests are processed: the registry drops only a server it located outside. jurisdiction.evidence says what was checked, e.g. "FR operator (EEA, declared), server front checked (FR)"; add server_check "passed" to keep only offerings whose check passed.' },
 };
 
 const COMMITMENT = { type: 'string', enum: ['processing', 'storage'] };
@@ -50,9 +51,10 @@ export const MCP_TOOLS = [
             max_input_per_mtok: { type: 'number', minimum: 0, description: 'Maximum input price in USD per million tokens.' },
             max_total_usd: { type: 'number', minimum: 0, description: 'Maximum estimated total cost of the call in USD.' },
             region: { type: 'string', description: 'Required data region, e.g. "CA" or "EU" (EU and EEA include their member states). Offerings pinned to, or served from, other regions are excluded, and so are hosted offerings with no known location; models on this machine or LAN always qualify.' },
-            jurisdiction: { type: 'string', description: 'Only operators in this jurisdiction: "eea" or ISO country codes ("DE,FI"). Local and LAN models always qualify.' },
+            jurisdiction: { type: 'string', description: 'Only operators that declare a country in this jurisdiction (inferred by the registry for imported listings): "eea" or ISO country codes ("DE,FI"). A declaration, not proof of where requests are processed. Local and LAN models always qualify.' },
+            server_check: { type: 'string', enum: ['passed', 'any'], description: '"passed": only offerings whose server front the registry located in the declared country or region (behind a CDN: every declared origin address). A tripwire, not proof. Each recommendation carries server_check. Local and LAN models always qualify.' },
             prefer_local: { type: 'boolean', description: 'Give a bonus to nodes on this machine or LAN.' },
-            sensitive: { type: 'boolean', description: 'true when the task carries personal data or is otherwise sensitive: only the trusted pool qualifies (trusted jurisdictions, declared lineage without CN, tier verified or higher, no retention, no training on inputs). Models on this machine or LAN qualify on jurisdiction, tier and data policy, but not on lineage. If nothing qualifies, recommendations is empty: do not fall back to the open pool.' },
+            sensitive: { type: 'boolean', description: 'true when the task carries personal data or is otherwise sensitive: only the trusted pool qualifies (an operator declaring a trusted jurisdiction with a passing server-location check, declared lineage without CN, tier verified or higher, a declared data policy of no retention and no training on inputs). Models on this machine or LAN qualify on jurisdiction, tier and data policy, but not on lineage. If nothing qualifies, recommendations is empty: do not fall back to the open pool.' },
             local_memory_gb: { type: 'number', minimum: 1, description: 'RAM/VRAM this machine can give a local model, in GB. Local models that cannot fit are left out, and the largest size that fits is picked (4-bit estimate). The local stdio server fills this from the machine when it is not given; otherwise catalogue models are scored for a typical 16 GB laptop, and none is picked.' },
             limit: { type: 'integer', minimum: 1, maximum: 20, default: 3, description: 'Number of candidates to return.' },
           },
@@ -193,11 +195,15 @@ export function summarizeNode(node, offeringLimit = 25) {
     payment_schemes: (card.payment?.schemes ?? []).map((s) => s.scheme),
     listed_at: node.created_at ?? null,
     updated_at: node.updated_at ?? null,
+    // The registry's server-location check of the API host: evidence, not proof (ONP-3 §6.4).
     location: node.location ? {
       verdict: node.location.verdict, declared: node.location.declared ?? null,
       server: node.location.server ?? null, latency: node.location.latency?.verdict ?? 'unknown',
       checked_at: node.location.checked_at ?? null,
+      ...(node.location.origin ? { origin: { verdict: node.location.origin.verdict,
+        addresses: (node.location.origin.addresses ?? []).map((a) => ({ address: a.address, verdict: a.verdict, server_country: a.server_country ?? null })) } } : {}),
     } : null,
+    ...(node.server_check ? { server_check: node.server_check } : {}),
     availability: liveness.length ? {
       checks: liveness.length,
       ok: liveness.filter((p) => p.ok).length,

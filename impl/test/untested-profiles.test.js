@@ -6,6 +6,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { startFixtureNode } from '@opennodes/fixture-node';
 import { startRegistry } from '@opennodes/registry';
 import { TESTED_PROFILES } from '@opennodes/registry/src/probes.js';
+import { passServerCheck } from './server-check.js';
 
 const FIXTURE = 'org.opennodes.fixture';
 const FAST_CAPACITY = { durationMs: 200, steps: [1] };
@@ -102,6 +103,7 @@ test('mixed node: chat is verified, speech and embeddings are labeled untested a
   assert.deepEqual(body.stage_b.verdicts.map((x) => x.offering_id), ['echo-1']);
   assert.deepEqual(body.stage_b.untested, ['embed-1', 'tts-1']);
 
+  await passServerCheck(registry, FIXTURE);   // the trusted pool needs a passing server-location check
   const all = byId((await r.get('/v0/offerings')).offerings);
   assert.deepEqual([all['echo-1'].tier, all['echo-1'].tested, all['echo-1'].pool], ['verified', true, 'trusted']);
   for (const id of ['embed-1', 'tts-1']) {

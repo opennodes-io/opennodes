@@ -7,9 +7,10 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   sendJson, problem, regionWithin, countryOf, basisRank, pointFor, distanceKm, parsePoint, precisionRank,
-  residencyAt, residencyMeets, commitmentRank, scopeCovers, RESIDENCY_COMMITMENTS, lineageAllowed,
+  residencyAt, residencyMeets, commitmentRank, scopeCovers, RESIDENCY_COMMITMENTS, lineageAllowed, serverCheckOf,
 } from '@opennodes/core';
 import { siteLocation } from './importers.js';
+import { locationSummary } from './search.js';
 
 const DATA_DIR = fileURLToPath(new URL('./data/', import.meta.url));
 const HIDDEN = ['delisted', 'suspended', 'submitted', 'challenged', 'disputed', 'claimed'];
@@ -158,7 +159,8 @@ export async function collectSites(store, seeds = []) {
   for (const { node, card } of cards) {
     // The registry's server-location check (location.js, ONP-3 §6.4) covers the node's API host,
     // not each site: shown beside the declared sites, never turning one into `measured` by itself.
-    const check = (await store.getObservations(node.id, '_node')).location ?? null;
+    // As search carries it: a check made for another API host or declared country reads `unknown`.
+    const check = locationSummary((await store.getObservations(node.id, '_node')).location ?? null, card);
     const via = attached.get(node.id);
     const holds = via?.primary === node.id;
     bases.set(node.id, {
@@ -169,8 +171,10 @@ export async function collectSites(store, seeds = []) {
       tier: node.state === 'indexed' ? 'unverified' : node.state,
       source: holds ? 'seed' : (node.source ?? 'registration'),
       server_check: check ? {
-        verdict: check.verdict, server_country: check.server?.country ?? null,
-        latency: check.latency?.verdict ?? 'unknown', checked_at: check.checked_at ?? null,
+        verdict: check.verdict, server_country: check.server_country ?? null,
+        latency: check.latency ?? 'unknown', checked_at: check.checked_at ?? null,
+        level: serverCheckOf({ jurisdiction: { location: check } }),   // §6.4 evidence level, as search's jurisdiction.server_check
+        ...(check.origin ? { origin: check.origin.verdict } : {}),
       } : null,
       commitments: card.node?.residency ?? residencyOf.get(node.id) ?? null,
     });
