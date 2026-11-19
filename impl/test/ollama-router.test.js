@@ -98,7 +98,7 @@ test('router: local + LAN + public catalog; native chat via ONP translated and r
 
   // auto-private never leaves the LAN even though a public node exists
   await fetch(`${router.origin}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'auto-private', messages: [{ role: 'user', content: 'summarize this confidential note' }], stream: false }) });
-  const advice = await (await fetch(`${router.origin}/router/advice`)).json();
+  const advice = await (await fetch(`${router.origin}/router/advice`, { headers: { authorization: `Bearer ${router.token}` } })).json();
   assert.equal(advice.model, 'auto-private');
   assert.ok(advice.recommendations.every((r) => r.tier === 'local' || r.tier === 'lan'), JSON.stringify(advice.recommendations));
   assert.ok(!JSON.stringify(advice.features).includes('confidential note'));
@@ -123,7 +123,7 @@ test('router: local + LAN + public catalog; native chat via ONP translated and r
   // passive reputation: the three public calls count; our own budget refusal says nothing about the node
   assert.equal(router.reputation.summary('org.opennodes.fixture/echo-1')?.ok, 3);
   assert.equal(capped.reputation.report().length, 0);
-  const rep = await (await fetch(`${router.origin}/router/reputation`)).json();
+  const rep = await (await fetch(`${router.origin}/router/reputation`, { headers: { authorization: `Bearer ${router.token}` } })).json();
   assert.ok(rep.offerings.some((r) => r.offering === 'org.opennodes.fixture/echo-1' && r.calls === 3));
 });
 

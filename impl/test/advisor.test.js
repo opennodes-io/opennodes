@@ -234,7 +234,7 @@ test('auto-private: simple requests stay on this machine, demanding ones go to t
   const free = { modality: 'text', pricing: { input_per_mtok: 0, output_per_mtok: 0 }, data_policy: { retention: 'none', training_on_inputs: false }, observed: { probe_success: 1, probes: 0 } };
   const local = (id, params_b) => ({ ...free, node_id: 'local', offering_id: id, tier: 'local', source: 'local', local: { run: `ollama run ${id}` },
     model: { name: id, params_b }, serving: { context_window: 8192, supports: ['streaming', 'tool_calls'] } });
-  const h100 = { ...free, node_id: 'org.lab.h100', offering_id: 'qwen3-235b', tier: 'lan', source: 'lan',
+  const h100 = { ...free, node_id: 'org.lab.h100', offering_id: 'qwen3-235b', tier: 'lan', source: 'lan', lan: { pinned: true },   // a peer pinned by card key
     model: { name: 'Qwen/Qwen3-235B-A22B-FP8', params_b: 235 }, serving: { context_window: 32768, supports: ['streaming', 'tool_calls'], expected_tps: { p50: 60, basis: 'claimed' } } };
   const pick = (pool, prompt, tools) => recommend(pool, extractFeatures(prompt, { request: { tools, json: false } }),
     { preset: 'private', prefer_local: true, limit: 3 }).recommendations[0].offering;

@@ -1,16 +1,18 @@
 // OpenNodes for Ollama: one Ollama-compatible endpoint over three tiers —
 //   local  : the user's own Ollama (passthrough, preferred when the model is present)
-//   lan    : other machines (plain Ollama servers or ONP nodes), static peers + mDNS
+//   lan    : other machines (plain Ollama servers or ONP nodes) the user added (--peer), or found by
+//            mDNS (--mdns) and pinned by card key (--pin). Only pinned peers are the user's own network.
 //   public : OpenNodes registry offerings (verified providers, pinned prices, signed receipts)
 // Routes: Ollama native API (/api/*) with streaming translation, OpenAI /v1, and advisor
-// models auto | auto-cheap | auto-fast | auto-quality | auto-private (never leaves the LAN) | auto-eu.
+// models auto | auto-cheap | auto-fast | auto-quality | auto-private (this machine and pinned peers) | auto-eu.
+// Access (src/access.js): the router API needs the token; local apps may use the model routes without it.
 import { appendFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import {
   createApp, listen, closeApp, sendJson, problem, readJson,
   verifyJws, keyFromJwk, costForUsage, estimateBounds, round6, extractFeatures, recommend, parseAutoModel, AUTO_MODEL_NAMES,
-  responseBudgetMs, fetchWithin, trustedView, trustedJurisdictionsFrom, trustGaps, sensitiveHeader,
+  responseBudgetMs, fetchWithin, trustedView, trustedJurisdictionsFrom, trustGaps, sensitiveHeader, onOwnNetwork,
 } from '@opennodes/core';
 import {
   parseMaskMode, maskModeOf, piiDetectorFrom, maskChatRequest, maskedRequestFor, oncePerRequest,
@@ -22,7 +24,8 @@ import {
   ollamaChatToOpenAI, ollamaGenerateToOpenAI, parseSse, parseNdjson, OllamaChunker,
   capabilitiesToSupports, parseParamsB, contextFromModelInfo,
 } from './translate.js';
-import { probePeer, browseMdns } from './discovery.js';
+import { probePeer, browseMdns, normalizePin } from './discovery.js';
+import { accessPolicy, newToken, isLoopbackBind } from './access.js';
 
 // auto, auto-cheap|fast|quality|private, auto-sensitive (trusted pool only), and auto-<where> (eu, or a
 // country code such as ca): your own machines plus public operators in that jurisdiction. Parsed by @opennodes/core.
@@ -37,20 +40,31 @@ const oerr = (res, status, msg) => sendJson(res, status, { error: msg });
 export async function startOllamaRouter({
   port = 11435, host = '127.0.0.1',
   ollama = 'http://127.0.0.1:11434',
-  peers = [],                 // origins of LAN Ollama servers or ONP nodes
+  peers = [],                 // origins of LAN Ollama servers or ONP nodes the user adds
+  pins = [],                  // card-key thumbprints (RFC 7638) of LAN nodes that are the user's own network
+  token = null,               // bearer token for the router API and other machines (null on loopback: one per run)
+  allowOrigins = [],          // browser origins besides local pages that may call the model routes without the token
+  allowHosts = [],            // Host names besides loopback ones that local apps may use without the token
   registry = null,            // OpenNodes registry URL for the public tier (null = LAN only)
   policy = {},                // { min_tier: 'community', max_request_usd: 0.05, region, sensitive }
   trustedJurisdictions = trustedJurisdictionsFrom(),   // operators of the trusted pool (ONP_TRUSTED_JURISDICTIONS, default EU,CA)
   keys = {},                  // BYOK upstream credentials by hostname (imported catalogs)
   ledgerPath = null,
   reputationPath = null,      // passive reputation of each offering, from real calls (null = this run only)
-  mdns = true,
+  mdns = false,               // browse mDNS for _onp._tcp nodes; a found node is used only when pinned
+  localTtlMs = LOCAL_TTL,     // how long local and LAN catalogs (and LAN cards, re-checked against the pins) are reused
   log = console.log,
   // PII masking (docs/pii-masking.md): 'open' (default; ONP_MASK_PII) masks requests to open-pool public
   // offerings, 'all' every public one, 'off' none; local and LAN models never. Detection: the rules,
   // plus a local Presidio service (piiService, ONP_PII_SERVICE) and a local model (piiLlm, ONP_PII_LLM).
   maskPii = null, piiService = null, piiLlm = null, piiDetector = null,
 } = {}) {
+  if (!isLoopbackBind(host) && !token) {
+    throw new Error(`refusing to listen on ${host} without a token: other machines would reach the router, its peers and your provider keys unauthenticated (--token or ONP_ROUTER_TOKEN)`);
+  }
+  const apiToken = token ?? newToken();
+  const access = accessPolicy({ token: apiToken, allowOrigins, allowHosts });
+  const pinSet = new Set(pins.map(normalizePin).filter(Boolean));
   const pol = { min_tier: 'community', max_request_usd: 0.05, sensitive: false, ...policy };
   const maskMode = parseMaskMode(maskPii ?? process.env.ONP_MASK_PII, 'open');
   const detector = piiDetector ?? piiDetectorFrom({ service: piiService, llm: piiLlm });
@@ -60,7 +74,8 @@ export async function startOllamaRouter({
   const client = registry ? new OnpClient({ registry }) : null;
   const jwksCache = new Map();
   const receipts = [];
-  const peerMap = new Map();  // origin -> { kind, origin, name, card? }
+  const peerMap = new Map();     // origin -> { kind, origin, name, card?, key, jwk?, pinned, source: 'added' | 'mdns' }
+  const discovered = new Map();  // origin -> found by mDNS but not pinned: listed in /router/catalog, never used
   let localCache = { at: 0, entries: [] };
   let publicCache = { at: 0, entries: [] };
   let lastAdvice = null;
@@ -68,7 +83,10 @@ export async function startOllamaRouter({
 
   /* ------------------------------------------------------------ catalogs */
 
-  async function ollamaEntries(origin, tier, prefix) {
+  // Your own Ollama is 'local'. A plain Ollama server on the LAN has no card or key, so it is never
+  // pinned: it declares no data policy (unknown), and it is not used for auto-private, auto-eu or sensitive.
+  async function ollamaEntries(origin, tier, prefix, peer = null) {
+    const own = tier === 'local';
     const res = await fetch(`${origin}/api/tags`, { signal: AbortSignal.timeout(5_000) });
     if (!res.ok) throw new Error(`${origin}/api/tags -> ${res.status}`);
     const { models = [] } = await res.json();
@@ -89,37 +107,55 @@ export async function startOllamaRouter({
           serving: { context_window: contextFromModelInfo(show.model_info) ?? 8192, supports: capabilitiesToSupports(show.capabilities), languages: [] },
           binding: { profile: 'ollama/v1', model_id: m.name },
           pricing: { currency: 'USD', input_per_mtok: 0, output_per_mtok: 0, schemes: ['free'] },
-          data_policy: { retention: 'none', training_on_inputs: false, region_pinning: [] },
+          ...(own ? { data_policy: { retention: 'none', training_on_inputs: false, region_pinning: [] } } : {}),
           observed: { probe_success: 1, probes: 0, ttft_ms: null, tps: null, availability: null },
-          endpoints: { openai: `${origin}/v1` }, local: { run: `ollama run ${m.name}` },
+          endpoints: { openai: `${origin}/v1` },
+          ...(own ? { local: { run: `ollama run ${m.name}` } } : { lan: { pinned: false, key: null, source: peer?.source ?? 'added' } }),
         },
       };
     }));
   }
 
+  // A LAN node's card is the operator's word. Its offerings keep a missing data policy missing (unknown,
+  // not "no retention"), and are invoked at the origin the router reached, never at an origin the card names.
   function onpPeerEntries(peer) {
     const card = peer.card;
+    const named = (() => { try { return new URL(card.endpoints?.openai); } catch { return null; } })();
+    const path = named?.pathname.replace(/\/$/, '') || '/v1';
+    const endpoints = { ...card.endpoints, openai: named?.origin === peer.origin ? card.endpoints.openai : `${peer.origin}${path}` };
     return (card.offerings ?? []).filter((o) => o.modality === 'text' || o.modality === 'multimodal').map((o) => ({
-      name: `lan/${peer.name}/${o.offering_id}`, tier: 'lan', kind: 'onp', origin: peer.origin, upstreamModel: o.binding.model_id,
+      name: `lan/${peer.name}/${o.offering_id}`, tier: 'lan', kind: 'onp', origin: peer.origin, upstreamModel: o.binding.model_id, jwk: peer.jwk ?? null,
       offering: {
         node_id: card.node.id, offering_id: o.offering_id, tier: 'lan', source: 'lan', card_revision: card.revision,
         modality: o.modality, model: o.model, serving: o.serving, binding: o.binding,
         pricing: { ...o.pricing, input_per_mtok: 0, output_per_mtok: 0 },   // LAN: no money moves; receipts still account usage
-        data_policy: o.data_policy ?? { retention: 'none', training_on_inputs: false }, hardware: o.hardware ?? card.hardware ?? null,
-        observed: { probe_success: 1, probes: 0 }, endpoints: card.endpoints, lan_pricing: o.pricing,
+        ...(o.data_policy ? { data_policy: o.data_policy } : {}), hardware: o.hardware ?? card.hardware ?? null,
+        observed: { probe_success: 1, probes: 0 }, endpoints, lan_pricing: o.pricing,
+        lan: { pinned: peer.pinned === true, key: peer.key ?? null, source: peer.source },
       },
     }));
   }
 
+  /** Reload an ONP peer's card and check its signature against the pins again. */
+  async function refreshPeer(peer) {
+    const fresh = await probePeer(peer.origin, { pins: pinSet });
+    if (!fresh || fresh.kind !== 'onp') throw new Error('no longer serves a valid node card');
+    if (peer.pinned && !fresh.pinned) log(`[onp-ollama] peer ${peer.name} at ${peer.origin}: its card is no longer signed by a pinned key${fresh.key ? ` (now ${fresh.key})` : ''}; it is not your network any more`);
+    if (peer.source === 'mdns' && !fresh.pinned) { peerMap.delete(peer.origin); discover(fresh); return null; }
+    const next = { ...fresh, source: peer.source };
+    peerMap.set(peer.origin, next);
+    return next;
+  }
+
   async function localEntries() {
-    if (Date.now() - localCache.at < LOCAL_TTL) return localCache.entries;
+    if (Date.now() - localCache.at < localTtlMs) return localCache.entries;
     const entries = [];
     try { entries.push(...await ollamaEntries(ollama, 'local', '')); }
     catch (err) { log(`[onp-ollama] local Ollama unreachable at ${ollama}: ${err.message}`); }
-    for (const peer of peerMap.values()) {
+    for (const peer of [...peerMap.values()]) {
       try {
-        if (peer.kind === 'ollama') entries.push(...await ollamaEntries(peer.origin, 'lan', `lan/${peer.name}`));
-        else entries.push(...onpPeerEntries(peer));
+        if (peer.kind === 'ollama') entries.push(...await ollamaEntries(peer.origin, 'lan', `lan/${peer.name}`, peer));
+        else { const fresh = await refreshPeer(peer); if (fresh) entries.push(...onpPeerEntries(fresh)); }
       } catch (err) { log(`[onp-ollama] peer ${peer.origin} unreachable: ${err.message}`); }
     }
     localCache = { at: Date.now(), entries };
@@ -143,13 +179,45 @@ export async function startOllamaRouter({
 
   async function catalog() { return [...await localEntries(), ...await publicEntries()]; }
 
-  async function addPeer(origin) {
-    const peer = await probePeer(origin);
+  /** A node found by mDNS whose card key is not pinned: listed, never used. */
+  function discover(peer) {
+    const seen = discovered.has(peer.origin);
+    discovered.set(peer.origin, { origin: peer.origin, kind: peer.kind, node_id: peer.card?.node?.id ?? null, key: peer.key ?? null,
+      card_endpoint: peer.card?.endpoints?.openai ?? null, at_card_origin: peer.atCardOrigin ?? null });
+    if (!seen && peer.replayed) {
+      log(`[onp-ollama] mDNS: ${peer.origin} serves the card of ${peer.card?.node?.id}, signed by pinned key ${peer.key}, but that card names ${peer.card?.endpoints?.openai}; not used (a copied card?)`);
+    } else if (!seen) {
+      log(`[onp-ollama] mDNS: found ${peer.card?.node?.id ?? 'a server'} at ${peer.origin}${peer.key ? ` with card key ${peer.key}` : ' (no signed card)'}; not used. `
+        + (peer.key ? 'If it is yours, check the key on that machine (onp-ollama --show-pin <its loopback origin>) and pin it: --pin <key>' : 'Only a node with a signed card can be pinned; add it with --peer if it is yours'));
+    }
+  }
+
+  /**
+   * Add a peer. source 'added': the user named it (--peer, POST /router/peers); it is used, and it is
+   * the user's own network only if pinned. source 'mdns': used only when pinned. Either way a pin holds
+   * only when the card is signed by a pinned key AND the peer answers at the origin that signed card
+   * names (a card copied to another address is not pinned). `pin` (a thumbprint) pins the peer now; a
+   * card not signed by that key, or served away from its own origin, is refused (status 422).
+   */
+  async function addPeer(origin, { source = 'added', pin = null } = {}) {
+    const wanted = pin ? normalizePin(pin) : null;
+    const peer = await probePeer(origin, { pins: wanted ? new Set([...pinSet, wanted]) : pinSet });
     if (!peer) { log(`[onp-ollama] peer ${origin}: neither an ONP node nor an Ollama server`); return null; }
-    peerMap.set(peer.origin, peer);
+    if (wanted && peer.key !== wanted) {
+      throw Object.assign(new Error(`the card at ${peer.origin} is not signed by key ${wanted}${peer.key ? ` (its key is ${peer.key})` : ' (it has no valid signature)'}; not added`), { status: 422 });
+    }
+    if (wanted && !peer.atCardOrigin) {
+      throw Object.assign(new Error(`the card at ${peer.origin} is signed by key ${wanted} but names ${peer.card.endpoints?.openai}: a copied card, or a node whose --public-url is another address. Add it at the origin its card names, or set that node's --public-url to ${peer.origin}; not added`), { status: 422 });
+    }
+    if (wanted) pinSet.add(wanted);
+    if (source === 'mdns' && !peer.pinned) { discover(peer); return null; }
+    if (peer.replayed) log(`[onp-ollama] peer ${peer.origin} serves a card signed by pinned key ${peer.key} that names ${peer.card.endpoints?.openai}; not pinned (a copied card, or a node reached at another address)`);
+    discovered.delete(peer.origin);
+    const stored = { ...peer, source };
+    peerMap.set(peer.origin, stored);
     localCache.at = 0;
-    log(`[onp-ollama] peer ${peer.name} (${peer.kind}) at ${peer.origin}`);
-    return peer;
+    log(`[onp-ollama] peer ${peer.name} (${peer.kind}) at ${peer.origin}: ${peer.pinned ? `pinned by card key ${peer.key}` : `not pinned${peer.key ? ` (card key ${peer.key})` : ''}, so not used for auto-private, auto-<jurisdiction> or sensitive requests`}`);
+    return stored;
   }
 
   /* ------------------------------------------------------------ routing */
@@ -167,7 +235,8 @@ export async function startOllamaRouter({
       sensitive ||= Boolean(auto.sensitive);
       const text = prompt ?? lastUserText(messages);
       const features = extractFeatures(text, { messages: prompt ? [] : messages.slice(0, -1), est_output_tokens: maxTokens, request });
-      const pool = preset === 'private' ? await localEntries() : await catalog();
+      // auto-private: this machine and LAN peers pinned by card key; a peer added by address alone is not enough
+      const pool = preset === 'private' ? (await localEntries()).filter((e) => onOwnNetwork(e.offering)) : await catalog();
       const result = recommend(reputation.apply(pool.map((e) => e.offering)), features, {
         preset, limit: 5, prefer_local: true, max_total_usd: pol.max_request_usd, region: pol.region,
         jurisdiction: auto.jurisdiction ?? pol.jurisdiction,
@@ -205,8 +274,8 @@ export async function startOllamaRouter({
       }
     }
     const origin = entry.origin;
-    if (!jwksCache.has(origin)) jwksCache.set(origin, await (await fetch(`${origin}/.well-known/jwks.json`)).json());
-    const receipt = verifyJws(receiptJws, keyFromJwk(jwksCache.get(origin).keys[0]));
+    if (!entry.jwk && !jwksCache.has(origin)) jwksCache.set(origin, await (await fetch(`${origin}/.well-known/jwks.json`)).json());
+    const receipt = verifyJws(receiptJws, keyFromJwk(entry.jwk ?? jwksCache.get(origin).keys[0]));   // a LAN node: the key that signed its card
     const pricing = entry.offering.lan_pricing ?? entry.offering.pricing;
     const expected = costForUsage(pricing, receipt.usage.prompt_tokens, receipt.usage.completion_tokens);
     if (round6(receipt.amount.value) !== round6(expected)) throw new Error('receipt amount mismatch');
@@ -372,9 +441,9 @@ export async function startOllamaRouter({
   }
   const autoNote = (name) => {
     const a = parseAutoModel(name);
-    if (a?.preset === 'private') return 'routes only to local and LAN models';
+    if (a?.preset === 'private') return 'routes only to this machine and LAN peers pinned by card key';
     if (a?.sensitive) return `for personal data: routes only to the trusted pool (${trusted.jurisdictions} operators, declared lineage without CN, verified+, no retention, no training)`;
-    if (a?.jurisdiction) return `routes to local, LAN and ${a.jurisdiction === 'eea' ? 'EU/EEA' : a.jurisdiction} operators only`;
+    if (a?.jurisdiction) return `routes to this machine, pinned LAN peers and ${a.jurisdiction === 'eea' ? 'EU/EEA' : a.jurisdiction} operators only`;
     return 'routes by the OpenNodes advisor';
   };
   const autoTag = (name) => ({
@@ -393,6 +462,8 @@ export async function startOllamaRouter({
   }
 
   /* ------------------------------------------------------------ routes */
+
+  const peerView = (p) => ({ name: p.name, kind: p.kind, origin: p.origin, source: p.source, pinned: p.pinned === true, key: p.key ?? null });
 
   const app = createApp([
     ['GET', '/', (req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('Ollama is running (OpenNodes router)'); }],
@@ -491,22 +562,46 @@ export async function startOllamaRouter({
       }, { sensitive });
     }],
 
-    // Router introspection.
-    ['GET', '/router/catalog', async (req, res) => sendJson(res, 200, { local_ollama: ollama, peers: [...peerMap.values()].map((p) => ({ name: p.name, kind: p.kind, origin: p.origin })), registry, policy: pol, trusted_view: trusted, pii_masking: { mode: maskMode, detector: detector.name }, models: (await catalog()).map((e) => ({ name: e.name, tier: e.tier, kind: e.kind, origin: e.origin, pool: trustGaps(e.offering ?? {}, trusted).length ? 'open' : 'trusted' })) })],
+    // Router introspection and peers: always behind the router token (src/access.js).
+    ['GET', '/router/catalog', async (req, res) => {
+      const models = await catalog();   // refreshes peers first
+      sendJson(res, 200, { local_ollama: ollama, peers: [...peerMap.values()].map(peerView), discovered: [...discovered.values()], pins: [...pinSet], mdns: Boolean(mdns),
+        registry, policy: pol, trusted_view: trusted, pii_masking: { mode: maskMode, detector: detector.name },
+        models: models.map((e) => ({ name: e.name, tier: e.tier, kind: e.kind, origin: e.origin, ...(e.tier === 'lan' ? { pinned: onOwnNetwork(e.offering) } : {}), pool: trustGaps(e.offering ?? {}, trusted).length ? 'open' : 'trusted' })) });
+    }],
     ['GET', '/router/advice', (req, res) => sendJson(res, 200, lastAdvice ?? { model: null, recommendations: [] })],
     ['GET', '/router/reputation', (req, res) => sendJson(res, 200, { note: 'outcome and timing of your own calls through this router; no prompts or answers are kept', offerings: reputation.report() })],
     ['GET', '/router/receipts', (req, res) => sendJson(res, 200, { total_cost: round6(receipts.reduce((s, r) => s + (r.cost ?? 0), 0)), count: receipts.length, entries: receipts.slice(-100) })],
-    ['POST', '/router/peers', async (req, res) => { const { origin } = await readJson(req); const peer = await addPeer(String(origin)); peer ? sendJson(res, 200, { name: peer.name, kind: peer.kind, origin: peer.origin }) : oerr(res, 422, `peer unreachable: ${origin}`); }],
-  ], { cors: true });
+    ['POST', '/router/peers', async (req, res) => {
+      const { origin, pin = null } = await readJson(req);
+      let url;
+      try { url = new URL(String(origin)); } catch { return oerr(res, 400, `origin must be a URL such as http://192.168.1.20:8800, not ${JSON.stringify(origin)}`); }
+      if (!['http:', 'https:'].includes(url.protocol)) return oerr(res, 400, `origin must be http or https: ${origin}`);
+      try {
+        const peer = await addPeer(url.origin, { pin });
+        peer ? sendJson(res, 200, peerView(peer)) : oerr(res, 422, `peer unreachable: ${url.origin}`);
+      } catch (err) { oerr(res, err.status ?? 500, err.message); }
+    }],
+  ], {
+    before: (req, res) => {
+      const verdict = access.check(req, res);
+      if (!verdict) return false;
+      if (verdict.preflight) { res.writeHead(204); res.end(); return true; }
+      oerr(res, verdict.status, verdict.error);
+      return true;
+    },
+  });
 
   for (const origin of peers) await addPeer(origin);
-  const stopMdns = mdns ? await browseMdns((origin) => { addPeer(origin); }) : () => {};
+  const stopMdns = mdns ? await browseMdns((origin) => { addPeer(origin, { source: 'mdns' }).catch((err) => log(`[onp-ollama] mDNS peer ${origin}: ${err.message}`)); }) : () => {};
 
   const actualPort = await listen(app, port, host);
   return {
     port: actualPort, origin: `http://${host}:${actualPort}`, receipts, addPeer,
+    token: apiToken,   // for the router API (/router/*) and requests from other machines
     pii: { mode: maskMode, detector: detector.name },   // PII masking before the open pool
     get peers() { return [...peerMap.values()]; },
+    get discovered() { return [...discovered.values()]; },
     reputation,
     close: async () => { stopMdns(); reputation.flush(); await closeApp(app); },
   };

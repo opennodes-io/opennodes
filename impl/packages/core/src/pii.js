@@ -620,9 +620,10 @@ export function maskModeOf(headers = {}, clientMode = 'open') {
 }
 
 /**
- * Must a request to this offering be masked? Never for a model on the user's own machine or network
- * (nothing reaches an operator); in `open` mode for an offering outside the trusted pool under the
- * client's trusted view; in `all` mode for every hosted offering.
+ * Must a request to this offering be masked? Never for a model on the user's own machine or a LAN
+ * peer (nothing reaches an operator; a client has LAN peers only when the user added or pinned them,
+ * ONP-3 §5b); in `open` mode for an offering outside the trusted pool under the client's trusted view;
+ * in `all` mode for every hosted offering.
  */
 export function needsMasking(offering, { mode = 'open', view = trustedView() } = {}) {
   if (mode === 'off') return false;

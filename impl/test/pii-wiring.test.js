@@ -231,7 +231,7 @@ test('ollama router: open-pool public models get placeholders on every route; th
   assert.equal(sent.length, 5);
   for (const s of sent) assert.deepEqual(leaked(s.body), [], `${s.path}: no value reached the operator`);
   assert.deepEqual(router.receipts.at(-1).pii_masked, { EMAIL: 1, PHONE: 1 });
-  assert.deepEqual((await (await fetch(`${router.origin}/router/catalog`)).json()).pii_masking, { mode: 'open', detector: 'regex' });
+  assert.deepEqual((await (await fetch(`${router.origin}/router/catalog`, { headers: { authorization: `Bearer ${router.token}` } })).json()).pii_masking, { mode: 'open', detector: 'regex' });
 
   // an image cannot be masked: refused, nothing sent
   const image = await post('/api/chat', { model, messages: [{ role: 'user', content: 'What is this?', images: ['iVBORw0KGgo='] }], stream: false });

@@ -88,7 +88,7 @@ test('advisor region policy uses containment and requires every pinned location 
   assert.equal(r.rejected.region, 1);
 });
 
-test('advisor region policy: unknown location fails, as in search; own machine and LAN pass; embedders too', () => {
+test('advisor region policy: unknown location fails, as in search; own machine and pinned LAN pass; embedders too', () => {
   const base = { tier: 'community', source: 'import', card_revision: 'r1', modality: 'text',
     model: { name: 'M', artifact: 'hf:x/m', params_b: 70 }, serving: { context_window: 128000, supports: ['streaming'] },
     binding: { profile: 'onp.openai.chat/v1', model_id: 'm' },
@@ -99,12 +99,13 @@ test('advisor region policy: unknown location fails, as in search; own machine a
     { ...base, node_id: 'de.example.fra', offering_id: 'fra', residency: ['DE-HE'] },              // registry summary codes
     { ...base, node_id: 'fr.example.par', offering_id: 'par', locations: [{ region: 'FR-IDF', status: 'live' }, { region: 'US-VA', status: 'planned' }] },
     { ...base, node_id: 'uk.example.lon', offering_id: 'lon', residency: ['DE-HE', 'GB-LND'] },
-    { ...base, node_id: 'lan.peer', offering_id: 'lan', tier: 'lan', source: 'lan' },
+    { ...base, node_id: 'lan.peer', offering_id: 'lan', tier: 'lan', source: 'lan', lan: { pinned: true } },        // pinned by card key (ONP-3 §5b)
+    { ...base, node_id: 'lan.added', offering_id: 'lan2', tier: 'lan', source: 'lan', lan: { pinned: false } },     // added by address: location unknown
     { ...base, node_id: 'local', offering_id: 'local', tier: 'local', source: 'local', local: { run: 'ollama run m' } },
   ];
   const r = recommend(offerings, extractFeatures('Summarize this memo.'), { region: 'EU', limit: 10 });
   assert.deepEqual(r.recommendations.map((x) => x.node_id).sort(), ['de.example.fra', 'fr.example.par', 'lan.peer', 'local']);
-  assert.equal(r.rejected.region, 2);
+  assert.equal(r.rejected.region, 3);
   const embed = (o) => ({ ...o, modality: 'embedding', model: { name: 'E5 embed', artifact: 'hf:x/e5-embed' } });
   const e = recommendEmbedders(offerings.map(embed), extractFeatures('Build a RAG index over 2000 PDFs'), { region: 'EU' });
   assert.deepEqual(e.map((x) => x.node_id).sort(), ['de.example.fra', 'fr.example.par', 'lan.peer', 'local']);

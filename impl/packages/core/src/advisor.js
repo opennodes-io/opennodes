@@ -168,10 +168,21 @@ export function extractFeatures(task, { attachments = [], est_output_tokens = nu
 
 /* ------------------------------------------------------------------ ranking */
 
-// 'local' and 'lan' are client-side tiers (your own machines): fully trusted by definition.
+// 'local' and 'lan' are client-side tiers. 'local' is the user's own machine. 'lan' is another machine on
+// their network, and it counts as theirs only when the client pinned the key that signs its card
+// (`lan.pinned: true`, ONP-3 §5b); any other LAN peer ranks and filters as an unverified offering.
 const TIER_SCORE = { unverified: 0, community: 0.4, verified: 0.8, attested: 1.0, lan: 1.0, local: 1.0 };
 const TIER_ORDER = ['unverified', 'community', 'verified', 'attested'];
 const tierRank = (t) => (t === 'local' || t === 'lan') ? TIER_ORDER.length : TIER_ORDER.indexOf(t);
+
+/**
+ * Does the offering run on the user's own machine or network (ONP-3 §5b)? A local model does; a LAN
+ * peer only when the client pinned its card key. A peer added by address or found by discovery does
+ * not: its operator, location and data policy are unknown.
+ */
+export const onOwnNetwork = (o) => Boolean(o?.local) || o?.tier === 'local' || (o?.tier === 'lan' && o?.lan?.pinned === true);
+/** The tier an offering ranks and filters by: an unpinned LAN peer is `unverified`. */
+const trustTier = (o) => (o?.tier === 'lan' && !onOwnNetwork(o) ? 'unverified' : o?.tier);
 const LANG_GRADE = { basic: 0.4, strong: 0.8, native: 1.0 };
 const BENCH_FOR_CLASS = {
   code: /humaneval|mbpp|swe-?bench|livecodebench|codeforces/i,
@@ -401,10 +412,10 @@ export function jurisdictionCountries(spec) {
 /**
  * Is the offering served inside `region`? The rule of search (ONP-3 §5): its pinned regions and
  * live serving sites (else the node's regions) must all lie inside, and an offering with no known
- * location does not qualify. Models on the user's own machine or network always do.
+ * location does not qualify. Models on the user's own machine or network (a pinned LAN peer) always do.
  */
 export function inRegion(offering, region) {
-  if (offering.local || offering.tier === 'local' || offering.tier === 'lan') return true;
+  if (onOwnNetwork(offering)) return true;
   const codes = offering.residency
     ?? [...(offering.data_policy?.region_pinning ?? []), ...servingLocations(offering).map((l) => l.region)];
   return residencyWithin(codes, region);
@@ -489,8 +500,9 @@ export function trustedView(jurisdictions = DEFAULT_TRUSTED_JURISDICTIONS) {
 
 /**
  * Is the offering in the trusted pool? The lineage rule applies to every offering. Models on the
- * user's own machine or LAN (tiers local / lan, or a local catalogue model) need nothing else: their
- * data never reaches an operator. Everything else must meet the jurisdiction, tier and data policy.
+ * user's own machine or network (tier local, a local catalogue model, or a LAN peer pinned by its card
+ * key) need nothing else: their data never reaches an operator. Everything else, unpinned LAN peers
+ * included, must meet the jurisdiction, tier and data policy.
  */
 export function inTrustedPool(offering, view = trustedView()) {
   return trustGaps(offering, view).length === 0;
@@ -502,8 +514,9 @@ export function trustGaps(offering, view = trustedView()) {
   const origins = offering?.model?.lineage_origins;
   if (view.lineage === 'declared' && !(Array.isArray(origins) && origins.length)) gaps.push('model lineage not declared');
   else if (!lineageAllowed(offering, { exclude: view.exclude_lineage })) gaps.push(`model lineage includes ${view.exclude_lineage.join('/')}`);
-  if (offering.local || offering.tier === 'local' || offering.tier === 'lan') return gaps;   // nothing reaches an operator
-  if (tierRank(offering.tier) < tierRank(view.min_tier)) gaps.push(`tier ${offering.tier} below ${view.min_tier}`);
+  if (onOwnNetwork(offering)) return gaps;   // nothing reaches an operator
+  if (offering.tier === 'lan') gaps.push('LAN peer not pinned by its card key');
+  else if (tierRank(offering.tier) < tierRank(view.min_tier)) gaps.push(`tier ${offering.tier} below ${view.min_tier}`);
   if (!view.countries.length || !inJurisdiction(offering, view.countries.join(','))) {
     const where = offering.jurisdiction?.location?.server_country && offering.jurisdiction.location.server_country !== offering.jurisdiction?.country
       ? `server in ${offering.jurisdiction.location.server_country}` : `operator country ${offering.jurisdiction?.country ?? 'unknown'}`;
@@ -587,7 +600,7 @@ export function parseAutoModel(name, prefix = '') {
 /**
  * Rank offerings for extracted features under a policy.
  * policy: { min_tier, max_input_per_mtok, max_total_usd, region, jurisdiction, prefer_local, preset, limit }
- * jurisdiction: 'eea' or country codes; the user's own machines (local / LAN) always qualify.
+ * jurisdiction: 'eea' or country codes; the user's own machine and pinned LAN peers always qualify.
  */
 export function recommend(offerings, features, policy = {}) {
   const minTier = TIER_ORDER.indexOf(policy.min_tier ?? 'unverified');
@@ -607,18 +620,18 @@ export function recommend(offerings, features, policy = {}) {
     if (o.modality !== features.modality && !(features.modality === 'text' && o.modality === 'multimodal')) return reject('modality');
     if (features.modality !== 'embedding' && isRetrievalModel(o)) return reject('embedding_model');
     if (specialtyOf(o) === 'classifier' && !features.needs.moderation) return reject('classifier');
-    if (tierRank(o.tier) < minTier) return reject('tier');
+    if (tierRank(trustTier(o)) < minTier) return reject('tier');
     if ((o.pricing?.input_per_mtok ?? 0) > (policy.max_input_per_mtok ?? Infinity)) return reject('price');
     const ctx = o.serving?.context_window;
     if (ctx && ctx < needCtx) return reject('context');
     const sup = o.serving?.supports ?? [];
     if (required.some((r) => !sup.includes(r))) return reject('capabilities');
-    if (features.privacy === 'sensitive' && !o.local) {   // on the user's own machine the data never leaves it
+    if (features.privacy === 'sensitive' && !onOwnNetwork(o)) {   // on the user's own machine or network the data never leaves it
       const dp = o.data_policy;
       if (!dp || dp.training_on_inputs === true || (dp.retention && dp.retention !== 'none')) return reject('data_policy');
     }
     if (policy.region && !inRegion(o, policy.region)) return reject('region');
-    if (policy.jurisdiction && !o.local && !inJurisdiction(o, policy.jurisdiction)) return reject('jurisdiction');
+    if (policy.jurisdiction && !onOwnNetwork(o) && !inJurisdiction(o, policy.jurisdiction)) return reject('jurisdiction');
     if (trusted && !inTrustedPool(o, view)) return reject('trust');
     if (features.locality === 'required' && !o.local) return reject('not_local');
     const budget = memoryBudget(o, policy);
@@ -649,7 +662,7 @@ export function recommend(offerings, features, policy = {}) {
     const components = {
       quality: round2(Math.min(1, Math.min(qualityCap, prior.q) * languageFit(o, features.language) * (offField ? SPECIALIST_PENALTY : 1) + (tuned ? 0.1 : 0) + (inField ? 0.05 : 0))),
       price: round2(1 - (o.pricing?.input_per_mtok ?? maxPrice) / maxPrice),
-      trust: round2(0.7 * (TIER_SCORE[o.tier] ?? 0) + 0.3 * (o.observed?.probe_success ?? 0)),
+      trust: round2(0.7 * (TIER_SCORE[trustTier(o)] ?? 0) + 0.3 * (o.observed?.probe_success ?? 0)),
       perf: round2(perfScore(o, features)),
     };
     let score = Object.entries(w).reduce((s, [k, wk]) => s + wk * components[k], 0);
@@ -727,11 +740,11 @@ function rankEmbedders(offerings, features, policy, minTier, limit = 3) {
   const pool = offerings.filter((o) => isEmbedder(o)
     && (!trusted || inTrustedPool(o, view))
     && (features.locality !== 'required' || o.local)
-    && tierRank(o.tier) >= minTier
+    && tierRank(trustTier(o)) >= minTier
     && !(policy.local_memory_gb && o.local && localSizes(o).length && !localSizes(o).some((x) => x.memory_gb <= policy.local_memory_gb))
     && (o.pricing?.input_per_mtok ?? 0) <= (policy.max_input_per_mtok ?? Infinity)
     && (!policy.region || inRegion(o, policy.region))
-    && (!policy.jurisdiction || o.local || inJurisdiction(o, policy.jurisdiction)));
+    && (!policy.jurisdiction || onOwnNetwork(o) || inJurisdiction(o, policy.jurisdiction)));
   const maxPrice = Math.max(...pool.map((o) => o.pricing?.input_per_mtok ?? 0), 0.000001);
   const multilingual = features.language !== 'en';
   const ranked = pool.map((o) => {
@@ -742,7 +755,7 @@ function rankEmbedders(offerings, features, policy, minTier, limit = 3) {
       fit: round2(Math.min(1, fit)),
       quality: embedQuality(o),
       price: round2(1 - (o.pricing?.input_per_mtok ?? maxPrice) / maxPrice),
-      trust: round2(0.7 * (TIER_SCORE[local ? 'local' : o.tier] ?? 0) + 0.3 * (o.observed?.probe_success ?? 0)),
+      trust: round2(0.7 * (TIER_SCORE[local ? 'local' : trustTier(o)] ?? 0) + 0.3 * (o.observed?.probe_success ?? 0)),
     };
     const score = round2(0.35 * components.fit + 0.2 * components.quality + 0.3 * components.price + 0.15 * components.trust);
     const reasons = [];
@@ -785,6 +798,7 @@ function explain(c, features, w, policy = {}) {
       : `runs on your machine — memory needed (4-bit estimate): ${sizesLine(c.local_fit.sizes)}${c.local_fit.scored_at ? `; scored at ${c.local_fit.scored_at}, assuming ${c.local_fit.assumed_memory_gb} GB` : ''}`);
   }
   if (o.local && features.locality) r.push(features.locality === 'required' ? 'runs offline on your own machine, as the task requires' : 'runs on your own machine, as the task asked');
+  if (o.tier === 'lan') r.push(onOwnNetwork(o) ? 'LAN peer pinned by its card key' : 'LAN peer added by address, not pinned by its card key: not used for auto-private, auto-<jurisdiction> or sensitive requests');
   if (c.specialty) r.push(c.off_field
     ? `${c.specialty} specialist — scored down for a ${features.task_class} task`
     : `${c.specialty === 'classifier' ? 'safety / fact-check classifier' : `${c.specialty} specialist`}, matching this task`);

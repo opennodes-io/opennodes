@@ -48,7 +48,8 @@ onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.ai --public-ur
 # The node id must be the reverse of the host that serves it (ai.example.org -> org.example.ai, or a
 # name below it such as org.example.ai.box): registries accept a card only from a host that controls the id.
 # review onp-node.toml (pricing, data_policy), then:
-onp-node serve                   # add --mdns (pip install 'onp-node[mdns]') so LAN clients such as onp-ollama discover it
+onp-node serve                   # add --mdns (pip install 'onp-node[mdns]') so LAN clients such as onp-ollama discover it;
+                                 # onp-ollama uses a discovered node only when you pin its card key (onp-ollama --show-pin, then --pin)
 onp-node check
 onp-node register https://registry.example.org
 ```
