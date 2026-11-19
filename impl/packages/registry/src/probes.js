@@ -1,6 +1,19 @@
 // Stage A admission probes (DS-ADM-01): card consistency, health, blind invocation, /models agreement.
 // All outbound traffic goes through the SSRF-guarded fetcher (safefetch.js).
 import { fetchJsonCapped } from './safefetch.js';
+import { loadCorpus } from './corpus.js';
+import { artifactClaimProblems, vendorTable } from './vendors.js';
+
+/**
+ * Stage A checks whose failure is a property of the card, not of the moment: a listed node that
+ * fails one of these on a scheduled re-run loses its tier at once. `models-agreement` counts only
+ * when /models answered 200 without the card's models (a timeout is an outage, not a card fault).
+ * Health and blind-invocation failures are left to Stage C (liveness suspension, blind-failure
+ * demotion), so an outage of a few minutes does not cost a node its tier. Each Stage A result
+ * carries `structural: true` when it is such a failure.
+ */
+export const STRUCTURAL_KINDS = ['card-consistency', 'artifact-namespace', 'models-agreement', 'tested-offerings'];
+const DEV_CORPUS = loadCorpus(null);
 
 /**
  * Binding profiles the admission tests can call (ONP-3 §4a). Verification covers only these: an
@@ -35,19 +48,25 @@ export function cardConsistency(card) {
   return problems;
 }
 
-/** Run Stage A against a card. Records results via store; returns { ok, results }. */
-export async function runStageA(store, nodeId, card, { safeFetch } = {}) {
+/**
+ * Run Stage A against a card. Records results via store; returns { ok, results }.
+ * `corpus`: the probe corpus (corpus.js); `vendors`: the vendor-namespace table (vendors.js).
+ */
+export async function runStageA(store, nodeId, card, { safeFetch, corpus = DEV_CORPUS, vendors = vendorTable() } = {}) {
   if (!safeFetch) safeFetch = (url, opts = {}, t = 10_000) => fetch(url, { ...opts, signal: AbortSignal.timeout(t) });
   const fetchJson = (url, opts, timeoutMs = 10_000) => fetchJsonCapped(safeFetch, url, opts, timeoutMs);
   const results = [];
-  const record = async (offeringId, kind, ok, detail, measured) => {
+  const record = async (offeringId, kind, ok, detail, measured, structural = STRUCTURAL_KINDS.includes(kind)) => {
     await store.recordProbe(nodeId, offeringId, 'A', kind, ok, detail, measured);
-    results.push({ offeringId, kind, ok, detail });
+    results.push({ offeringId, kind, ok, detail, ...(ok ? {} : { structural }) });
   };
 
   // 0. Card consistency (no network)
   const problems = cardConsistency(card);
   await record(null, 'card-consistency', problems.length === 0, problems.length ? problems.join('; ') : null);
+  // 0b. Vendor-namespace rule (ONP-3 §6.3): a proprietary artefact only from the vendor's namespace.
+  const claims = artifactClaimProblems(card, vendors);
+  await record(null, 'artifact-namespace', claims.length === 0, claims.length ? claims.join('; ') : null);
 
   // 1. Health endpoint
   try {
@@ -68,9 +87,10 @@ export async function runStageA(store, nodeId, card, { safeFetch } = {}) {
     const cardIds = card.offerings.filter((o) => o.binding.profile.startsWith('onp.openai.')).map((o) => o.binding.model_id);
     const missing = cardIds.filter((id) => !modelIds.has(id));
     await record(null, 'models-agreement', status === 200 && missing.length === 0,
-      missing.length ? `card offerings absent from /models: ${missing.join(', ')}` : null);
+      status !== 200 ? `status ${status}` : missing.length ? `card offerings absent from /models: ${missing.join(', ')}` : null,
+      null, status === 200);   // a card fault only if /models answered
   } catch (err) {
-    await record(null, 'models-agreement', false, String(err.message ?? err));
+    await record(null, 'models-agreement', false, String(err.message ?? err), null, false);
   }
 
   // 3. Blind invocation per offering the tests can call. A node with none gives no functional
@@ -93,7 +113,7 @@ export async function runStageA(store, nodeId, card, { safeFetch } = {}) {
         },
         body: JSON.stringify({
           model: offering.binding.model_id,
-          messages: [{ role: 'user', content: 'ONP Stage A conformance probe. Reply briefly.' }],
+          messages: [{ role: 'user', content: corpus.chatPrompt() }],
           max_tokens: 32,
         }),
       }, 90_000);

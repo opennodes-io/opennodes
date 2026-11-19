@@ -26,3 +26,6 @@ private/
 node-kit/dist/
 node-kit/build/
 *.egg-info/
+
+# A registry's private probe corpus (deploy/registry/probe-corpus.example.json has the format)
+probe-corpus.json

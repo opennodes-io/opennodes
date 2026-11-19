@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startFixtureNode } from '@opennodes/fixture-node';
 import { startRegistry } from '@opennodes/registry';
+import { IDENTITY_CAPTURE } from '@opennodes/registry/src/stageb.js';
 
 const FAST_CAPACITY = { durationMs: 300, steps: [1, 2] };
 
@@ -32,7 +33,8 @@ test('honest node passes Stage B and is promoted to verified with measured metri
   await registerAndVerify(registry, node);
   // Trusted reference capture from the known-good deployment, then admit
   const cap = await captureRefs(registry, 'org.opennodes.fixture', 'echo-1');
-  assert.equal(cap.references, 3);
+  assert.equal(cap.references, IDENTITY_CAPTURE);
+  assert.equal(cap.corpus, 'built-in');
 
   const result = await admit(registry, 'org.opennodes.fixture');
   assert.equal(result.state, 'verified', JSON.stringify(result.stage_b));

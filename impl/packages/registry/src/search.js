@@ -26,7 +26,8 @@ const catalogs = new WeakMap();   // store -> { items, at, stale, building }
 const placements = new WeakMap();   // store -> Map
 // A request to these hosts passes through a third-party router before it reaches the provider, so
 // the provider's sites say nothing about where the prompt goes: no seed placement for them.
-const ROUTER_HOSTS = new Set(['router.huggingface.co', 'openrouter.ai']);
+/** Third-party routers: their listings name model authors, not the host that serves them. */
+export const ROUTER_HOSTS = new Set(['router.huggingface.co', 'openrouter.ai']);
 const hostOf = (url) => { try { return new URL(url).hostname; } catch { return null; } };
 
 /** Use these seed placements in search from now on (the server sets them at start and on seed import). */
@@ -53,7 +54,7 @@ export function markCatalogStale(store) {
 
 /** Wrap the store's write methods so any change to nodes, cards, probes or observations marks the catalog stale. */
 export function watchStoreWrites(store) {
-  for (const name of ['upsertNode', 'setState', 'setNodeFlag', 'saveRevision', 'recordProbe', 'addFingerprints', 'setObservation']) {
+  for (const name of ['upsertNode', 'setState', 'setNodeFlag', 'saveRevision', 'recordProbe', 'addFingerprints', 'clearFingerprints', 'setObservation']) {
     const write = store[name];
     if (typeof write !== 'function' || write.__marksCatalogStale) continue;
     const wrapped = async function (...args) {
@@ -90,7 +91,8 @@ async function buildOfferings(store) {
     // Pass rate over the recent window of conformance (A) and continuous (C) checks. Stage A
     // alone runs every 6 h and is pushed out of the window by liveness checks within hours,
     // which left healthy verified nodes showing 0 probes and a 0 pass rate.
-    const checks = probes.filter((p) => p.stage === 'A' || p.stage === 'C');
+    // A blind probe excused for a 409 (the card revision moved; retried) is a record, not a check.
+    const checks = probes.filter((p) => (p.stage === 'A' || p.stage === 'C') && p.kind !== 'blind-409');
     const probeSuccess = checks.length ? checks.filter((p) => p.ok).length / checks.length : 0;
     const tier = node.state === 'indexed' ? 'unverified' : node.state;
     const nodeObs = await store.getObservations(node.id, '_node');

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from aiohttp import web, ClientSession, ClientTimeout
 
-from .config import DEFAULT_CONFIG, load_config, build_card, stable_revision
+from .config import DEFAULT_CONFIG, load_config, build_card, stable_revision, unverifiable
 from .check import run_check
 from .jws import generate_private_key, private_key_to_pem, private_key_from_pem, sign_card, public_jwk
 from .server import NodeKitServer
@@ -65,6 +65,8 @@ async def engine_details(base_url: str, models: list[str], key: str | None = Non
                 break
             d, caps = show.get("details") or {}, show.get("capabilities") or []
             info = details[m]
+            info["engine"] = "ollama"   # its model names are Ollama library records: ollama:<name>
+
             if _params_b(d.get("parameter_size")):
                 info["params_b"] = _params_b(d.get("parameter_size"))
             if d.get("quantization_level"):
@@ -110,6 +112,14 @@ def cmd_init(args):
     print(f"wrote {CONFIG} and {KEYFILE} — review pricing/data_policy, then: onp-node serve")
 
 
+def warn_unverifiable(card: dict):
+    """Offerings named by a proprietary fallback can never be verified: say so, and how to fix it."""
+    for model_id in unverifiable(card):
+        print(f'warning: {model_id} has no public artefact, so registries cannot verify its identity and it can '
+              f'reach community but not verified. If its weights are public, name them under [model."{model_id}"] '
+              f'in {CONFIG}: artifact = "hf:<org>/<repo>" or "ollama:<name>:<tag>".', file=sys.stderr)
+
+
 def make_server() -> tuple[NodeKitServer, dict]:
     cfg = load_config(CONFIG)
     key = private_key_from_pem(KEYFILE.read_text(encoding="utf-8"))
@@ -122,6 +132,7 @@ def make_server() -> tuple[NodeKitServer, dict]:
         models = [m for m in models if m in include]
     details = asyncio.run(engine_details(cfg["engine"]["base_url"], models))
     card = stable_revision(build_card(cfg, models, details), REVISION_STATE)
+    warn_unverifiable(card)
     receipts = cfg.get("receipts", {})
     return NodeKitServer(card, key, cfg["engine"]["base_url"], challenge_file=CHALLENGE,
                          engine_timeout_s=cfg["engine"].get("timeout_s", 300),
@@ -262,6 +273,7 @@ def cmd_card(args):
         models = [m for m in models if m in include]
     details = asyncio.run(engine_details(api_base, models, engine_key))
     card, jwks = make_static_card(cfg, models, api_base, args.health, args.signup, key, REVISION_STATE, details)
+    warn_unverifiable(card)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "open-node.json").write_text(json.dumps(card, indent=2), encoding="utf-8")

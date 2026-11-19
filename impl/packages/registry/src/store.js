@@ -62,6 +62,17 @@ export async function createSqliteStore(path = ':memory:') {
       node_id TEXT NOT NULL, week TEXT NOT NULL, surface TEXT NOT NULL, n INTEGER NOT NULL,
       PRIMARY KEY (node_id, week, surface)
     );
+    -- When each stage last ran for a node and when it runs next (schedule.js). Private: the next
+    -- run time must stay unpredictable to the operator, so no API or export reads this table.
+    CREATE TABLE IF NOT EXISTS schedule (
+      node_id TEXT NOT NULL, stage TEXT NOT NULL, last_at TEXT, next_at TEXT, ok INTEGER,
+      revision TEXT, digest TEXT, pending_digest TEXT, failures INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (node_id, stage)
+    );
+    -- Admin entries of the vendor-namespace table (vendors.js): vendor -> JSON list of namespaces.
+    CREATE TABLE IF NOT EXISTS vendor_namespaces (
+      vendor TEXT PRIMARY KEY, namespaces TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
   `);
   // Databases created before the founding mark existed: add the column in place.
   if (!db.prepare('PRAGMA table_info(nodes)').all().some((c) => c.name === 'founding')) {
@@ -99,6 +110,11 @@ export async function createSqliteStore(path = ':memory:') {
       const row = db.prepare('SELECT raw FROM card_revisions WHERE node_id = ? ORDER BY revision DESC LIMIT 1').get(nodeId);
       return row ? JSON.parse(row.raw) : null;
     },
+    /** The latest revision's record without the card: {revision, sig_ok, fetched_at}, or null. */
+    async latestRevision(nodeId) {
+      const row = db.prepare('SELECT revision, sig_ok, fetched_at FROM card_revisions WHERE node_id = ? ORDER BY revision DESC LIMIT 1').get(nodeId);
+      return row ? { revision: row.revision, sig_ok: Boolean(row.sig_ok), fetched_at: row.fetched_at } : null;
+    },
     async setPendingProbeKey(nodeId, key) {
       db.prepare(`INSERT INTO probe_keys (node_id, secret, pending, updated_at) VALUES (?, NULL, ?, ?)
         ON CONFLICT(node_id) DO UPDATE SET pending=excluded.pending, updated_at=excluded.updated_at`).run(nodeId, key, now());
@@ -125,6 +141,10 @@ export async function createSqliteStore(path = ':memory:') {
     async probesFor(nodeId) {
       return db.prepare('SELECT * FROM probes WHERE node_id = ? ORDER BY id DESC LIMIT 100').all(nodeId);
     },
+    /** How many probes of one kind a node got since an ISO time (probesFor keeps only the last 100). */
+    async countProbes(nodeId, kind, since) {
+      return db.prepare('SELECT COUNT(*) AS n FROM probes WHERE node_id = ? AND kind = ? AND at > ?').get(nodeId, kind, since).n;
+    },
     async transitionsFor(nodeId) {
       return db.prepare('SELECT * FROM transitions WHERE node_id = ? ORDER BY id ASC').all(nodeId);
     },
@@ -141,6 +161,29 @@ export async function createSqliteStore(path = ':memory:') {
     },
     async getFingerprints(artifact) {
       return db.prepare('SELECT prompt, expected_hash FROM fingerprints WHERE artifact = ?').all(artifact);
+    },
+    async clearFingerprints(artifact) {
+      db.prepare('DELETE FROM fingerprints WHERE artifact = ?').run(artifact);
+    },
+    async getSchedule(nodeId, stage) {
+      const row = db.prepare('SELECT * FROM schedule WHERE node_id = ? AND stage = ?').get(nodeId, stage);
+      return row ? { ...row, ok: row.ok == null ? null : Boolean(row.ok) } : null;
+    },
+    /** Replace a node's schedule row for one stage: {last_at, next_at, ok, revision, digest, pending_digest, failures}. */
+    async setSchedule(nodeId, stage, s) {
+      db.prepare(`INSERT OR REPLACE INTO schedule (node_id, stage, last_at, next_at, ok, revision, digest, pending_digest, failures)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(nodeId, stage, s.last_at ?? null, s.next_at ?? null,
+        s.ok == null ? null : (s.ok ? 1 : 0), s.revision ?? null, s.digest ?? null, s.pending_digest ?? null, s.failures ?? 0);
+    },
+    /** Admin vendor entries: [{vendor, namespaces}]. */
+    async vendorNamespaces() {
+      return db.prepare('SELECT vendor, namespaces FROM vendor_namespaces ORDER BY vendor').all()
+        .map((r) => ({ vendor: r.vendor, namespaces: JSON.parse(r.namespaces) }));
+    },
+    /** Set a vendor's namespaces, or remove its admin entry with null. */
+    async setVendorNamespaces(vendor, namespaces) {
+      if (namespaces == null) db.prepare('DELETE FROM vendor_namespaces WHERE vendor = ?').run(vendor);
+      else db.prepare('INSERT OR REPLACE INTO vendor_namespaces (vendor, namespaces, updated_at) VALUES (?, ?, ?)').run(vendor, JSON.stringify(namespaces), now());
     },
     async setObservation(nodeId, offeringId, key, value) {
       db.prepare('INSERT OR REPLACE INTO observations (node_id, offering_id, key, value, at) VALUES (?, ?, ?, ?, ?)')

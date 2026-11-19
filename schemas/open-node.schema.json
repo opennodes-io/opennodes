@@ -211,7 +211,11 @@
           "properties": {
             "name": { "type": "string" },
             "family": { "type": "string" },
-            "artifact": { "type": "string", "pattern": "^(hf:[^/\\s]+/[^/\\s]+|urn:proprietary:[a-z0-9-]+:[A-Za-z0-9._-]+)$" },
+            "artifact": {
+              "type": "string",
+              "pattern": "^(hf:[^/\\s]+/[^/\\s]+|ollama:[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)?(:[A-Za-z0-9._-]+)?|urn:proprietary:[a-z0-9-]+:[A-Za-z0-9._-]+)$",
+              "description": "Public record of the served weights: hf:{org}/{repo} (Hugging Face), ollama:{name}[:{tag}] (the Ollama library; the tag names one quantization), or urn:proprietary:{vendor}:{model} for closed models, claimable only from the vendor's namespace (ONP-2 §5, ONP-3 §6.3)."
+            },
             "params_b": { "type": "number", "minimum": 0 },
             "quantization": { "type": "string" },
             "license": { "type": "string" },

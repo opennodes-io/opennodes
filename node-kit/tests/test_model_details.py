@@ -52,7 +52,7 @@ def test_ollama_reports_size_and_capabilities_but_not_context():
             await runner.cleanup()
 
     d = asyncio.run(run())
-    assert d["qwen3:8b"] == {"params_b": 8.2, "quantization": "Q4_K_M", "family": "qwen3", "supports": ["tool_calls"]}
+    assert d["qwen3:8b"] == {"engine": "ollama", "params_b": 8.2, "quantization": "Q4_K_M", "family": "qwen3", "supports": ["tool_calls"]}
     assert d["llava:7b"]["supports"] == ["vision"]
     assert "context_window" not in d["qwen3:8b"]     # Ollama serves less than the trained maximum
 

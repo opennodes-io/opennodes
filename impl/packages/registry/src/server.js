@@ -11,11 +11,14 @@ import { fileURLToPath } from 'node:url';
 import { generateKeypair, keypairFromPem } from '@opennodes/core';
 import { createStore } from './store.js';
 import { runStageA, verificationOf } from './probes.js';
-import { runStageB, captureFingerprints } from './stageb.js';
+import { runStageB, captureFingerprints, UNSIGNED_CARD, IDENTITY_CAPTURE } from './stageb.js';
 import { startStageC } from './stagec.js';
+import { loadCorpus } from './corpus.js';
+import { vendorTable, proprietaryVendor, VENDOR_SLUG, NAMESPACE, ARTIFACT } from './vendors.js';
+import { makePlanner, startScheduler } from './schedule.js';
 import { startReimport } from './reimport.js';
 import { makeSafeFetch } from './safefetch.js';
-import { searchOfferings, searchOfferingsPaged, collectOfferings, watchStoreWrites, setSeedPlacements, setTrustedView, RANK_COMPONENTS, pricePublished } from './search.js';
+import { searchOfferings, searchOfferingsPaged, collectOfferings, watchStoreWrites, setSeedPlacements, setTrustedView, RANK_COMPONENTS, pricePublished, ROUTER_HOSTS } from './search.js';
 import { mcpRoutes } from './mcp.js';
 import { hostControlsNamespace, isPrivateHost, makeRateLimiter } from './namespace.js';
 import { exportRoutes } from './export.js';
@@ -47,8 +50,9 @@ export async function startRegistry({
   adminToken = null,                    // bearer for admin routes; without it, loopback-only
   keyPath = null,                       // PEM file for a persistent signing identity; null = ephemeral
   enforceNamespace = null,              // null = enforce except for private hosts in dev mode; true/false to force
-  registerPerHour = 0,                  // per-client cap on register/verify calls (0 = unlimited; set in production)
-  admitCooldownMs = 0,                  // minimum gap between Stage B runs per node (0 = none; set in production)
+  registerPerHour = 0,                  // per-client cap on register/verify/ping calls (0 = unlimited; set in production)
+  schedule = null,                      // {} (or overrides of SCHEDULE_DEFAULTS) to run Stage A and B on the registry's timetable
+  probeCorpus = null,                   // private probe prompts: a JSON file path or an object (corpus.js); null = public built-in
   trustProxy = false,                   // read the client address from X-Forwarded-For (behind Caddy / a CDN)
   location = null,                      // { selfSite, agents, intervalMs, fetchImpl, resolve, rtt } to check server locations
   locationSeeds = false,                // import the bundled curated location seeds (src/data/locations-*.json) at start
@@ -56,7 +60,23 @@ export async function startRegistry({
   requestCountFlushMs = 60_000,         // how often request counts move from memory to the store (reads flush first)
   trustedJurisdictions = DEFAULT_TRUSTED_JURISDICTIONS,   // the trusted pool's operator jurisdictions (ONP_TRUSTED_JURISDICTIONS)
 } = {}) {
+  const corpus = loadCorpus(probeCorpus);   // before the store: a broken corpus file stops the start
   const store = watchStoreWrites(await createStore(dbPath)); // sqlite path/:memory: or postgres:// URL; writes refresh the cached catalog
+  const planner = makePlanner(store, schedule ?? {});
+  // Vendor-namespace table: built-in pins, admin entries, and the vendor slugs imports already use,
+  // each bound to the API hosts of those imports (routers excluded).
+  const vendors = async () => {
+    const catalog = new Map();
+    for (const o of await collectOfferings(store)) {
+      const vendor = o.source === 'import' ? proprietaryVendor(o.model?.artifact) : null;
+      if (!vendor) continue;
+      if (!catalog.has(vendor)) catalog.set(vendor, new Set());
+      let host = null;
+      try { host = new URL(o.endpoints?.openai).hostname.toLowerCase(); } catch { /* listing-only */ }
+      if (host && !ROUTER_HOSTS.has(host)) catalog.get(vendor).add(host);
+    }
+    return vendorTable(await store.vendorNamespaces(), catalog);
+  };
   const requests = makeRequestCounter(store, { flushMs: requestCountFlushMs });   // node ids + counts only
   const safeFetch = makeSafeFetch({ allowPrivate: allowPrivateTargets });
   const seeds = locationSeeds ? loadLocationSeeds() : [];
@@ -95,14 +115,26 @@ export async function startRegistry({
     return res.json();
   }
 
-  async function verifySignatureFromOrigin(card, origin) {
-    const res = await safeFetch(`${origin}/.well-known/jwks.json`, {}, 10_000);
-    if (!res.ok) throw new Error('jwks fetch failed');
-    const jwks = await res.json();
-    const kid = card.signatures?.[0]?.kid;
-    const jwk = jwks.keys.find((k) => !kid || k.kid === kid) ?? jwks.keys[0];
-    if (!jwk) throw new Error('no key in jwks');
-    verifyCardSignature(card, keyFromJwk(jwk));
+  /**
+   * Check the card's signature against the origin's JWKS. `definite: false` when the JWKS could not
+   * be fetched (an outage says nothing about the card); `definite: true` when the card is unsigned
+   * or the signature does not verify.
+   */
+  async function checkSignature(card, origin) {
+    if (!card.signatures?.length) return { ok: false, definite: true, error: 'card has no signatures' };
+    let jwks;
+    try {
+      const res = await safeFetch(`${origin}/.well-known/jwks.json`, {}, 10_000);
+      if (!res.ok) return { ok: false, definite: false, error: `jwks fetch failed: ${res.status}` };
+      jwks = await res.json();
+    } catch (err) { return { ok: false, definite: false, error: `jwks fetch failed: ${err.message}` }; }
+    try {
+      const kid = card.signatures[0].kid;
+      const jwk = (jwks.keys ?? []).find((k) => !kid || k.kid === kid) ?? jwks.keys?.[0];
+      if (!jwk) return { ok: false, definite: true, error: 'no key in jwks' };
+      verifyCardSignature(card, keyFromJwk(jwk));
+      return { ok: true };
+    } catch (err) { return { ok: false, definite: true, error: String(err.message ?? err) }; }
   }
 
   /** node.id is reverse-DNS: org.opennodes.fixture -> fixture.opennodes.org */
@@ -117,7 +149,6 @@ export async function startRegistry({
   };
   const registerLimiter = makeRateLimiter(registerPerHour);
   const clientOf = (req) => (trustProxy && req.headers['x-forwarded-for']?.split(',')[0].trim()) || req.socket.remoteAddress || 'unknown';
-  const isAdmin = (req) => Boolean(adminToken) && req.headers.authorization === `Bearer ${adminToken}`;
 
   /**
    * Fetch for probing one node: carries the operator's probe key (card-only listings of
@@ -173,9 +204,19 @@ export async function startRegistry({
     if (errors.length) throw new Error('card invalid: ' + errors.slice(0, 5).join('; '));
     const origin = new URL(cardUrl).origin;
     if (card.node.id !== nodeId) throw new Error(`card node.id ${card.node.id} != registered ${nodeId}`);
-    let sigOk = false;
-    try { await verifySignatureFromOrigin(card, origin); sigOk = true; } catch { /* accepted but labeled */ }
+    // Unsigned cards are accepted but labeled below `verified`, and never at `verified` or above (ONP-2 §8).
+    const sig = await checkSignature(card, origin);
+    let sigOk = sig.ok;
+    if (!sig.ok && !sig.definite) {
+      // JWKS unreachable: the same bytes verified before still count; a new revision waits for a check.
+      const prev = await store.latestRevision(nodeId);
+      if (prev?.sig_ok && prev.revision === card.revision && JSON.stringify(await store.latestCard(nodeId)) === JSON.stringify(card)) sigOk = true;
+    }
     await store.saveRevision(nodeId, card.revision, card, sigOk);
+    if (!sigOk && sig.definite) {
+      const node = await store.getNode(nodeId);
+      if (['verified', 'attested'].includes(node?.state)) await store.setState(nodeId, 'community', `${UNSIGNED_CARD}: ${sig.error}`);
+    }
     return { card, sigOk };
   }
 
@@ -188,11 +229,80 @@ export async function startRegistry({
     try {
       const node = await store.getNode(nodeId);
       if (!node?.card_url || node.source === 'import') return;
-      const current = await store.latestCard(nodeId);
+      const current = await store.latestRevision(nodeId);
       const fresh = await fetchCard(node.card_url);
-      if (current && fresh.revision === current.revision) return;
+      // Same revision: nothing to do, unless its signature could not be checked yet.
+      if (current && fresh.revision === current.revision && current.sig_ok) return;
       await indexCard(nodeId, node.card_url);
     } catch { /* unreachable or invalid: probes will record the failure themselves */ }
+  }
+
+  // ---- admission runs shared by /verify, /ping, /admit, dispute resolution and the scheduler ----
+  const LISTED = ['community', 'verified', 'attested'];
+
+  /**
+   * Stage A on the node's latest card, and what it means for the tier (ONP-3 §4a): `indexed` that
+   * passes goes to `community`; a listed node that fails a structural check (STRUCTURAL_KINDS) goes
+   * back to `indexed`; health and blind-call failures are left to Stage C. A dispute is never
+   * touched. `recordFailure` writes a failed run on an `indexed` node into the history (/verify);
+   * `refresh` re-fetches the card first (scheduled runs: ONP-3 §1, at least every 6 h).
+   */
+  async function stageAFor(nodeId, { recordFailure = false, refresh = false } = {}) {
+    if (refresh) await refreshCard(nodeId);
+    const card = await store.latestCard(nodeId);
+    const stageA = await runStageA(store, nodeId, card, { safeFetch: await authFetch(nodeId, card), corpus, vendors: await vendors() });
+    const node = await store.getNode(nodeId);
+    const failed = stageA.results.filter((r) => !r.ok);
+    let claimed = [];
+    if (stageA.ok && node.state === 'indexed') {
+      await store.setState(nodeId, 'community', 'Stage A passed');
+      claimed = await supersedeImports(nodeId);
+      await planner.firstStageB(nodeId, card, 'first');
+    } else if (!stageA.ok && node.state === 'indexed' && recordFailure) {
+      await store.setState(nodeId, 'indexed', 'Stage A failures: ' + failed.map((r) => r.kind).join(','));
+    } else if (!stageA.ok && LISTED.includes(node.state)) {
+      const structural = failed.filter((r) => r.structural).map((r) => r.kind);
+      if (structural.length) await store.setState(nodeId, 'indexed', 'Stage A failures: ' + structural.join(','));
+    }
+    await planner.afterStageA(nodeId, card, stageA.ok);
+    return { stageA, claimed };
+  }
+
+  /** Stage B runs one at a time per node: the admin route and the scheduler never overlap. */
+  const stageBRunning = new Set();
+
+  /**
+   * Stage B on the node's freshly fetched card, and its effect: a reference mismatch disputes the
+   * node; a pass promotes `community` to `verified`; anything else (no identity reference, unsigned
+   * card, capacity) keeps `community` or demotes `verified` to `community`. Returns null when a
+   * run is already in progress for the node.
+   */
+  async function stageBFor(nodeId) {
+    if (stageBRunning.has(nodeId)) return null;
+    stageBRunning.add(nodeId);
+    try {
+      await refreshCard(nodeId);
+      const card = await store.latestCard(nodeId);
+      const revision = await store.latestRevision(nodeId);
+      const stageB = await runStageB(store, nodeId, card, {
+        safeFetch: await authFetch(nodeId, card), capacity: stageBCapacity, corpus, vendors: await vendors(), signed: Boolean(revision?.sig_ok),
+      });
+      const node = await store.getNode(nodeId);
+      if (!stageB.stale && LISTED.includes(node.state)) {
+        if (stageB.identityFailed) {
+          await store.setState(nodeId, 'disputed', 'Stage B identity fingerprint mismatch');
+        } else if (stageB.ok) {
+          if (node.state === 'community') await store.setState(nodeId, 'verified', 'Stage B passed');
+          await supersedeImports(nodeId);
+        } else if (node.state !== 'community') {
+          await store.setState(nodeId, 'community', `Stage B failed: ${stageB.reason}`);
+        }
+      }
+      await planner.afterStageB(nodeId, card, stageB);
+      return stageB;
+    } finally {
+      stageBRunning.delete(nodeId);
+    }
   }
 
   const app = createApp([
@@ -251,11 +361,19 @@ export async function startRegistry({
       try { indexed = await indexCard(params.id, node.card_url); }
       catch (err) { return problem(res, 422, 'card-invalid', String(err.message)); }
 
-      await store.setState(params.id, 'indexed', `namespace verified via ${check.method}`);
-      const stageA = await runStageA(store, params.id, indexed.card, { safeFetch: await authFetch(params.id, indexed.card) });
-      await store.setState(params.id, stageA.ok ? 'community' : 'indexed',
-        stageA.ok ? 'Stage A passed' : 'Stage A failures: ' + stageA.results.filter((r) => !r.ok).map((r) => r.kind).join(','));
-      const claimed = stageA.ok ? await supersedeImports(params.id) : [];
+      // A dispute survives registering again: only a resolution recorded by the registry ends it
+      // (POST /v0/admin/nodes/{id}/resolve). The fresh card is indexed so it can be reviewed.
+      const current = (await store.getNode(params.id)).state;
+      if (current === 'disputed') {
+        const since = [...await store.transitionsFor(params.id)].reverse().find((t) => t.to_state === 'disputed');
+        return problem(res, 409, 'disputed',
+          `${params.id} is disputed${since ? ` since ${since.at} (${since.reason})` : ''}. Registering again does not end a dispute; the registry records a resolution after review. The card was re-indexed at revision ${indexed.card.revision}.`);
+      }
+      // A listed or suspended node keeps its state: registering again re-indexes the card and runs
+      // Stage A under the listed-node rules, but neither resets the tier nor moves Stage B's schedule
+      // (a changed model, serving block or endpoint makes Stage B due on its own, schedule.js).
+      if (![...LISTED, 'suspended'].includes(current)) await store.setState(params.id, 'indexed', `namespace verified via ${check.method}`);
+      const { stageA, claimed } = await stageAFor(params.id, { recordFailure: true });
       if (location) locateNode(params.id).catch(() => {});   // background: never delays registration
       sendJson(res, 200, {
         node_id: params.id,
@@ -267,58 +385,97 @@ export async function startRegistry({
     }],
 
     ['PUT', '/v0/nodes/:id/ping', async (req, res, { params }) => {
+      if (!registerLimiter(clientOf(req))) return problem(res, 429, 'rate-limited', 'too many refresh requests from this address; try again later');
       const node = await store.getNode(params.id);
       if (!node) return problem(res, 404, 'unknown-node', params.id);
       try {
         const { card } = await indexCard(params.id, node.card_url);
-        const stageA = await runStageA(store, params.id, card, { safeFetch: await authFetch(params.id, card) });
-        sendJson(res, 200, { node_id: params.id, revision: card.revision, stage_a_ok: stageA.ok });
+        const { stageA } = await stageAFor(params.id);
+        sendJson(res, 200, { node_id: params.id, revision: card.revision, stage_a_ok: stageA.ok, state: (await store.getNode(params.id)).state });
       } catch (err) {
         problem(res, 422, 'refresh-failed', String(err.message));
       }
     }],
 
-    // Stage B admission: identity + context + capacity; promotes community -> verified,
-    // or marks the node disputed on an identity failure (DS-ADM-02..04).
+    // Stage B admission (admin): identity + context + capacity; promotes community -> verified,
+    // or marks the node disputed on an identity failure (DS-ADM-02..04). Otherwise Stage B runs
+    // only on the registry's own schedule (schedule.js): neither the operator nor a third party
+    // chooses when it happens.
     ['POST', '/v0/nodes/:id/admit', async (req, res, { params }) => {
+      if (!adminOk(req, res)) return;
       const node = await store.getNode(params.id);
       if (!node) return problem(res, 404, 'unknown-node', params.id);
-      if (node.state !== 'community' && node.state !== 'verified') {
+      if (!LISTED.includes(node.state)) {
         return problem(res, 409, 'wrong-state', `Stage B requires community tier, node is ${node.state}`);
       }
-      if (admitCooldownMs > 0 && !isAdmin(req)) {
-        const lastB = (await store.probesFor(params.id)).find((p) => p.stage === 'B');
-        const age = lastB ? Date.now() - Date.parse(lastB.at) : Infinity;
-        if (age < admitCooldownMs) {
-          return problem(res, 429, 'admission-cooldown', `Stage B ran ${Math.round(age / 60000)} min ago; next run allowed in ${Math.ceil((admitCooldownMs - age) / 60000)} min`);
-        }
-      }
-      await refreshCard(params.id);
-      const card = await store.latestCard(params.id);
-      const stageB = await runStageB(store, params.id, card, { safeFetch: await authFetch(params.id, card), capacity: stageBCapacity });
+      const stageB = await stageBFor(params.id);
+      if (!stageB) return problem(res, 409, 'stage-b-running', `Stage B is already running for ${params.id}`);
       if (stageB.stale) {
         return problem(res, 409, 'stale-card', 'the node changed its card revision during the battery; retry');
-      }
-      if (stageB.identityFailed) {
-        await store.setState(params.id, 'disputed', 'Stage B identity fingerprint mismatch');
-      } else if (stageB.ok) {
-        await store.setState(params.id, 'verified', 'Stage B passed');
-        await supersedeImports(params.id);
       }
       sendJson(res, 200, { node_id: params.id, state: (await store.getNode(params.id)).state, stage_b: stageB });
     }],
 
-    // Operator-trusted reference capture (admin surface, MVP: unauthenticated local only):
-    // runs the fingerprint battery against a KNOWN-GOOD deployment and stores references.
+    // Operator-trusted reference capture (admin): asks a KNOWN-GOOD deployment of the weights
+    // IDENTITY_CAPTURE prompts drawn from the private corpus and stores the answers' hashes as the
+    // artefact's references, replacing earlier ones unless {"replace": false}. Body {node_id,
+    // offering_id} names the deployment; optional {artifact} stores them under another artefact
+    // (e.g. the public name a node is about to switch to). The prompts never leave the registry.
     ['POST', '/v0/fingerprints/capture', async (req, res) => {
       if (!adminOk(req, res)) return;
-      const { node_id, offering_id } = await readJson(req);
+      const { node_id, offering_id, artifact, replace = true } = await readJson(req);
       const card = await store.latestCard(node_id);
       const offering = card?.offerings.find((o) => o.offering_id === offering_id);
       if (!offering) return problem(res, 404, 'unknown-offering', `${node_id}/${offering_id}`);
-      const refs = await captureFingerprints(await authFetch(node_id, card), card, offering);
-      await store.addFingerprints(offering.model.artifact, refs);
-      sendJson(res, 200, { artifact: offering.model.artifact, references: refs.length });
+      const target = artifact ?? offering.model.artifact;
+      if (typeof target !== 'string' || !ARTIFACT.test(target)) return problem(res, 400, 'bad-artifact', 'artifact must be hf:{org}/{repo}, ollama:{name}[:{tag}] or urn:proprietary:{vendor}:{model}');
+      let refs;
+      try { refs = await captureFingerprints(await authFetch(node_id, card), card, offering, corpus.identityPrompts(IDENTITY_CAPTURE)); }
+      catch (err) { return problem(res, 502, 'capture-failed', String(err.message)); }
+      if (replace) await store.clearFingerprints(target);
+      await store.addFingerprints(target, refs);
+      sendJson(res, 200, { artifact: target, references: refs.length, corpus: corpus.private ? 'private' : 'built-in' });
+    }],
+
+    // Dispute resolution (admin): the only way out of `disputed`. Body {"resolution": "..."}: what
+    // was found and done, recorded in the listing history. The node returns to `indexed`, runs
+    // Stage A at once, and Stage B again on the registry's schedule.
+    ['POST', '/v0/admin/nodes/:id/resolve', async (req, res, { params }) => {
+      if (!adminOk(req, res)) return;
+      const node = await store.getNode(params.id);
+      if (!node) return problem(res, 404, 'unknown-node', params.id);
+      if (node.state !== 'disputed') return problem(res, 409, 'not-disputed', `${node.id} is ${node.state}`);
+      const { resolution } = await readJson(req);
+      if (typeof resolution !== 'string' || !resolution.trim() || resolution.length > 2000) {
+        return problem(res, 400, 'missing-resolution', 'body must be {"resolution": "what was found and what was done"}');
+      }
+      await store.setState(node.id, 'indexed', `dispute resolved: ${resolution.trim()}`);
+      await refreshCard(node.id);
+      const { stageA } = await stageAFor(node.id, { recordFailure: true });
+      sendJson(res, 200, { id: node.id, state: (await store.getNode(node.id)).state, stage_a: stageA });
+    }],
+
+    // The vendor-namespace table (ONP-3 §6.3): who may claim urn:proprietary:{vendor}:* artefacts.
+    ['GET', '/v0/vendors', async (req, res) => {
+      const table = await vendors();
+      sendJson(res, 200, {
+        rule: 'urn:proprietary:{vendor}:{model} is admitted only from a node id inside one of the vendor\'s namespaces listed here; for a vendor known from imported listings (source "catalog"), only from a node whose own domain contains one of the hosts those listings are served from; for any other vendor, only from the node\'s own namespace (the second label of its id)',
+        vendors: [...table].map(([vendor, v]) => ({ vendor, namespaces: v.namespaces, source: v.source, ...(v.hosts ? { hosts: v.hosts } : {}) }))
+          .sort((a, b) => a.vendor.localeCompare(b.vendor)),
+      });
+    }],
+    // Admin: body {"namespaces": ["com.example"]} sets a vendor's namespaces; {"namespaces": null}
+    // removes the admin entry (a built-in pin applies again).
+    ['POST', '/v0/admin/vendors/:vendor', async (req, res, { params }) => {
+      if (!adminOk(req, res)) return;
+      if (!VENDOR_SLUG.test(params.vendor)) return problem(res, 400, 'bad-vendor', 'vendor must match [a-z0-9-]+');
+      const { namespaces } = await readJson(req);
+      if (namespaces !== null && !(Array.isArray(namespaces) && namespaces.length && namespaces.every((n) => typeof n === 'string' && NAMESPACE.test(n)))) {
+        return problem(res, 400, 'bad-namespaces', 'body must be {"namespaces": ["com.example", ...]} (reverse-DNS, lower case) or {"namespaces": null}');
+      }
+      await store.setVendorNamespaces(params.vendor, namespaces);
+      const entry = (await vendors()).get(params.vendor);
+      sendJson(res, 200, { vendor: params.vendor, namespaces: entry?.namespaces ?? null, source: entry?.source ?? null });
     }],
 
     // Node directory: every listed node with tier, source, offering count, availability.
@@ -375,6 +532,8 @@ export async function startRegistry({
         institutional: Boolean(node.institutional),
         founding: Boolean(node.founding),
         card,
+        // Whether the latest card's signature verified against the origin's JWKS (ONP-2 §8).
+        signature_verified: Boolean((await store.latestRevision(params.id))?.sig_ok),
         probes: (await store.probesFor(params.id)).slice(0, 20),
         history: await store.transitionsFor(params.id),
         location: nodeObs.location ?? null,
@@ -603,6 +762,16 @@ export async function startRegistry({
         map: mapTiles,
         signing_key: { ...registryKeys.publicJwk, kid: 'registry-1' },
         stage_c: Boolean(stageC),
+        // How admission runs here (ONP-3 §4a). The schedule's next run times are never published.
+        admission: {
+          stage_b: 'registry schedule; POST /v0/nodes/{id}/admit is admin-only',
+          schedule: schedule ? {
+            stage_a_max_hours: Math.round(planner.options.stageAIntervalMs / 3_600_000 * 10) / 10,
+            stage_b_max_days: Math.round(planner.options.stageBIntervalMs / 86_400_000),
+          } : null,
+          probe_corpus: corpus.summary(),
+          proprietary_vendors: '/v0/vendors',
+        },
         // What trust=trusted, policy.sensitive and each result's `pool` mean here (ONP-3 §5e).
         trust: { pools: ['trusted', 'open'], trusted },
       });
@@ -647,7 +816,8 @@ export async function startRegistry({
     return { stop: () => { stopped = true; clearTimeout(timer); } };
   }
 
-  const stageCHandle = stageC ? startStageC(store, { safeFetch, fetchFor: authFetch, refreshCard, ...stageC }) : null;
+  const stageCHandle = stageC ? startStageC(store, { safeFetch, fetchFor: authFetch, refreshCard, corpus, ...stageC }) : null;
+  const scheduleHandle = schedule ? startScheduler(store, planner, { stageA: (id) => stageAFor(id, { refresh: true }), stageB: (id) => stageBFor(id) }) : null;
   const reimportHandle = reimport ? startReimport(store, { safeFetch, ...reimport }) : null;
   const locationHandle = location ? startLocationSweep() : null;
   const actualPort = await listen(app, port, host);
@@ -656,8 +826,11 @@ export async function startRegistry({
     origin: `http://${host}:${actualPort}`,
     store,
     registryKeys,
+    /** Run one scheduler pass now (tests); null when the schedule is off. */
+    scheduleTick: scheduleHandle ? () => scheduleHandle.tick() : null,
     close: async () => {
       stageCHandle?.stop();
+      scheduleHandle?.stop();
       reimportHandle?.stop();
       locationHandle?.stop();
       await closeApp(app);

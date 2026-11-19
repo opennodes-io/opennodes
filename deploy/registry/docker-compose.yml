@@ -23,7 +23,13 @@ services:
       PORT: "4300"
       ONP_DB: postgres://onp:${PG_PASSWORD}@db:5432/onp
       ONP_REGISTRY_KEY: /data/registry-key.pem      # persistent signing identity (export feed)
-      ONP_ADMIN_TOKEN: ${ONP_ADMIN_TOKEN}            # admin routes (imports, fingerprint capture)
+      ONP_ADMIN_TOKEN: ${ONP_ADMIN_TOKEN}            # admin routes (imports, fingerprint capture, Stage B on request)
+      # Private probe prompts (Stages A, B, C): create data/probe-corpus.json on the server (format:
+      # probe-corpus.example.json), then set ONP_PROBE_CORPUS=/data/probe-corpus.json in .env. Empty =
+      # the public built-in prompts, which nodes can recognise. Never commit the real file.
+      ONP_PROBE_CORPUS: ${ONP_PROBE_CORPUS:-}
+      # Stage A every <=6 h, Stage B on the registry's schedule (ONP-3 §4a). "0" turns the timetable off.
+      ONP_SCHEDULE: ${ONP_SCHEDULE:-1}
       ONP_TRUST_PROXY: "1"                           # client address from X-Forwarded-For (Caddy in front)
       ONP_REIMPORT: "1"                              # keep imported catalogs fresh (6h)
       ONP_REIMPORT_SOURCES: openrouter,huggingface,models-dev,ollama
