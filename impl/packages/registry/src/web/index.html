@@ -2586,7 +2586,7 @@ onp-node card --out well-known
 ONP_PROBE_KEY=&lt;a key with a small quota&gt; onp-node register https://registry.opennodes.io \\
     --card-url https://${esc(host)}/.well-known/open-node.json --probe-key-env ONP_PROBE_KEY
 # publish the printed challenge at /.well-known/onp-challenge/&lt;token&gt; or as a DNS TXT record</code></pre>
-      <p>The checks then run on their own: model identity, context window, capacity, server location. Passing them earns the verified tier, and your listing replaces this import. The probe key is sent only to your own API and never appears in any registry response.</p>
+      <p>The checks then run on their own: model identity, context window, capacity, server location. Passing them earns the community tier, and your listing replaces this import. The verified tier also needs the registry to hold access to your API bought as an ordinary customer: probes that carry the dedicated probe key are easy to spot, so they never decide it. The probe key is sent only to your own API and never appears in any registry response.</p>
     </details>` : '';
   return `<div class="panel pad" style="max-width:56rem; margin:0.4rem 0 0.8rem; border-left:3px solid var(--accent)">
     <p style="margin:0 0 0.35rem; font-weight:600">Do you run ${esc(name)}?</p>
