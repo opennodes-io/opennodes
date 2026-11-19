@@ -7,8 +7,9 @@ end to end against a registry and a node).
 
 ## Why
 
-Operators are in two pools (ONP-3 §5e). The trusted pool (EU/EEA and Canada, declared lineage without CN,
-verified, no retention, no training) may receive personal data. The open pool is for tasks without
+Operators are in two pools (ONP-3 §5e). The trusted pool (operators that declare an EU/EEA or Canadian
+country and whose server front passed the registry's location check, declared lineage without CN, verified,
+declared no retention and no training) may receive personal data. The open pool is for tasks without
 personal data. Masking lets more traffic use the open pool safely: before a request goes to an open-pool
 operator, the client replaces the personal data it finds with placeholders, and puts the values back in
 the answer on the user's machine.

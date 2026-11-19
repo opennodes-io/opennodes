@@ -43,7 +43,7 @@ python -m venv .venv
 ## Real deployment (e.g. Ollama on this machine)
 
 ```
-pipx install onp-node            # from PyPI; from a checkout: pipx install ./node-kit
+pipx install onp-node==0.1.10    # from PyPI; from a checkout: pipx install ./node-kit
 onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.ai --public-url https://ai.example.org
 # The node id must be the reverse of the host that serves it (ai.example.org -> org.example.ai, or a
 # name below it such as org.example.ai.box): registries accept a card only from a host that controls the id.
@@ -88,7 +88,7 @@ request, and needs a signed card (the kit signs it) and identity references the 
 If you operate a production API and won't put a proxy in its path, list it with a static card instead. The kit signs the card once; you host two JSON files on your domain; the registry probes your real API with a key you provide.
 
 ```
-pipx install onp-node
+pipx install onp-node==0.1.10
 onp-node init --engine https://api.example.com/v1 --id com.example.ai --public-url https://ai.example.com   # ONP_ENGINE_KEY=<key> if /models needs one
 # edit onp-node.toml: pricing (per MTok), schemes = ["prepaid"], data_policy, optional [hardware]
 onp-node card --signup https://console.example.com/keys --out well-known
@@ -99,6 +99,8 @@ ONP_PROBE_KEY=<a key with a small quota> onp-node register https://registry.open
 ```
 
 - The node id is the reverse of the host serving the card (`ai.example.com` → `com.example.ai`); your API may live on any host.
+- **Behind a CDN** (Cloudflare, Fastly, …) the registry cannot locate your server from its address, and a node without a passing server-location check stays out of the trusted pool for personal data. Declare the public addresses of the servers behind the CDN in `[node] origin_addresses`: the registry then connects to each one directly, requires a publicly trusted certificate for your API's host name and an answer from it, and locates that address instead (ONP-2 §4, ONP-3 §6.4). An origin reachable only through a tunnel cannot be checked.
+- `country` and `[data_policy]` are your declarations, and registries show them as declared. Give `[data_policy] source` (your published privacy policy or data processing terms) and `checked` (its date) so clients can read what you committed to.
 - The probe key is held as pending until your challenge passes, is sent only to your card's own endpoints, and never appears in any registry API. Give it a small dedicated quota.
 - Every probe that carries the probe key is easy for you to pick out, so a card-only listing stays at community, even when it passes, until the registry has bought access to your API as an ordinary customer. From then on probes use that access instead, and the next scheduled Stage B can verify the listing.
 - `health` defaults to your `/models` endpoint. Card-only listings carry no ONP receipts and no revision enforcement — clients call your API exactly as they do today.

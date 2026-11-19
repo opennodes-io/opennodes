@@ -3,8 +3,10 @@ import {
   residencyWithin, residencyCodes, servingLocations, basisRank,
   inJurisdiction, localSizes, pullsOf, specialtyOf, isEmbedder,
   trustedView, poolOf, inTrustedPool, lineageAllowed, meetsDataPolicy, RETENTION_LEVELS,
+  serverCheckOf, serverCheckPassed, jurisdictionEvidence, SERVER_CHECK_FILTERS,
 } from '@opennodes/core';
 import { testable } from './probes.js';
+import { declaredOrigins } from './location.js';
 
 /** BCP 47 prefix match (ONP-3 §5): `fr` matches `fr` and `fr-CA`; `fr-CA` matches only itself. */
 export const langMatches = (tag, wanted) => {
@@ -79,6 +81,41 @@ export async function collectOfferings(store) {
   return entry.building;
 }
 
+/**
+ * The server-location check (location.js) as search results carry it, under `jurisdiction.location`
+ * (ONP-3 §6.4). A check applies only to the card it was made for: when the card now names another API
+ * host, or declares another operator country, it is reported as `unknown` until the next check, so an
+ * operator cannot pass on one host and then point its endpoint elsewhere.
+ */
+export function locationSummary(loc, card) {
+  if (!loc) return null;
+  const host = hostOf(card?.endpoints?.openai);
+  const declared = card?.node?.operator?.country ? String(card.node.operator.country).toUpperCase() : null;
+  const stale = (loc.host ?? null) !== host ? 'the API host changed since this check'
+    : (loc.declared ?? null) !== declared ? 'the declared operator country changed since this check' : null;
+  if (stale) return { verdict: 'unknown', server_country: null, network: null, cdn: false, latency: 'unknown', checked_at: loc.checked_at, reason: stale };
+  // Origin results count only for the origin addresses the card declares now.
+  const origins = declaredOrigins(card);
+  const originCurrent = loc.origin && JSON.stringify(loc.origin.declared ?? []) === JSON.stringify(origins);
+  const origin = !loc.origin || !origins.length ? null
+    : originCurrent ? loc.origin
+    : { verdict: 'unknown', reason: 'the declared origin addresses changed since this check', addresses: [] };
+  return {
+    verdict: loc.verdict, server_country: loc.server?.country ?? null, network: loc.server?.network ?? null,
+    cdn: Boolean(loc.server?.cdn), latency: loc.latency?.verdict ?? 'unknown', checked_at: loc.checked_at,
+    ...(loc.reason ? { reason: loc.reason } : {}),
+    // Behind a CDN: the origin addresses the card declares, as the registry found them.
+    ...(origin ? { origin: {
+      verdict: origin.verdict,
+      ...(origin.reason ? { reason: origin.reason } : {}),
+      addresses: (origin.addresses ?? []).map((a) => ({
+        address: a.address, verdict: a.verdict, server_country: a.server_country ?? null,
+        network: a.server?.network ?? null, latency: a.latency?.verdict ?? 'unknown', ...(a.reason ? { reason: a.reason } : {}),
+      })),
+    } } : {}),
+  };
+}
+
 /** Flatten indexed nodes into searchable offering summaries. */
 async function buildOfferings(store) {
   const out = [];
@@ -97,13 +134,9 @@ async function buildOfferings(store) {
     const tier = node.state === 'indexed' ? 'unverified' : node.state;
     const nodeObs = await store.getObservations(node.id, '_node');
     const availability = nodeObs.availability ?? null;
-    const loc = nodeObs.location ?? null;
     const placed = ROUTER_HOSTS.has(hostOf(card.endpoints?.openai)) ? null : placements.get(store)?.get(node.id);
-    // Server-location check (location.js): what the registry found, next to what the operator declared.
-    const location = loc ? {
-      verdict: loc.verdict, server_country: loc.server?.country ?? null, network: loc.server?.network ?? null,
-      cdn: Boolean(loc.server?.cdn), latency: loc.latency?.verdict ?? 'unknown', checked_at: loc.checked_at,
-    } : null;
+    const location = locationSummary(nodeObs.location ?? null, card);
+    const serverCheck = serverCheckOf({ jurisdiction: { location } });
     for (const declared of card.offerings) {
       // No location on the card: a curated seed may say where this node serves every model.
       const offering = placed && !Array.isArray(declared.locations) && !(card.node?.locations ?? []).length
@@ -137,14 +170,16 @@ async function buildOfferings(store) {
         pricing: offering.pricing,
         data_policy: offering.data_policy ?? null,
         node_regions: card.node?.regions ?? [],
-        // Where the operator is (ONP-2 node.operator.country, node.regions).
+        // Where the operator is (ONP-2 node.operator.country, node.regions): a declaration, not proof.
         // Registered nodes declare it in their signed card; imports get it from the importer's list of
-        // known providers, labeled inferred. `location` is the registry's own server-location check.
+        // known providers, labeled inferred. `location` is the registry's own server-location check and
+        // `server_check` its evidence level (core serverCheckOf); `evidence` says both in words.
         jurisdiction: {
           country: card.node?.operator?.country ?? null,
           regions: card.node?.regions ?? [],
           basis: card.node?.operator?.country ? (node.source === 'import' ? 'inferred' : 'declared') : null,
           location,
+          server_check: serverCheck,
         },
         // Where requests are served: live sites with their evidence basis (ONP-2 §3a), and the
         // codes a residency check must cover (pins + sites, else node regions).
@@ -168,6 +203,7 @@ async function buildOfferings(store) {
       });
       // Trusted or open pool (ONP-3 §5e), under this registry's trusted view.
       out.at(-1).pool = poolOf(out.at(-1), view);
+      if (out.at(-1).jurisdiction.country) out.at(-1).jurisdiction.evidence = jurisdictionEvidence(out.at(-1));
     }
   }
   return out;
@@ -198,7 +234,10 @@ export async function searchOfferingsPaged(store, query) {
   }
   if (q('max_input_price')) items = items.filter((o) => (o.pricing.input_per_mtok ?? Infinity) <= Number(q('max_input_price')));
   if (q('scheme')) items = items.filter((o) => o.pricing.schemes.includes(q('scheme')));
+  // Operator jurisdiction: the declared (or, for imports, inferred) country, minus servers found outside.
   if (q('jurisdiction')) items = items.filter((o) => inJurisdiction(o, q('jurisdiction')));
+  // Evidence: the registry's server-location check passed (front, or every declared origin behind a CDN).
+  if (oneOf('server_check', q('server_check'), SERVER_CHECK_FILTERS) === 'passed') items = items.filter((o) => o.local || serverCheckPassed(o));
   if (q('region')) {
     // Residency: every pinned region and live serving site (else the node's regions) inside.
     items = items.filter((o) => residencyWithin(o.residency, q('region')));

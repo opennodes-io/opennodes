@@ -14,18 +14,18 @@
 ## Quick start
 
 ```bash
-npx @opennodes/ollama-router            # OpenNodes for Ollama: one Ollama endpoint over local + LAN + verified public models
-npx @opennodes/cli mcp --print-config   # MCP tools for Cursor / VS Code / Claude Desktop / Kiro (or use https://registry.opennodes.io/mcp)
-npx @opennodes/cli gateway --port 4141  # OpenAI-compatible gateway with onp/auto routing; base URL http://127.0.0.1:4141/v1
-npx @opennodes/registry                 # run your own registry: web app + API + MCP on http://127.0.0.1:4300
-pipx install onp-node                   # Node Kit: list a vLLM / Ollama / TGI deployment, or an API you already run
+npx @opennodes/ollama-router@0.1.27            # OpenNodes for Ollama: one Ollama endpoint over local + LAN + verified public models
+npx @opennodes/cli@0.1.33 mcp --print-config   # MCP tools for Cursor / VS Code / Claude Desktop / Kiro (or use https://registry.opennodes.io/mcp)
+npx @opennodes/cli@0.1.33 gateway --port 4141  # OpenAI-compatible gateway with onp/auto routing; base URL http://127.0.0.1:4141/v1
+npx @opennodes/registry@0.1.53                 # run your own registry: web app + API + MCP on http://127.0.0.1:4300
+pipx install onp-node==0.1.9                   # Node Kit: list a vLLM / Ollama / TGI deployment, or an API you already run
 ```
 
 npm: [@opennodes/core](https://www.npmjs.com/package/@opennodes/core) · [@opennodes/cli](https://www.npmjs.com/package/@opennodes/cli) · [@opennodes/registry](https://www.npmjs.com/package/@opennodes/registry) · [@opennodes/ollama-router](https://www.npmjs.com/package/@opennodes/ollama-router) — PyPI: [onp-node](https://pypi.org/project/onp-node/)
 
 ![OpenNodes for Ollama: one endpoint for local, LAN and verified public models](docs/media/opennodes-for-ollama.gif)
 
-**OpenNodes for Ollama** ([impl/packages/ollama-router](impl/packages/ollama-router/README.md)): point Open WebUI, Continue, Zed, or the `ollama` CLI at `OLLAMA_HOST=127.0.0.1:11435` and one model list spans your local Ollama, other machines on your LAN (plain Ollama servers or Node Kit nodes you add with `--peer`, or Node Kit nodes found via mDNS with `--mdns` and pinned by card key), and verified public nodes from the registry — with `auto`, `auto-cheap`, `auto-fast`, `auto-quality`, `auto-private` (this machine and pinned LAN peers only), `auto-eu` and `auto-ca` or any `auto-<country>` (pinned LAN peers plus operators in that jurisdiction) routed by the advisor, pinned prices, budget caps, and signed receipts for public calls.
+**OpenNodes for Ollama** ([impl/packages/ollama-router](impl/packages/ollama-router/README.md)): point Open WebUI, Continue, Zed, or the `ollama` CLI at `OLLAMA_HOST=127.0.0.1:11435` and one model list spans your local Ollama, other machines on your LAN (plain Ollama servers or Node Kit nodes you add with `--peer`, or Node Kit nodes found via mDNS with `--mdns` and pinned by card key), and verified public nodes from the registry — with `auto`, `auto-cheap`, `auto-fast`, `auto-quality`, `auto-private` (this machine and pinned LAN peers only), `auto-eu` and `auto-ca` or any `auto-<country>` (pinned LAN peers plus operators that declare that country) routed by the advisor, pinned prices, budget caps, and signed receipts for public calls.
 
 **MCP server** — five read-only tools: `recommend` (best node and model for a task; the prompt is analysed locally and only its features are sent), `search_offerings`, `get_offering`, `get_node`, `estimate`. Listed on the [MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.opennodes-io/opennodes) (as `io.github.opennodes-io/opennodes`, stdio and remote), [Glama](https://glama.ai/mcp/servers/opennodes-io/opennodes) and mcprush:
 
@@ -43,7 +43,7 @@ MCP standardized how AI applications reach *tools*; the OpenAI API shape standar
 ### Research (why this standard, and why now)
 - [01 — Protocol & standards landscape](docs/01-protocol-landscape.md) — MCP + Registry, WebMCP, A2A, AGNTCY, ANP, NANDA, OpenAI-compatible APIs, DIDs/VCs, x402, UCAN, model cards, MLPerf; full gap analysis.
 - [02 — Market landscape & demand evidence](docs/02-market-landscape.md) — OpenRouter, HF Inference Providers, gateways, DePIN/decentralized compute, OS-level AI runtimes, payment rails; viability assessment.
-- [05 — OpenNodes and European digital sovereignty](docs/05-eu-sovereignty-brief.md) — one-page brief: no middlebox, EU/EEA jurisdiction filter, signed self-descriptions and receipts, mapped to GDPR, the AI Act and the Data Act ([web version](https://opennodes.io/eu)).
+- [05 — OpenNodes and European digital sovereignty](docs/05-eu-sovereignty-brief.md) — one-page brief: no middlebox, EU-declared operator filter with a server-front check, signed self-descriptions and receipts, mapped to GDPR, the AI Act and the Data Act ([web version](https://opennodes.io/eu)).
 - [04 — Universal AI client landscape](docs/04-universal-client-landscape.md) — AI browsers, branded assistants, neutral/BYOK clients, multi-homing data, distribution economics; assessment of the "primary access point" client idea.
 
 ### Specification suite

@@ -113,7 +113,7 @@ test('registry /v0/recommend, MCP recommend, and gateway onp/auto route to the f
   })).json();
   assert.match(chat.choices[0].message.content, /^echo: ping/);
   assert.equal(chat.model, 'onp/auto-cheap');
-  const advice = await (await fetch(`${gw.origin}/gateway/advice`)).json();
+  const advice = await (await fetch(`${gw.origin}/gateway/advice`, { headers: { authorization: `Bearer ${gw.apiToken}` } })).json();
   assert.equal(advice.recommendations[0].offering, 'org.opennodes.fixture/echo-1');
   assert.ok(!JSON.stringify(advice.features).includes('ping'));
 });
@@ -139,7 +139,7 @@ test('jurisdiction: EEA filter in the advisor and in registry search; local alwa
   const r = recommend(offerings, extractFeatures('summarize this note'), { jurisdiction: 'eea', limit: 10 });
   assert.deepEqual(r.recommendations.map((x) => x.node_id).sort(), ['io.example.fi', 'local']);
   assert.equal(r.rejected.jurisdiction, 2);
-  assert.ok(r.recommendations.find((x) => x.node_id === 'io.example.fi').reasons.some((s) => s.includes('operator in FI (EEA)')));
+  assert.ok(r.recommendations.find((x) => x.node_id === 'io.example.fi').reasons.some((s) => s === 'FI operator (EEA, declared), server front not checked'));
 
   // registry search: the fixture's operator declares DE
   const node = await startFixtureNode();
@@ -155,7 +155,8 @@ test('jurisdiction: EEA filter in the advisor and in registry search; local alwa
   assert.deepEqual(await search('jurisdiction=eea'), ['org.opennodes.fixture']);
   assert.deepEqual(await search('jurisdiction=US,GB'), []);
   const one = (await (await fetch(`${registry.origin}/v0/offerings`)).json()).offerings[0];
-  assert.deepEqual(one.jurisdiction, { country: 'DE', regions: one.jurisdiction.regions, basis: 'declared', location: null });
+  assert.deepEqual(one.jurisdiction, { country: 'DE', regions: one.jurisdiction.regions, basis: 'declared', location: null,
+    server_check: 'unchecked', evidence: 'DE operator (EEA, declared), server front not checked' });
 
   // imports: a known European provider gets an inferred country; an unknown one gets none
   await fetch(`${registry.origin}/v0/import/models-dev`, {
@@ -170,7 +171,12 @@ test('jurisdiction: EEA filter in the advisor and in registry search; local alwa
   assert.equal(berget.jurisdiction.country, 'SE');
   assert.equal(berget.jurisdiction.basis, 'inferred');
   const r2 = recommend([berget], extractFeatures('summarize this note'), { jurisdiction: 'eea' });
-  assert.ok(r2.recommendations[0].reasons.some((x) => x.includes('operator in SE (EEA, inferred)')));
+  assert.ok(r2.recommendations[0].reasons.includes('SE operator (EEA, inferred by the registry), server front not checked'));
+  assert.equal(r2.recommendations[0].server_check, 'unchecked');
+  // server_check=passed keeps what the registry located, in search and recommend; a typo is refused
+  assert.deepEqual(await search('jurisdiction=eea&server_check=passed'), []);
+  assert.equal(recommend([berget], extractFeatures('summarize this note'), { server_check: 'passed' }).rejected.server_check, 1);
+  assert.throws(() => recommend([berget], extractFeatures('x'), { server_check: 'yes' }), (err) => err.status === 400);
 });
 
 test('auto model names: presets, EU/EEA and any country code', async (t) => {

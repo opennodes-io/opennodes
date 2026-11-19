@@ -1,11 +1,20 @@
 // ONP Gateway (REQ-002 TC-GW): local OpenAI-compatible server over discovered offerings.
 // Third-party clients point their base URL here and need zero ONP knowledge; the gateway
 // does discovery, policy, revision pinning, price_changed recovery, fallback, and receipts.
+//
+// Who may call it (expert review of 18 Nov 2026, 4.11; ONP-3 §5b). With --token, every request needs it.
+// Without one the gateway listens on loopback only. Its own API (/gateway/*: receipts, advice, reputation)
+// still needs a token, the gateway's API token (the CLI keeps it in ~/.opennodes/gateway-token). The model
+// routes (/v1/*) serve this machine's apps without it when the Host is a local name (so a DNS-rebinding page is
+// refused) and any browser Origin is a local page, a desktop app shell, or one the user allowed with
+// --allow-origin (so another web page cannot spend the user's keys). Every POST must be application/json,
+// which a browser never sends cross-site without a preflight the gateway refuses.
 import { appendFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
 import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend, recommendEmbedders, isEmbedder, parseAutoModel, AUTO_MODEL_NAMES, responseBudgetMs, fetchWithin, sensitiveHeader } from '@opennodes/core';
 import { parseMaskMode, maskModeOf, piiDetectorFrom, maskChatRequest, maskEmbeddingRequest, maskedRequestFor, oncePerRequest, unmaskCompletion, unmaskSse, piiMaskedHeader, describeMaskCounts } from '@opennodes/core';
+import { localAccess, bearerCheck, isLoopbackBind, isLoopbackAddress, isJsonContentType, newToken } from '@opennodes/core';
 import { OnpClient } from './client.js';
 import { loadChecks, DEFAULT_CHECKS_PATH } from './check.js';
 import { Reputation } from './reputation.js';
@@ -17,11 +26,12 @@ const atLeast = (tier, floor) => (TIERS.indexOf(tier) >= TIERS.indexOf(floor) ? 
 // Advisor-routed virtual models (the ONP answer to openrouter/auto). Routing runs
 // locally on the gateway's cached catalog: the prompt never leaves the machine.
 // onp/auto, onp/auto-cheap|fast|quality|private, and onp/auto-<where> (eu, or a country code such as
-// ca): only operators in that jurisdiction (ONP-2 node.operator.country).
+// ca): only operators that declare that jurisdiction (ONP-2 node.operator.country).
 const AUTO_IDS = AUTO_MODEL_NAMES.map((n) => `onp/${n}`);
 
-// Standard provider key variables. A key found here is sent only to its own host,
-// and makes that host's imported listings eligible for onp/auto routing.
+// Standard provider key variables. They are read only when the user opts in (--env-keys; envKeys: true),
+// because a key found here makes that host's imported, unverified listings routable for onp/auto.
+// A key is sent only to its own host.
 export const ENV_KEYS = {
   'openrouter.ai': ['OPENROUTER_API_KEY'],
   'router.huggingface.co': ['HF_TOKEN', 'HUGGING_FACE_HUB_TOKEN'],
@@ -46,6 +56,9 @@ export function credentialsFrom(keys = {}, env = process.env) {
   return { ...out, ...keys };
 }
 
+/** Names (never values) of the standard provider key variables set in env. */
+export const envKeyNames = (env = process.env) => Object.values(ENV_KEYS).flat().filter((n) => env[n]);
+
 const hostOf = (o) => { try { return new URL(o.endpoints.openai).hostname; } catch { return null; } };
 
 /**
@@ -68,10 +81,16 @@ export function callable(offering, creds) {
 }
 
 export async function startGateway({
-  registry, port = 4141, host = '127.0.0.1', token = null,
+  registry, port = 4141, host = '127.0.0.1',
+  token = null,      // every request needs it (--token)
+  apiToken = null,   // without `token`: what the gateway API (/gateway/*) needs; a random one per run if not given
   aliases = {}, virtuals = {}, policy = {}, ledgerPath = null,
   keys = {},   // BYOK upstream credentials by hostname, e.g. {"openrouter.ai": "sk-or-...", "router.huggingface.co": "hf_..."}
-  env = process.env,   // where standard provider key variables are read from; pass {} to disable
+  env = process.env,   // ONP_MASK_PII and the PII detector settings; also the provider key variables, with envKeys
+  envKeys = false,     // true: use the standard provider key variables in env (ENV_KEYS); off unless the user asks
+  // Browser pages besides localhost and desktop app shells (exact origins), and Host names besides local ones
+  // (a reverse proxy's name, say), that may use the gateway without a token.
+  allowOrigins = [], allowHosts = [],
   checksPath = DEFAULT_CHECKS_PATH,   // results of `onp check`; null to ignore them
   reputationPath = null,   // where passive reputation persists (the CLI uses ~/.opennodes); null = this run only
   ollama = null,   // your local Ollama (the CLI uses http://127.0.0.1:11434): its embedding models serve /v1/embeddings first
@@ -80,13 +99,17 @@ export async function startGateway({
   // (piiService, ONP_PII_SERVICE) and a local model (piiLlm "model[@url]", ONP_PII_LLM); or your own piiDetector.
   maskPii = null, piiService = null, piiLlm = null, piiDetector = null,
 } = {}) {
-  if (!['127.0.0.1', 'localhost', '::1'].includes(host) && !token) {
+  if (!isLoopbackBind(host) && !token) {
     throw new Error('refusing non-loopback bind without --token (TC-NFR-03)');
   }
+  const local = localAccess({ allowOrigins, allowHosts, what: 'the gateway' });   // throws on * and null
+  const gatewayToken = token || apiToken || newToken();   // accepted on every route
+  const hasToken = bearerCheck(gatewayToken);
   const client = new OnpClient({ registry, policy });
   const maskMode = parseMaskMode(maskPii ?? env.ONP_MASK_PII, 'open');
   const detector = piiDetector ?? piiDetectorFrom({ service: piiService, llm: piiLlm, env });
-  const creds = credentialsFrom(keys, env);
+  const creds = credentialsFrom(keys, envKeys ? env : {});
+  const envKeysIgnored = envKeys ? [] : envKeyNames(env);   // set, but not used: the CLI says so
   const jwksCache = new Map();
   const receipts = [];
   let cache = { at: 0, byId: new Map() };
@@ -222,12 +245,51 @@ export async function startGateway({
       `${entry.pii_masked ? ` pii-masked ${describeMaskCounts(entry.pii_masked) || 'none'}` : ''}`);
   }
 
-  const authed = (req, res) => {
-    if (!token) return true;
-    if (req.headers.authorization === `Bearer ${token}`) return true;
-    problem(res, 401, 'unauthorized', 'missing or wrong bearer token');
+  /**
+   * Runs before every route; true when it has answered (a preflight, or a refusal).
+   * A browser Origin that may use the gateway gets CORS headers; any other gets none, so its page can
+   * read nothing. A request with the gateway's token (--token, else its API token) may proceed. Without
+   * it: with --token, nothing; else not the gateway API (/gateway/*), and for the model routes this machine
+   * only, a local Host (refuses DNS rebinding), and no Origin or an allowed one. A POST body must be JSON.
+   */
+  function access(req, res) {
+    const origin = req.headers.origin;
+    const allowed = local.originAllowed(origin);
+    if (allowed) {
+      res.setHeader('access-control-allow-origin', origin);
+      res.setHeader('vary', 'origin');
+      res.setHeader('access-control-expose-headers', 'onp-pii-masked');
+    }
+    if (req.method === 'OPTIONS') {
+      if (!allowed) { problem(res, 403, 'origin-not-allowed', `origin ${origin ?? '(none)'} may not use this gateway (allow it with --allow-origin)`); return true; }
+      res.setHeader('access-control-allow-methods', 'GET, POST');
+      // the origin is allowed, so it may send what it asks for (browser SDKs add their own x-* headers)
+      res.setHeader('access-control-allow-headers', String(req.headers['access-control-request-headers'] ?? 'authorization, content-type'));
+      res.setHeader('access-control-max-age', '600');
+      res.writeHead(204);
+      res.end();
+      return true;
+    }
+    const refuse = (status, type, detail) => { problem(res, status, type, detail); return true; };
+    if (!hasToken(req)) {
+      if (token) return refuse(401, 'unauthorized', 'missing or wrong bearer token');
+      const path = new URL(req.url, 'http://gateway').pathname;
+      if (path === '/gateway' || path.startsWith('/gateway/')) {
+        return refuse(401, 'unauthorized', 'the gateway API (/gateway/*) needs the gateway token: send "authorization: Bearer <token>" (onp gateway keeps it in ~/.opennodes/gateway-token)');
+      }
+      if (!isLoopbackAddress(req.socket?.remoteAddress)) return refuse(401, 'unauthorized', 'requests from other machines need a gateway token (--token)');
+      if (!local.hostAllowed(req.headers.host)) {
+        return refuse(403, 'host-not-allowed', `Host "${req.headers.host ?? ''}" is not a local name, so the request may come from a web page (DNS rebinding); ` +
+          'use 127.0.0.1 or localhost, allow the name with --allow-host, or start the gateway with --token');
+      }
+      if (origin != null && !allowed) return refuse(403, 'origin-not-allowed', `origin ${origin} may not use this gateway (allow it with --allow-origin, or start the gateway with --token)`);
+      if (local.crossSiteWithoutOrigin(req)) return refuse(403, 'origin-not-allowed', 'cross-site browser requests may not use this gateway');
+    }
+    if (req.method === 'POST' && !isJsonContentType(req.headers['content-type'])) {
+      return refuse(415, 'unsupported-media-type', `the request body must be JSON with "content-type: application/json" (got ${req.headers['content-type'] ? `"${req.headers['content-type']}"` : 'none'})`);
+    }
     return false;
-  };
+  }
 
   /**
    * One upstream attempt. Returns {done:true} when the response was written, or {retryPricing|failed}.
@@ -425,7 +487,6 @@ export async function startGateway({
 
   const app = createApp([
     ['GET', '/v1/models', async (req, res) => {
-      if (!authed(req, res)) return;
       await refresh();
       const ids = [...AUTO_IDS, ...cache.byId.keys(), ...Object.keys(aliases), ...Object.keys(virtuals)];
       sendJson(res, 200, {
@@ -435,7 +496,6 @@ export async function startGateway({
     }],
 
     ['POST', '/v1/chat/completions', async (req, res) => {
-      if (!authed(req, res)) return;
       const body = await readJson(req, 10_000_000);
       // Personal data: the gateway's --sensitive, the onp-sensitive header, or onp/auto-sensitive.
       const sensitive = sensitiveRequest(req, policy.sensitive) || Boolean(parseAutoModel(body.model, 'onp/')?.sensitive);
@@ -457,13 +517,13 @@ export async function startGateway({
       }
       if (!candidates.length && sensitive && (parseAutoModel(body.model, 'onp/') || virtuals[body.model])) {
         return problem(res, 404, 'no-trusted-offerings',
-          `the request is sensitive and nothing this gateway can call is in the trusted pool (${client.trusted.jurisdictions} operators, ` +
-          'declared lineage without CN, tier verified or higher, no retention, no training on inputs); it was not sent anywhere');
+          `the request is sensitive and nothing this gateway can call is in the trusted pool (${client.trusted.jurisdictions}-declared operators with a passing server check, ` +
+          'declared lineage without CN, tier verified or higher, declared no retention and no training on inputs); it was not sent anywhere');
       }
       if (!candidates.length && (parseAutoModel(body.model, 'onp/') || virtuals[body.model])) {
         return problem(res, 404, 'no-callable-offerings',
           `nothing in the registry matches ${body.model} that this gateway can call: free registered nodes need no key; ` +
-          'for imported catalogs pass --key <host>=<key> or set a provider variable such as OPENROUTER_API_KEY or HF_TOKEN');
+          'for imported catalogs pass --key <host>=<key>, or start the gateway with --env-keys to use a provider variable you set, such as OPENROUTER_API_KEY or HF_TOKEN');
       }
       if (!candidates.length) return problem(res, 404, 'model-not-found', String(body.model));
 
@@ -494,7 +554,6 @@ export async function startGateway({
     }],
 
     ['POST', '/v1/embeddings', async (req, res) => {
-      if (!authed(req, res)) return;
       const body = await readJson(req, 50_000_000);
       if (body.input == null || !body.model) return problem(res, 400, 'bad-request', 'embeddings need "model" and "input"');
       const auto = parseAutoModel(body.model, 'onp/');
@@ -531,27 +590,26 @@ export async function startGateway({
     }],
 
     ['GET', '/gateway/reputation', (req, res) => {
-      if (!authed(req, res)) return;
       sendJson(res, 200, { note: 'outcome and timing of your own calls through this gateway; no prompts or answers are kept', offerings: reputation.report() });
     }],
 
     ['GET', '/gateway/advice', (req, res) => {
-      if (!authed(req, res)) return;
       sendJson(res, 200, lastAdvice ?? { model: null, recommendations: [] });
     }],
 
     ['GET', '/gateway/receipts', (req, res) => {
-      if (!authed(req, res)) return;
       const total = round6(receipts.reduce((s, r) => s + (r.cost ?? 0), 0));
       sendJson(res, 200, { total_cost: total, count: receipts.length, entries: receipts.slice(-100) });
     }],
-  ]);
+  ], { before: access });
 
   const actualPort = await listen(app, port, host);
   return {
     port: actualPort,
     origin: `http://${host}:${actualPort}`,
     keyHosts: Object.keys(creds),
+    envKeysIgnored,   // provider key variables that are set but not used (no --env-keys)
+    apiToken: gatewayToken,   // what /gateway/* accepts ("authorization: Bearer <apiToken>"); = token when one is set
     trusted: client.trusted,   // this gateway's trusted view (sensitive requests)
     pii: { mode: maskMode, detector: detector.name },   // PII masking before the open pool
     receipts,

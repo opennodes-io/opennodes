@@ -59,7 +59,7 @@ test('embeddings: the local Ollama embedder first, free; a chat model is never u
   assert.equal(body.data.length, 2);
   assert.equal(ollama.state.lastModel, 'nomic-embed-text:latest', 'llama3.2 is a chat model: never an embedder');
   assert.equal(ollama.state.lastAuth, null, 'no key goes to the local Ollama');
-  const advice = await (await fetch(`${gw.origin}/gateway/advice`)).json();
+  const advice = await (await fetch(`${gw.origin}/gateway/advice`, { headers: { authorization: `Bearer ${gw.apiToken}` } })).json();
   assert.equal(advice.kind, 'embeddings');
   assert.equal(advice.recommendations[0].offering, 'local/nomic-embed-text:latest');
   assert.ok(advice.recommendations.some((r) => r.offering.startsWith('import.modelsdev.acme/')), 'the keyed hosted embedder is the fallback');

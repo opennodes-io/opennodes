@@ -40,7 +40,12 @@
         "health": { "type": "string", "format": "uri" },
         "receipts": { "type": ["string", "null"], "format": "uri" },
         "a2a": { "type": ["string", "null"], "format": "uri" },
-        "docs": { "type": ["string", "null"], "format": "uri" }
+        "docs": { "type": ["string", "null"], "format": "uri" },
+        "origin_addresses": {
+          "type": "array", "minItems": 1, "maxItems": 4, "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 253 },
+          "description": "Behind a CDN: the addresses (IP literals or DNS names) of the servers that serve the openai endpoint. Each must present a publicly trusted certificate for its host and answer it; the registry locates them in place of the CDN front (ONP-2 §4, ONP-3 §6.4)."
+        }
       }
     },
     "offerings": {
@@ -337,7 +342,9 @@
             },
             "retention_max_seconds": { "type": "integer", "minimum": 0, "description": "Upper bound on how long request or response content may exist at the node. REQUIRED when retention is ephemeral." },
             "training_on_inputs": { "type": "boolean" },
-            "region_pinning": { "$ref": "#/$defs/regions" }
+            "region_pinning": { "$ref": "#/$defs/regions" },
+            "source": { "type": "string", "format": "uri", "description": "The operator's published privacy policy, data processing terms or contract clause that states this data policy (ONP-2 §5)." },
+            "checked": { "type": "string", "format": "date", "description": "Date of that policy version, or when the operator last confirmed that this data policy matches it." }
           },
           "allOf": [
             { "if": { "properties": { "retention": { "const": "ephemeral" } }, "required": ["retention"] },

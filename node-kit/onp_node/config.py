@@ -13,7 +13,11 @@ id = "{node_id}"
 name = "{name}"
 public_url = "{public_url}"     # origin third parties reach this kit at
 operator_name = "{operator}"
-country = "DE"
+country = "DE"                  # the operator's country, as you declare it (registries show it as declared)
+# Behind a CDN (Cloudflare, Fastly, ...): the public addresses of the servers that serve the API,
+# so registries can check where they are instead of the CDN edge (ONP-2 §4). Each must answer
+# for the API's host name directly, with a publicly trusted certificate.
+# origin_addresses = ["203.0.113.10"]
 
 [engine]
 # vLLM / TGI / Ollama all expose an OpenAI-compatible /v1
@@ -35,8 +39,12 @@ output_per_mtok = 0.0
 schemes = ["free"]
 
 [data_policy]
+# What you declare; registries show it as declared, since probing cannot verify it (ONP-2 §5).
 retention = "none"
 training_on_inputs = false
+# Recommended: your published privacy policy or data processing terms that state this, and its date.
+# source = "https://example.com/privacy"
+# checked = "2026-11-19"
 
 [receipts]
 # Every signed receipt is appended here (no prompt text: ids, token counts, amount, request
@@ -156,6 +164,12 @@ def unverifiable(card: dict) -> list[str]:
     return [o["binding"]["model_id"] for o in card.get("offerings", []) if o["model"]["artifact"].startswith(own)]
 
 
+def origin_addresses(node: dict) -> dict:
+    """`endpoints.origin_addresses` from [node] origin_addresses: the servers behind a CDN (ONP-2 §4)."""
+    origins = [str(a).strip() for a in node.get("origin_addresses", []) if str(a).strip()]
+    return {"origin_addresses": origins} if origins else {}
+
+
 def build_card(cfg: dict, model_ids: list[str], details: dict | None = None) -> dict:
     node, serving, pricing = cfg["node"], cfg.get("serving", {}), cfg.get("pricing", {})
     data_policy = cfg.get("data_policy", {})
@@ -195,6 +209,8 @@ def build_card(cfg: dict, model_ids: list[str], details: dict | None = None) -> 
             "data_policy": {
                 "retention": data_policy.get("retention", "none"),
                 "training_on_inputs": bool(data_policy.get("training_on_inputs", False)),
+                # the dated link to the published policy (TOML dates arrive as date objects)
+                **{k: str(data_policy[k]) for k in ("source", "checked") if data_policy.get(k)},
             },
         })
     return {
@@ -207,7 +223,7 @@ def build_card(cfg: dict, model_ids: list[str], details: dict | None = None) -> 
             "operator": {"name": node.get("operator_name", node["name"]),
                          **({"country": node["country"]} if node.get("country") else {})},
         },
-        "endpoints": {"openai": f"{public}/v1", "health": f"{public}/onp/health"},
+        "endpoints": {"openai": f"{public}/v1", "health": f"{public}/onp/health", **origin_addresses(node)},
         "offerings": offerings,
         **({"hardware": {"accelerators": cfg["hardware"]["accelerators"],
                          "basis": cfg["hardware"].get("basis", "claimed")}}

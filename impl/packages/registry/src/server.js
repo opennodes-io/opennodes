@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   createApp, listen, closeApp, sendJson, problem, readJson,
   validateCard, verifyCardSignature, keyFromJwk, estimateBounds,
-  extractFeatures, recommend, trustedView, DEFAULT_TRUSTED_JURISDICTIONS,
+  extractFeatures, recommend, trustedView, DEFAULT_TRUSTED_JURISDICTIONS, serverCheckOf,
 } from '@opennodes/core';
 import { resolveTxt } from 'node:dns/promises';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -18,12 +18,12 @@ import { vendorTable, proprietaryVendor, VENDOR_SLUG, NAMESPACE, ARTIFACT } from
 import { makePlanner, startScheduler } from './schedule.js';
 import { startReimport } from './reimport.js';
 import { makeSafeFetch } from './safefetch.js';
-import { searchOfferings, searchOfferingsPaged, collectOfferings, watchStoreWrites, setSeedPlacements, setTrustedView, RANK_COMPONENTS, pricePublished, ROUTER_HOSTS } from './search.js';
+import { searchOfferings, searchOfferingsPaged, collectOfferings, watchStoreWrites, setSeedPlacements, setTrustedView, RANK_COMPONENTS, pricePublished, ROUTER_HOSTS, locationSummary } from './search.js';
 import { mcpRoutes } from './mcp.js';
 import { hostControlsNamespace, isPrivateHost, makeRateLimiter } from './namespace.js';
 import { exportRoutes } from './export.js';
 import { collapseFlaps } from './feed.js';
-import { checkNodeLocation } from './location.js';
+import { checkNodeLocation, declaredOrigins } from './location.js';
 import {
   importModelsDev, importHuggingFace, importOpenRouter,
   importOllamaLibrary, parseOllamaLibrary,
@@ -87,6 +87,8 @@ export async function startRegistry({
   setSeedPlacements(store, seedPlacements(seeds));
   const trusted = trustedView(trustedJurisdictions);   // pool labels, trust=trusted, sensitive recommend
   if (!trusted.countries.length) console.warn(`trusted jurisdictions "${trustedJurisdictions}" name no country: no hosted offering is trusted`);
+  // The trusted pool needs a passing server-location check (ONP-3 §5e): without checks it holds no hosted offering.
+  if (!location && !allowPrivateTargets) console.warn('server-location checks are off (ONP_LOCATION): no hosted offering can pass the server check, so the trusted pool holds none');
   setTrustedView(store, trusted);
   const webApp = readFileSync(fileURLToPath(new URL('./web/index.html', import.meta.url)), 'utf8');
   let registryKeys;
@@ -421,6 +423,7 @@ export async function startRegistry({
       if (!node) return problem(res, 404, 'unknown-node', params.id);
       try {
         const { card } = await indexCard(params.id, node.card_url);
+        if (location) relocateIfStale(params.id, card).catch(() => {});   // background: a new API host is checked again now
         const { stageA } = await stageAFor(params.id);
         sendJson(res, 200, { node_id: params.id, revision: card.revision, stage_a_ok: stageA.ok, state: (await store.getNode(params.id)).state });
       } catch (err) {
@@ -588,6 +591,8 @@ export async function startRegistry({
         probes: (await store.probesFor(params.id)).slice(0, 20),
         history: await store.transitionsFor(params.id),
         location: nodeObs.location ?? null,
+        // The check's evidence level for the current card (ONP-3 §6.4; `unchecked` when it was made for another host).
+        server_check: serverCheckOf({ jurisdiction: { location: locationSummary(nodeObs.location ?? null, card) } }),
         // What the tier covers (ONP-3 §4a): the offerings the tests could not call, and whether
         // Stage C has had to skip blind probes because none could be called.
         verification: verificationOf(card, nodeObs),
@@ -824,7 +829,8 @@ export async function startRegistry({
           proprietary_vendors: '/v0/vendors',
         },
         // What trust=trusted, policy.sensitive and each result's `pool` mean here (ONP-3 §5e).
-        trust: { pools: ['trusted', 'open'], trusted },
+        // server_location_checks: whether this registry runs them (§6.4); without them nothing hosted passes trusted.server_check.
+        trust: { pools: ['trusted', 'open'], trusted, server_location_checks: Boolean(location) },
       });
     }],
 
@@ -846,6 +852,15 @@ export async function startRegistry({
     const result = await checkNodeLocation(card, { ...location, asHolders });
     await store.setObservation(nodeId, '_node', 'location', result);
     return result;
+  }
+  // A check covers only the card it was made for (search.js locationSummary): when the card now names
+  // another API host, declared country or origin addresses, check again rather than wait for the sweep.
+  async function relocateIfStale(nodeId, card) {
+    const loc = (await store.getObservations(nodeId, '_node')).location;
+    const host = (() => { try { return new URL(card?.endpoints?.openai).hostname; } catch { return null; } })();
+    const declared = card?.node?.operator?.country ? String(card.node.operator.country).toUpperCase() : null;
+    const originsChanged = JSON.stringify(declaredOrigins(card)) !== JSON.stringify(loc?.origin?.declared ?? []);
+    if (!loc || loc.host !== host || (loc.declared ?? null) !== declared || (loc.verdict === 'cdn' && originsChanged)) await locateNode(nodeId);
   }
   // Daily sweep over registered nodes and imports that carry a country (the ones jurisdiction
   // filters can select), one at a time so the lookup service is never hammered.

@@ -3,9 +3,9 @@
 The OpenNodes Protocol (ONP) reference registry — an open, federatable discovery service for AI inference nodes.
 
 ```bash
-npx @opennodes/registry                 # web app + API on http://127.0.0.1:4300
-ONP_DB=./registry.db npx @opennodes/registry          # persistent SQLite + persistent signing key
-ONP_DB=postgres://user:pass@host/db npx @opennodes/registry
+npx @opennodes/registry@0.1.54          # web app + API on http://127.0.0.1:4300
+ONP_DB=./registry.db npx @opennodes/registry@0.1.54   # persistent SQLite + persistent signing key
+ONP_DB=postgres://user:pass@host/db npx @opennodes/registry@0.1.54
 ```
 
 What it does:
@@ -21,7 +21,8 @@ What it does:
   The same request with `{"founding": false}` clears the mark; `/institutional` takes `{"institutional": true|false}`.
 - **Trusted and open pools** (ONP-3 §5e):
   - **Who lists:** any operator, from any country.
-  - **Search filters:** `trust=trusted` returns only offerings for personal data: declared model lineage without CN, tier verified or higher, an operator in the trusted jurisdictions, `retention: none` and no training on inputs. Each part is also a filter of its own: `lineage=declared`, `exclude_lineage=CN`, `retention=none|ephemeral|logged`, `no_training=true`, `jurisdiction=`, `tier=`.
+  - **Search filters:** `trust=trusted` returns only offerings for personal data: declared model lineage without CN, tier verified or higher, an operator that declares a country in the trusted jurisdictions, a passing server-location check, and a declared `retention: none` and no training on inputs. Each part is also a filter of its own: `lineage=declared`, `exclude_lineage=CN`, `retention=none|ephemeral|logged`, `no_training=true`, `jurisdiction=`, `server_check=passed`, `tier=`.
+  - **Server-location checks** (`ONP_LOCATION=1`, ONP-3 §6.4) are required for a hosted trusted pool: without them no hosted offering passes the server check, and the registry warns at start. Every hosted result carries `jurisdiction.server_check` and `jurisdiction.evidence`; behind a CDN, the origin addresses a card declares (`endpoints.origin_addresses`) are checked instead.
   - **Labels:** every result carries `pool: "trusted"` or `"open"`.
   - **Recommend:** `policy.sensitive: true` uses the trusted pool, always under the registry's own view.
   - **Configuration:** `ONP_TRUSTED_JURISDICTIONS` (default `EU,CA`) sets the trusted countries, and `/v0/health` publishes the view as `trust.trusted`.
@@ -34,7 +35,7 @@ What it does:
 - **MCP surface** at `/mcp` (including `find_locations` and `find_residency`) and a signed **export feed** for federation.
 - **Web app** at `/`: OpenRouter-style catalog with model and node pages, hardware and measured performance, playground, multi-model chat (compare / jury / pipeline / iterative), the advisor, the Node Builder, and the "Where models run" page.
 
-Environment: `PORT`, `ONP_DB`, `ONP_REGISTRY_KEY`, `ONP_ADMIN_TOKEN`, `ONP_TRUSTED_JURISDICTIONS` (trusted pool operators, default `EU,CA`), `ONP_ALLOW_PRIVATE=1` (dev only: permit localhost nodes), `ONP_STAGE_C=0`, `ONP_REIMPORT=1`, `ONP_REIMPORT_SOURCES` (default `openrouter,huggingface`; also `models-dev`, `ollama`, and `openrouter-providers`, which makes one request per OpenRouter model, so give it a long `ONP_REIMPORT_MS`), `ONP_LOCATION_SEEDS=0` (skip the curated location seeds), `ONP_MAP_TILES` (basemap for the locations map: unset = OpenStreetMap, `off` = no map, or an XYZ URL template with `ONP_MAP_ATTRIBUTION`). The map loads Leaflet from cdnjs, pinned with subresource integrity, only on the "Where models run" page. Viewers' browsers then fetch tiles from the tile server. OpenStreetMap's tile policy asks for light use, so a busy registry should point `ONP_MAP_TILES` at its own or a commercial tile service.
+Environment: `PORT`, `ONP_DB`, `ONP_REGISTRY_KEY`, `ONP_ADMIN_TOKEN`, `ONP_TRUSTED_JURISDICTIONS` (trusted pool operators, default `EU,CA`), `ONP_LOCATION=1` (server-location checks; the trusted pool needs them), `ONP_ALLOW_PRIVATE=1` (dev only: permit localhost nodes), `ONP_STAGE_C=0`, `ONP_REIMPORT=1`, `ONP_REIMPORT_SOURCES` (default `openrouter,huggingface`; also `models-dev`, `ollama`, and `openrouter-providers`, which makes one request per OpenRouter model, so give it a long `ONP_REIMPORT_MS`), `ONP_LOCATION_SEEDS=0` (skip the curated location seeds), `ONP_MAP_TILES` (basemap for the locations map: unset = OpenStreetMap, `off` = no map, or an XYZ URL template with `ONP_MAP_ATTRIBUTION`). The map loads Leaflet from cdnjs, pinned with subresource integrity, only on the "Where models run" page. Viewers' browsers then fetch tiles from the tile server. OpenStreetMap's tile policy asks for light use, so a busy registry should point `ONP_MAP_TILES` at its own or a commercial tile service.
 
 Location seeds are dated JSON files (`locations-{seed}.json`): providers, their sites with `basis`, `source` and `checked`, and the models each site serves. A provider whose models are listed becomes a listing-only node `import.seed.{seed}.{id}`; one that publishes no model list is shown with a note. An entry with `nodes` describes existing registry nodes instead: its sites are shown under the first of them, with that node's models when `placement` is `all`. With `placement: "all"`, or `serves_from: "{seed}:{id}"` (the node's whole API runs at that entry's sites), search and recommend also use the live sites as the node's serving locations, marked `via: "seed"`, for offerings whose card declares none, except for listings reached through the Hugging Face router or OpenRouter. Providers carry `kind` and `residency`; `residency_of: "{seed}:{id}"` reuses another entry's commitments (the Canadian and European regions of a cloud share the cloud's). Corrections and new countries are welcome by pull request: cite the provider's own page for `documented`, anything else is `claimed`.
 

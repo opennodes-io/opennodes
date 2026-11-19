@@ -3,8 +3,8 @@
 // MCP host gets ONP discovery (recommend, search_offerings, get_offering, get_node, estimate,
 // find_locations, find_residency) for free.
 import { readFileSync } from 'node:fs';
-import { readJson, sendJson, problem, estimateBounds, round6, extractFeatures, recommend, MCP_TOOLS, MCP_INSTRUCTIONS, summarizeNode } from '@opennodes/core';
-import { searchOfferingsPaged, searchOfferings, collectOfferings, pricePublished } from './search.js';
+import { readJson, sendJson, problem, estimateBounds, round6, extractFeatures, recommend, MCP_TOOLS, MCP_INSTRUCTIONS, summarizeNode, serverCheckOf } from '@opennodes/core';
+import { searchOfferingsPaged, searchOfferings, collectOfferings, pricePublished, locationSummary } from './search.js';
 import { buildLocations, buildResidency } from './locations.js';
 import { nodeIdsIn } from './counts.js';
 import { verificationOf } from './probes.js';
@@ -65,12 +65,16 @@ async function runTool(store, seeds, name, args = {}, trusted = undefined) {
       const node = await store.getNode(args.node_id);
       if (!node) throw new Error(`unknown node: ${args.node_id} (node ids come from search_offerings or recommend results)`);
       const card = await store.latestCard(node.id);
+      const nodeObs = await store.getObservations(node.id, '_node');
       return summarizeNode({
         ...node,
         card,
         probes: (await store.probesFor(node.id)).slice(0, 20),
         history: await store.transitionsFor(node.id),
-        verification: verificationOf(card, await store.getObservations(node.id, '_node')),
+        verification: verificationOf(card, nodeObs),
+        // the server-location check, as GET /v0/nodes/{id} gives it (ONP-3 §6.4)
+        location: nodeObs.location ?? null,
+        server_check: serverCheckOf({ jurisdiction: { location: locationSummary(nodeObs.location ?? null, card) } }),
       }, args.offering_limit ?? 25);
     }
     case 'estimate': {

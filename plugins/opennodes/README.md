@@ -19,7 +19,7 @@ In a Claude Code terminal session:
 
 In the Claude desktop app: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `opennodes-io/opennodes`, then add **opennodes**.
 
-Needs Node.js 20 or later (the plugin starts `npx -y @opennodes/cli mcp`).
+Needs Node.js 20 or later (the plugin starts `npx -y @opennodes/cli@0.1.33 mcp`).
 
 ## What's in it
 
@@ -42,7 +42,7 @@ Every option carries one of:
 
 ## Keys
 
-Keys never go in the chat. The gateway reads them from environment variables (`OPENROUTER_API_KEY`, `HF_TOKEN`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `TOGETHER_API_KEY`, `DEEPINFRA_API_KEY`, `FIREWORKS_API_KEY`, `OPENAI_API_KEY`) and sends each only to its own host. Calls go from your machine straight to the provider; OpenNodes is never in the data path.
+Keys never go in the chat. When the option you choose needs your own provider key, the gateway is started with `--env-keys` and reads it from your environment variables (`OPENROUTER_API_KEY`, `HF_TOKEN`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `TOGETHER_API_KEY`, `DEEPINFRA_API_KEY`, `FIREWORKS_API_KEY`, `OPENAI_API_KEY`). It sends each key only to its own host. From cli 0.1.34, without `--env-keys` the gateway uses none of them (0.1.33 and older always read them). Calls go from your machine straight to the provider; OpenNodes is never in the data path.
 
 ## Other clients
 

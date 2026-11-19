@@ -74,6 +74,6 @@ test('gateway: onp/auto skips what failed your check and notes what passed', asy
   const gw2 = await startGateway({ port: 0, registry: registry.origin, env: {}, checksPath });
   t.after(() => gw2.close());
   assert.equal((await chat(gw2)).status, 200);
-  const advice = await (await fetch(`${gw2.origin}/gateway/advice`)).json();
+  const advice = await (await fetch(`${gw2.origin}/gateway/advice`, { headers: { authorization: `Bearer ${gw2.apiToken}` } })).json();
   assert.ok(advice.recommendations[0].reasons.some((x) => x === 'checked by you: issues: json mode'), JSON.stringify(advice.recommendations[0].reasons));
 });

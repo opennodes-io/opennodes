@@ -10,7 +10,7 @@ from pathlib import Path
 
 from aiohttp import web, ClientSession, ClientTimeout
 
-from .config import DEFAULT_CONFIG, load_config, build_card, stable_revision, unverifiable
+from .config import DEFAULT_CONFIG, load_config, build_card, stable_revision, unverifiable, origin_addresses
 from .check import run_check
 from .jws import generate_private_key, private_key_to_pem, private_key_from_pem, sign_card, public_jwk
 from .server import NodeKitServer
@@ -250,7 +250,7 @@ def make_static_card(cfg: dict, models: list[str], api_base: str, health_url: st
                      signup: str | None, key, state_path: Path, details: dict | None = None) -> tuple[dict, dict]:
     card = build_card(cfg, models, details)
     base = api_base.rstrip("/")
-    card["endpoints"] = {"openai": base, "health": health_url or f"{base}/models"}
+    card["endpoints"] = {"openai": base, "health": health_url or f"{base}/models", **origin_addresses(cfg["node"])}
     if signup:
         card["payment"]["schemes"] = [
             ({"scheme": "prepaid", "signup": signup} if s.get("scheme") == "prepaid" else s)
