@@ -401,7 +401,7 @@ export async function startOllamaRouter({
   async function dispatch(res, requested, candidates, attemptFn, { sensitive = false } = {}) {
     if (!candidates.length) {
       return sensitive && parseAutoModel(requested)
-        ? oerr(res, 404, `the request is sensitive and no model here is in the trusted pool (${trusted.jurisdictions} operators, declared lineage without CN, verified+, no retention, no training); it was not sent anywhere`)
+        ? oerr(res, 404, `the request is sensitive and no model here is in the trusted pool (${trusted.jurisdictions}-declared operators with a passing server check, declared lineage without CN, verified+, declared no retention and no training); it was not sent anywhere`)
         : oerr(res, 404, `model '${requested}' not found locally, on the LAN, or in the registry`);
     }
     const errors = [];
@@ -442,8 +442,8 @@ export async function startOllamaRouter({
   const autoNote = (name) => {
     const a = parseAutoModel(name);
     if (a?.preset === 'private') return 'routes only to this machine and LAN peers pinned by card key';
-    if (a?.sensitive) return `for personal data: routes only to the trusted pool (${trusted.jurisdictions} operators, declared lineage without CN, verified+, no retention, no training)`;
-    if (a?.jurisdiction) return `routes to this machine, pinned LAN peers and ${a.jurisdiction === 'eea' ? 'EU/EEA' : a.jurisdiction} operators only`;
+    if (a?.sensitive) return `for personal data: routes only to the trusted pool (${trusted.jurisdictions}-declared operators with a passing server check, declared lineage without CN, verified+, declared no retention and no training)`;
+    if (a?.jurisdiction) return `routes to this machine, pinned LAN peers and ${a.jurisdiction === 'eea' ? 'EU/EEA' : a.jurisdiction}-declared operators only (a declaration; the registry's server check drops only a server it located outside)`;
     return 'routes by the OpenNodes advisor';
   };
   const autoTag = (name) => ({

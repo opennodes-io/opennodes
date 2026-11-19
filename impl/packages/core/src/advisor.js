@@ -422,10 +422,12 @@ export function inRegion(offering, region) {
 }
 
 /**
- * Is the offering's operator in the jurisdiction? Registered nodes declare their country; imports of
- * known providers carry an inferred one (`jurisdiction.basis`). No country counts as outside. When the
- * registry's server-location check found the API host in a country outside the jurisdiction (and not
- * behind a CDN, and the geolocation wasn't contradicted by latency), the offering is excluded too.
+ * Does the operator *declare* a country in the jurisdiction? Registered nodes declare their country in
+ * their signed card; imports of known providers carry one the registry inferred (`jurisdiction.basis`).
+ * No country counts as outside. It is a declaration, not proof of where requests are processed: the
+ * registry's server-location check (ONP-3 §6.4) only excludes an offering whose API host it found outside
+ * (not behind a CDN, geolocation not contradicted by latency), or, behind a CDN, an origin address the
+ * operator declared that it located outside. `serverCheckOf` says what the check found.
  */
 export function inJurisdiction(offering, spec) {
   const allowed = jurisdictionCountries(spec);
@@ -434,7 +436,75 @@ export function inJurisdiction(offering, spec) {
   if (!country || !allowed.has(isoCountry(country))) return false;
   const loc = offering.jurisdiction?.location;
   if (loc?.server_country && !loc.cdn && loc.verdict !== 'inconsistent' && !allowed.has(isoCountry(loc.server_country))) return false;
+  if (loc?.cdn && (loc.origin?.addresses ?? []).some((a) => a.server_country && a.verdict !== 'inconsistent' && a.verdict !== 'cdn' && !allowed.has(isoCountry(a.server_country)))) return false;
   return true;
+}
+
+/* ------------------------------------------------- server-location evidence (ONP-3 §6.4) */
+
+/** Front verdicts that pass the server check: the server is in the declared country, or both are in the EEA. */
+export const SERVER_CHECK_PASSES = Object.freeze(['match', 'same_region']);
+
+/**
+ * What the registry's server-location check found for an offering, as one evidence level, from the
+ * `jurisdiction.location` that search results carry:
+ *  - `passed`: the API host's server front was located in the declared country, or both in the EEA;
+ *  - `passed_origin`: the front is a CDN edge, and every origin address the operator declares in its
+ *    signed card (ONP-2 §4 `endpoints.origin_addresses`) serves the API host and passed the same test;
+ *  - `cdn`: the front is a CDN edge and no declared origin passed (none declared, or one failed);
+ *  - `mismatch`: the front was located outside the declared country (and not both in the EEA);
+ *  - `inconsistent`: the front's geolocation is contradicted by measured latency;
+ *  - `unchecked`: no check, an undetermined one, or one made for another API host or declared country.
+ * A passing check is a tripwire for honest mistakes and careless fraud, not proof: a front that
+ * forwards requests elsewhere passes it.
+ */
+export function serverCheckOf(offering) {
+  const loc = offering?.jurisdiction?.location;
+  if (!loc) return 'unchecked';
+  if (SERVER_CHECK_PASSES.includes(loc.verdict)) return 'passed';
+  if (loc.verdict === 'cdn') return SERVER_CHECK_PASSES.includes(loc.origin?.verdict) ? 'passed_origin' : 'cdn';
+  if (loc.verdict === 'mismatch' || loc.verdict === 'inconsistent') return loc.verdict;
+  return 'unchecked';
+}
+
+/** Did the server-location check pass, at the front or at every declared origin behind a CDN? */
+export const serverCheckPassed = (offering) => ['passed', 'passed_origin'].includes(serverCheckOf(offering));
+
+/** `?server_check=` values (ONP-3 §5): `passed` keeps offerings whose check passed; `any` (default) keeps all. */
+export const SERVER_CHECK_FILTERS = Object.freeze(['passed', 'any']);
+
+/** Validate a `server_check` filter value; a misspelt one is an error, never a wider result. */
+export function serverCheckFilter(value) {
+  if (value == null) return null;
+  if (!SERVER_CHECK_FILTERS.includes(value)) {
+    throw Object.assign(new Error(`server_check must be "passed" or "any", not ${JSON.stringify(value)}`), { status: 400 });
+  }
+  return value;
+}
+
+/** The server check in words, e.g. "server front checked (FR)". */
+export function serverCheckWords(offering) {
+  const loc = offering?.jurisdiction?.location ?? {};
+  const origins = [...new Set((loc.origin?.addresses ?? []).map((a) => a.server_country).filter(Boolean))].join(', ');
+  switch (serverCheckOf(offering)) {
+    case 'passed': return `server front checked${loc.server_country ? ` (${loc.server_country})` : ''}`;
+    case 'passed_origin': return `server front behind a CDN, declared origin checked${origins ? ` (${origins})` : ''}`;
+    case 'cdn': return loc.origin ? `server front behind a CDN, declared origin failed the check (${loc.origin.verdict})` : 'server front behind a CDN, not located';
+    case 'mismatch': return `server front found in ${loc.server_country ?? 'another country'}`;
+    case 'inconsistent': return 'server front check inconsistent (geolocation contradicted by latency)';
+    default: return 'server front not checked';
+  }
+}
+
+/**
+ * The operator's jurisdiction with its evidence, as a label: "FR operator (EEA, declared), server front
+ * checked (FR)". Imports say "inferred by the registry": their operator never stated it.
+ */
+export function jurisdictionEvidence(offering) {
+  const j = offering?.jurisdiction ?? {};
+  if (!j.country) return 'operator country unknown';
+  const tags = [EEA_COUNTRIES.includes(String(j.country).toUpperCase()) ? 'EEA' : null, j.basis === 'inferred' ? 'inferred by the registry' : 'declared'].filter(Boolean);
+  return `${j.country} operator (${tags.join(', ')}), ${serverCheckWords(offering)}`;
 }
 
 /* ---------------------------------------------------------------- trusted and open pools (ONP-3 §5e) */
@@ -481,9 +551,10 @@ export function trustedJurisdictionsFrom(env = globalThis.process?.env ?? {}) {
 }
 
 /**
- * The trusted view: operators in the trusted jurisdictions (declared country and, where checked, the
- * server's country), declared model lineage without CN, tier verified or higher, and a data policy of
- * no retention and no training on inputs.
+ * The trusted view: operators that declare a country in the trusted jurisdictions, with a passing
+ * server-location check (`server_check: 'passed'`: the server front located in that country or region,
+ * or behind a CDN every declared origin address), declared model lineage without CN, tier verified or
+ * higher, and a declared data policy of no retention and no training on inputs.
  */
 export function trustedView(jurisdictions = DEFAULT_TRUSTED_JURISDICTIONS) {
   const codes = [...(jurisdictionCountries(jurisdictions) ?? [])];
@@ -493,6 +564,7 @@ export function trustedView(jurisdictions = DEFAULT_TRUSTED_JURISDICTIONS) {
     exclude_lineage: Object.freeze(['CN']),
     lineage: 'declared',
     min_tier: 'verified',
+    server_check: 'passed',
     retention: 'none',
     no_training: true,
   });
@@ -502,7 +574,7 @@ export function trustedView(jurisdictions = DEFAULT_TRUSTED_JURISDICTIONS) {
  * Is the offering in the trusted pool? The lineage rule applies to every offering. Models on the
  * user's own machine or network (tier local, a local catalogue model, or a LAN peer pinned by its card
  * key) need nothing else: their data never reaches an operator. Everything else, unpinned LAN peers
- * included, must meet the jurisdiction, tier and data policy.
+ * included, must meet the jurisdiction, the server-location check, the tier and the data policy.
  */
 export function inTrustedPool(offering, view = trustedView()) {
   return trustGaps(offering, view).length === 0;
@@ -517,14 +589,22 @@ export function trustGaps(offering, view = trustedView()) {
   if (onOwnNetwork(offering)) return gaps;   // nothing reaches an operator
   if (offering.tier === 'lan') gaps.push('LAN peer not pinned by its card key');
   else if (tierRank(offering.tier) < tierRank(view.min_tier)) gaps.push(`tier ${offering.tier} below ${view.min_tier}`);
-  if (!view.countries.length || !inJurisdiction(offering, view.countries.join(','))) {
-    const where = offering.jurisdiction?.location?.server_country && offering.jurisdiction.location.server_country !== offering.jurisdiction?.country
-      ? `server in ${offering.jurisdiction.location.server_country}` : `operator country ${offering.jurisdiction?.country ?? 'unknown'}`;
+  const inside = view.countries.length && inJurisdiction(offering, view.countries.join(','));
+  if (!inside) {
+    const loc = offering.jurisdiction?.location;
+    const allowed = new Set(view.countries);
+    const origin = loc?.cdn ? (loc.origin?.addresses ?? []).find((a) => a.server_country && !allowed.has(isoCountry(a.server_country))) : null;
+    const where = origin ? `declared origin ${origin.address} in ${origin.server_country}`
+      : loc?.server_country && !loc.cdn && loc.server_country !== offering.jurisdiction?.country ? `server in ${loc.server_country}`
+      : `operator country ${offering.jurisdiction?.country ?? 'unknown'}`;
     gaps.push(`${where}, outside ${view.jurisdictions}`);
   }
+  // A view from before the server-check rule (no `server_check`) is read as requiring it: a sensitive
+  // request never gets a weaker rule from an older registry's published view.
+  if ((view.server_check ?? 'passed') === 'passed' && inside && !serverCheckPassed(offering)) gaps.push(`server location check not passed: ${serverCheckWords(offering)}`);
   if (!meetsDataPolicy(offering, view)) {
     const dp = offering.data_policy;
-    gaps.push(!dp ? 'no data_policy' : `data policy: retention ${dp.retention ?? 'unstated'}, training_on_inputs ${dp.training_on_inputs ?? 'unstated'}`);
+    gaps.push(!dp ? 'no data_policy' : `declared data policy: retention ${dp.retention ?? 'unstated'}, training_on_inputs ${dp.training_on_inputs ?? 'unstated'}`);
   }
   return gaps;
 }
@@ -599,8 +679,10 @@ export function parseAutoModel(name, prefix = '') {
 
 /**
  * Rank offerings for extracted features under a policy.
- * policy: { min_tier, max_input_per_mtok, max_total_usd, region, jurisdiction, prefer_local, preset, limit }
- * jurisdiction: 'eea' or country codes; the user's own machine and pinned LAN peers always qualify.
+ * policy: { min_tier, max_input_per_mtok, max_total_usd, region, jurisdiction, server_check, prefer_local, preset, limit }
+ * jurisdiction: 'eea' or country codes (the operator's declared or inferred country); server_check:
+ * 'passed' keeps offerings whose server-location check passed. The user's own machine and pinned LAN
+ * peers always qualify for both.
  */
 export function recommend(offerings, features, policy = {}) {
   const minTier = TIER_ORDER.indexOf(policy.min_tier ?? 'unverified');
@@ -608,6 +690,7 @@ export function recommend(offerings, features, policy = {}) {
   // (the registry's or the client's configuration); without one, the default (EU, CA).
   const trusted = wantsTrusted(policy);
   const view = policy.trusted ?? trustedView();
+  const serverCheckRequired = serverCheckFilter(policy.server_check) === 'passed';
   const needCtx = Math.ceil((features.est_input_tokens + features.est_output_tokens) * 1.15);
   const required = [];
   if (features.needs.tools) required.push('tool_calls');
@@ -632,6 +715,7 @@ export function recommend(offerings, features, policy = {}) {
     }
     if (policy.region && !inRegion(o, policy.region)) return reject('region');
     if (policy.jurisdiction && !onOwnNetwork(o) && !inJurisdiction(o, policy.jurisdiction)) return reject('jurisdiction');
+    if (serverCheckRequired && !onOwnNetwork(o) && !serverCheckPassed(o)) return reject('server_check');
     if (trusted && !inTrustedPool(o, view)) return reject('trust');
     if (features.locality === 'required' && !o.local) return reject('not_local');
     const budget = memoryBudget(o, policy);
@@ -691,6 +775,7 @@ export function recommend(offerings, features, policy = {}) {
     node_id: c.offering.node_id,
     tier: c.offering.tier,
     pool: poolOf(c.offering, view),
+    ...(c.offering.local ? {} : { server_check: serverCheckOf(c.offering) }),
     card_revision: c.offering.card_revision,
     endpoint: c.offering.endpoints?.openai ?? null,
     model_id: c.offering.binding?.model_id ?? null,
@@ -737,8 +822,10 @@ function rankEmbedders(offerings, features, policy, minTier, limit = 3) {
   const tokens = docs ? docs * TOKENS_PER_DOCUMENT : null;
   const trusted = wantsTrusted(policy);
   const view = policy.trusted ?? trustedView();
+  const serverCheckRequired = serverCheckFilter(policy.server_check) === 'passed';
   const pool = offerings.filter((o) => isEmbedder(o)
     && (!trusted || inTrustedPool(o, view))
+    && (!serverCheckRequired || onOwnNetwork(o) || serverCheckPassed(o))
     && (features.locality !== 'required' || o.local)
     && tierRank(trustTier(o)) >= minTier
     && !(policy.local_memory_gb && o.local && localSizes(o).length && !localSizes(o).some((x) => x.memory_gb <= policy.local_memory_gb))
@@ -787,10 +874,7 @@ function explain(c, features, w, policy = {}) {
     r.push(decl ? `${features.language} declared ${decl.grade}` : `${features.language} support undeclared`);
   }
   if (o.hardware?.accelerators?.length) r.push(`on ${o.hardware.accelerators.map((a) => `${a.count}× ${a.type}`).join(' + ')} (${o.hardware.basis ?? 'claimed'})`);
-  if (o.jurisdiction?.country) {
-    const tags = [EEA_COUNTRIES.includes(String(o.jurisdiction.country).toUpperCase()) ? 'EEA' : null, o.jurisdiction.basis === 'inferred' ? 'inferred' : null].filter(Boolean);
-    r.push(`operator in ${o.jurisdiction.country}${tags.length ? ` (${tags.join(', ')})` : ''}`);
-  }
+  if (o.jurisdiction?.country) r.push(jurisdictionEvidence(o));
   if (c.local_fit) {
     const pick = c.local_fit.sizes.find((x) => x.tag === c.local_fit.pick);
     r.push(pick
@@ -815,6 +899,7 @@ function equivalentQuery(features, policy, required, needCtx) {
   if (policy.max_input_per_mtok != null) q.max_input_price = policy.max_input_per_mtok;
   if (policy.local_memory_gb) q.local_memory_gb = policy.local_memory_gb;
   if (policy.jurisdiction) q.jurisdiction = policy.jurisdiction;
+  if (policy.server_check === 'passed') q.server_check = 'passed';
   return q;
 }
 

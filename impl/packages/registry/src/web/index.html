@@ -315,7 +315,8 @@
   <div class="toolbar">
     <input type="text" id="f-q" placeholder="Search models, families, nodes…">
     <span class="switchrow hostedonly" id="f-verified" title="identity-fingerprinted · context-verified · continuously probed"><span class="switch"></span><b style="font-size:0.78rem">Verified only</b></span>
-    <span class="switchrow hostedonly" id="f-eea" title="operators in the EU, Iceland, Liechtenstein or Norway — declared by registered nodes, inferred for imported listings of known European providers"><span class="switch"></span><b style="font-size:0.78rem">EU/EEA</b></span>
+    <span class="switchrow hostedonly" id="f-eea" title="Operators whose country is in the EU, Iceland, Liechtenstein or Norway, as declared in a registered node's signed card, or inferred by the registry for an unclaimed imported listing of a known European provider. A declaration, not proof of where requests are processed: the registry drops only a server it located outside. Each listing shows what its server check found."><span class="switch"></span><b style="font-size:0.78rem">EU-declared operator</b></span>
+    <span class="switchrow hostedonly" id="f-srvcheck" title="Only listings whose API server front the registry located in the operator's declared country or region (behind a CDN: every origin address the card declares). A network tripwire for honest mistakes, not proof: a front that forwards requests elsewhere passes it."><span class="switch"></span><b style="font-size:0.78rem">server front checked</b></span>
     <select id="f-modality">
       <option value="">any modality</option>
       <option>text</option><option>multimodal</option><option>image</option>
@@ -337,7 +338,8 @@
     <div class="toolbar" style="margin-top:0.4rem">
       <select id="adv-preset"><option value="">balanced</option><option value="cheap">cheapest</option><option value="fast">fastest</option><option value="quality">best quality</option><option value="private">privacy-first</option></select>
       <span class="switchrow" id="adv-verified"><span class="switch"></span><b style="font-size:0.78rem">Verified only</b></span>
-      <span class="switchrow" id="adv-eea" title="only operators that declare an EU/EEA country"><span class="switch"></span><b style="font-size:0.78rem">EU/EEA</b></span>
+      <span class="switchrow" id="adv-eea" title="Only operators that declare an EU/EEA country (inferred by the registry for unclaimed imported listings): a declaration, not proof of where requests are processed"><span class="switch"></span><b style="font-size:0.78rem">EU-declared operator</b></span>
+      <span class="switchrow" id="adv-srvcheck" title="Only offerings whose server front the registry located in the declared country or region (behind a CDN: every declared origin address). A tripwire, not proof."><span class="switch"></span><b style="font-size:0.78rem">server front checked</b></span>
       <button class="btn" id="adv-go">Recommend</button>
       <span class="prov">Deterministic: same catalog + task + policy → same answer, with the score components shown. The <code>onp mcp</code> / gateway advisors extract features locally and never send your prompt; this box sends the text to this registry.</span>
     </div>
@@ -875,6 +877,7 @@ document.querySelectorAll('.toggle').forEach((b) => b.addEventListener('click', 
 }));
 $('#f-verified').addEventListener('click', () => { $('#f-verified').classList.toggle('on'); search(); });
 $('#f-eea').addEventListener('click', () => { $('#f-eea').classList.toggle('on'); search(); });
+$('#f-srvcheck').addEventListener('click', () => { $('#f-srvcheck').classList.toggle('on'); search(); });
 let debounce;
 for (const id of ['f-q', 'f-price']) $('#' + id).addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(search, 250); });
 for (const id of ['f-modality', 'f-sort', 'f-mem']) $('#' + id).addEventListener('change', search);
@@ -983,6 +986,7 @@ async function search() {
   if (listKind === 'hosted') {   // trust, location, price and capabilities describe a server
     if ($('#f-verified').classList.contains('on')) p.set('tier', 'verified');
     if ($('#f-eea').classList.contains('on')) p.set('jurisdiction', 'eea');
+    if ($('#f-srvcheck').classList.contains('on')) p.set('server_check', 'passed');
     if ($('#f-price').value) p.set('max_input_price', $('#f-price').value);
     if (sup.size) p.set('supports', [...sup].join(','));
   } else {
@@ -1012,6 +1016,7 @@ async function search() {
 /* ---------- advisor (ONP-3 §5b) ---------- */
 $('#adv-verified').addEventListener('click', () => $('#adv-verified').classList.toggle('on'));
 $('#adv-eea').addEventListener('click', () => $('#adv-eea').classList.toggle('on'));
+$('#adv-srvcheck').addEventListener('click', () => $('#adv-srvcheck').classList.toggle('on'));
 $('#adv-go').addEventListener('click', runAdvisor);
 $('#adv-task').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) runAdvisor(); });
 async function runAdvisor() {
@@ -1021,6 +1026,7 @@ async function runAdvisor() {
   if ($('#adv-preset').value) policy.preset = $('#adv-preset').value;
   if ($('#adv-verified').classList.contains('on')) policy.min_tier = 'verified';
   if ($('#adv-eea').classList.contains('on')) policy.jurisdiction = 'eea';
+  if ($('#adv-srvcheck').classList.contains('on')) policy.server_check = 'passed';
   $('#adv-out').innerHTML = '<p class="sub">ranking…</p>';
   try {
     const r = await api('/v0/recommend', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ task, policy }) });
@@ -1095,6 +1101,8 @@ function renderItem(o) {
       <span><b style="color:var(--ink)">${priceStr(o.pricing, o.node_id)}</b></span>
       ${o.serving?.context_window ? `<span>ctx ${fmtInt(o.serving.context_window)}${o.serving.context_capped_from ? ' <span class="micro m-warn">▼</span>' : ''}</span>` : (o.serving?.context_capped_from ? '<span>ctx <span class="micro m-warn">unverified</span></span>' : '')}
       ${obs.ttft_ms?.p50 != null ? `<span>${obs.ttft_ms.p50}ms <span class="micro m-measured">●</span></span>` : ''}
+      ${o.jurisdiction?.country && ($('#f-eea').classList.contains('on') || $('#f-srvcheck').classList.contains('on'))
+        ? `<span title="${esc(o.jurisdiction.evidence || '')}">${esc(o.jurisdiction.country)} ${o.jurisdiction.basis === 'inferred' ? 'inferred' : 'declared'} · ${esc(SERVER_CHECK_SHORT[o.jurisdiction.server_check] || 'unchecked')}</span>` : ''}
       <span class="mono">${fmt(o.rank)}</span>
     </div>
   </div>`;
@@ -1126,6 +1134,7 @@ window.toggleRow = async function (el, idx) {
         ${o.serving?.max_output_tokens ? `<dt>max output</dt><dd class="num">${fmtInt(o.serving.max_output_tokens)}</dd>` : ''}
         ${hwStr(o) ? `<dt>hardware</dt><dd>${hwStr(o)}</dd>` : ''}
         <dt>schemes</dt><dd>${esc((o.pricing.schemes || []).join(', '))}</dd>
+        ${o.local ? '' : `<dt>operator</dt><dd>${jurisdictionLine(o)}</dd><dt>data policy</dt><dd>${dataPolicyLine(o)}</dd>`}
         ${o.local ? '' : `<dt>served from</dt><dd>${o.locations?.length ? locStr(o.locations) : '<span style="color:var(--faint)">location not declared</span>'}</dd>`}
         ${o.model.lineage_origins ? `<dt>lineage</dt><dd>${esc(o.model.lineage_origins.join(', '))} <span class="prov" style="display:inline">· declared</span></dd>` : ''}
         ${o.local ? `<dt>run locally</dt><dd><code style="background:var(--panel-2); padding:0.1em 0.4em; border-radius:3px" class="mono">${esc(o.local.run)}</code>${o.local.pulls ? ` <span class="prov" style="display:inline">· ${esc(o.local.pulls)} pulls</span>` : ''}${o.local.sizes ? `<br><span class="prov" style="display:inline" title="Memory to run it at Ollama's default 4-bit quantization: weights plus runtime and a default context; an estimate">memory needed: ${o.local.sizes.map((t) => `${esc(t)} ~${memGb(t) ?? '?'} GB`).join(' · ')}</span>` : ''}</dd>` : ''}
@@ -1339,6 +1348,8 @@ async function loadModel(artifact) {
         <td><div style="display:flex; flex-direction:column; gap:0.2rem">
           <a href="#/node/${encodeURIComponent(o.node_id)}" style="font-weight:600">${esc(o.node_id)}</a>
           <span style="display:flex; gap:0.3rem">${tierChip(o.tier)}${markChips(o)}${untestedChip(o)}${o.source === 'import' ? `<span class="chip imp">IMPORTED</span> <a class="prov" href="#/node/${encodeURIComponent(o.node_id)}">claim</a>` : ''}</span>
+          <span style="font-size:0.7rem; color:var(--muted)">${jurisdictionLine(o)}</span>
+          <span style="font-size:0.7rem; color:var(--muted)">${dataPolicyLine(o)}</span>
         </div></td>
         <td><b>${priceStr(o.pricing, o.node_id)}</b></td>
         <td>${hwStr(o) || '<span style="color:var(--faint)" title="Vendor has not disclosed the hardware behind this offering">undisclosed</span>'}</td>
@@ -2589,23 +2600,53 @@ ONP_PROBE_KEY=&lt;a key with a small quota&gt; onp-node register https://registr
   </div>`;
 }
 
-/** Server-location check (registry location.js) in plain words. */
-function locationRow(loc, imported) {
-  if (!loc) return '';
-  const srv = loc.server || {};
+/* Jurisdiction evidence (ONP-3 §6.4, search jurisdiction.server_check): the operator's country is a
+   declaration (inferred by the registry for unclaimed imports); the server check is a network tripwire. */
+const SERVER_CHECK_WORDS = {
+  passed: '✓ server front checked', passed_origin: '✓ behind a CDN, declared origin checked', cdn: 'behind a CDN, not located',
+  mismatch: '⚠ server front located elsewhere', inconsistent: '⚠ server check inconsistent', unchecked: 'server front not checked',
+};
+const SERVER_CHECK_SHORT = { passed: 'front ✓', passed_origin: 'origin ✓', cdn: 'CDN', mismatch: 'front ⚠', inconsistent: 'check ⚠', unchecked: 'unchecked' };
+function jurisdictionLine(o) {
+  const j = o.jurisdiction || {};
+  if (!j.country) return '<span style="color:var(--faint)">operator country not declared</span>';
+  return `${esc(j.country)} operator <span class="micro m-claimed">${j.basis === 'inferred' ? 'INFERRED' : 'DECLARED'}</span> · `
+    + `<span title="${esc(j.evidence || '')}: the registry's network check of where the API answers, evidence, not proof">${esc(SERVER_CHECK_WORDS[j.server_check] || SERVER_CHECK_WORDS.unchecked)}</span>`;
+}
+/** The data policy is the operator's own statement (ONP-2 §5): probing cannot verify retention or training. */
+function dataPolicyLine(o) {
+  const dp = o.data_policy;
+  if (!dp) return '<span style="color:var(--faint)">no data policy declared</span>';
+  const ret = { none: 'no retention', ephemeral: `kept up to ${esc(dp.retention_max_seconds ?? '?')} s`, logged: 'may be logged' }[dp.retention] || `retention ${esc(dp.retention ?? 'unstated')}`;
+  const train = dp.training_on_inputs === false ? 'no training on inputs' : dp.training_on_inputs === true ? 'may train on inputs' : 'training unstated';
+  const link = typeof dp.source === 'string' && /^https?:\/\//i.test(dp.source)
+    ? ` · <a href="${esc(dp.source)}" target="_blank" rel="noopener nofollow">published policy${dp.checked ? ' (' + esc(dp.checked) + ')' : ''} ↗</a>` : ' · no policy link';
+  return `${ret} · ${train} <span class="micro m-claimed">DECLARED</span>${link}`;
+}
+
+/** Server-location check (registry location.js) in plain words; `check` is the node's server_check for its current card. */
+function locationRow(loc, imported, check) {
   const claim = imported ? 'inferred for this unclaimed listing' : 'declared by the operator';
+  if (!loc) return `<tr><td style="color:var(--muted)" class="mono">server</td><td style="font-size:0.8rem">not checked yet <span style="color:var(--muted)">· the operator's country is ${claim}, not verified</span></td></tr>`;
+  const srv = loc.server || {};
   const words = {
     match: `✓ server in ${esc(srv.country)}, matching the country ${imported ? 'inferred for this unclaimed listing' : 'the operator declared'}`,
     same_region: `✓ server in ${esc(srv.country)} (EEA); country ${claim}: ${esc(loc.declared)}`,
     mismatch: `<b style="color:var(--bad, #b42318)">⚠ server in ${esc(srv.country)}; country ${claim}: ${esc(loc.declared)}</b>`,
-    cdn: `behind a CDN (${esc(srv.network || 'anycast')}) — location not determinable from the network`,
+    cdn: `behind a CDN (${esc(srv.network || 'anycast')}) — location not determinable from the network${loc.origin ? '' : `<br><span style="color:var(--muted)">${imported ? 'Once the operator claims this listing, its card' : 'The card'} can declare the origin addresses behind the CDN (<code>endpoints.origin_addresses</code>, ONP-2 §4) for the registry to check instead.</span>`}`,
     inconsistent: `<b style="color:var(--bad, #b42318)">⚠ geolocation (${esc(srv.country || '?')}) contradicted by measured latency</b>`,
     unknown: `not determined${loc.reason ? ' — ' + esc(loc.reason) : ''}`,
   };
   const lat = loc.latency || {};
   const sites = (lat.sites || []).map((v) => `${esc(v.site)} ${v.rtt_ms} ms`).join(', ');
   const latWord = { consistent: 'consistent', too_slow: 'slower than expected from every site (soft warning)', too_fast: 'faster than physics allows for the geolocated point', unknown: 'not measured' }[lat.verdict || 'unknown'];
-  return `<tr><td style="color:var(--muted)" class="mono">server</td><td style="font-size:0.8rem">${words[loc.verdict] || esc(loc.verdict)}${srv.asn ? ` · AS${srv.asn}${srv.network ? ' ' + esc(srv.network) : ''}` : ''}<br><span style="color:var(--muted)">latency ${latWord}${sites ? ' (' + sites + ')' : ''} · checked ${esc((loc.checked_at || '').slice(0, 10))} · evidence, not proof</span></td></tr>`;
+  // Behind a CDN: the origin addresses the operator declares in its card, each checked in place of the front.
+  const originWords = { match: '✓ in the declared country', same_region: '✓ in the EEA with the declared country', mismatch: '⚠ located outside', cdn: 'on a CDN network itself', inconsistent: '⚠ geolocation contradicted by latency', unknown: 'not determined' };
+  const origins = loc.origin ? `<br>declared origin: ${loc.origin.reason ? esc(loc.origin.reason) : (loc.origin.addresses || []).map((a) =>
+    `<span class="mono" style="font-size:0.74rem">${esc(a.address)}</span> ${esc(originWords[a.verdict] || a.verdict)}${a.server_country ? ` (${esc(a.server_country)})` : ''}${a.reason ? ' — ' + esc(a.reason) : ''}`).join('; ')}` : '';
+  const stale = check === 'unchecked' && ['match', 'same_region', 'cdn', 'mismatch', 'inconsistent'].includes(loc.verdict)
+    ? `<br><b>This check was made for another API host, declared country or origin list; it counts again after the next check.</b>` : '';
+  return `<tr><td style="color:var(--muted)" class="mono">server</td><td style="font-size:0.8rem">${words[loc.verdict] || esc(loc.verdict)}${srv.asn ? ` · AS${srv.asn}${srv.network ? ' ' + esc(srv.network) : ''}` : ''}${origins}${stale}<br><span style="color:var(--muted)">latency ${latWord}${sites ? ' (' + sites + ')' : ''} · checked ${esc((loc.checked_at || '').slice(0, 10))} · evidence of where the API's server front answers, not proof of where requests are processed</span></td></tr>`;
 }
 
 /** Request counts (GET /v0/nodes/{id} request_counts): how often clients were shown this node. */
@@ -2655,14 +2696,14 @@ async function loadNode(id) {
         ${stat(tierChip(tier), 'TRUST TIER')}
         ${markChips(n) ? stat(`<span style="display:inline-flex; gap:0.3rem">${markChips(n)}</span>`, 'REGISTRY MARK — label, not a rank input') : ''}
         ${stat(String(offers.length), 'OFFERINGS')}
-        ${card.node?.operator?.name ? stat(esc(card.node.operator.name) + (card.node.operator.country ? ' (' + esc(card.node.operator.country) + (n.source === 'import' ? ' · inferred' : '') + ')' : ''), 'OPERATOR') : ''}
+        ${card.node?.operator?.name ? stat(esc(card.node.operator.name) + (card.node.operator.country ? ' (' + esc(card.node.operator.country) + (n.source === 'import' ? ' · inferred by the registry' : ' · declared') + ')' : ''), 'OPERATOR — COUNTRY NOT VERIFIED') : ''}
         ${(card.node?.regions || []).length ? stat(esc(card.node.regions.join(', ')), 'REGIONS') : ''}
         ${n.source === 'import' ? stat('<span class="chip imp">IMPORTED</span>', 'SOURCE — unclaimed by operator') : ''}
       </div>
       <div class="panel pad" style="max-width:56rem; margin-top:0.6rem"><table class="grid">
         <tr><td style="color:var(--muted); width:8rem" class="mono">endpoint</td><td class="mono" style="font-size:0.74rem">${card.endpoints?.openai ? esc(card.endpoints.openai) : '— <span style="font-family:inherit; color:var(--muted)">listing only: no known API endpoint, not callable from OpenNodes</span>'}</td></tr>
         ${docsUrl(card.endpoints) ? `<tr><td style="color:var(--muted)" class="mono">docs</td><td class="mono" style="font-size:0.74rem"><a href="${esc(docsUrl(card.endpoints))}" target="_blank" rel="noopener">${esc(docsUrl(card.endpoints))}</a></td></tr>` : ''}
-        ${locationRow(n.location, n.source === 'import')}
+        ${locationRow(n.location, n.source === 'import', n.server_check)}
         ${card.hardware ? `<tr><td style="color:var(--muted)" class="mono">hardware</td><td style="font-size:0.78rem">${hwStr({ hardware: card.hardware })}</td></tr>` : ''}
         ${returnedRow(n.request_counts, n.id)}
         ${testedRow(n, offers.length, untested.size)}

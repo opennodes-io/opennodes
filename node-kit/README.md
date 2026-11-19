@@ -99,6 +99,8 @@ ONP_PROBE_KEY=<a key with a small quota> onp-node register https://registry.open
 ```
 
 - The node id is the reverse of the host serving the card (`ai.example.com` → `com.example.ai`); your API may live on any host.
+- **Behind a CDN** (Cloudflare, Fastly, …) the registry cannot locate your server from its address, and a node without a passing server-location check stays out of the trusted pool for personal data. Declare the public addresses of the servers behind the CDN in `[node] origin_addresses`: the registry then connects to each one directly, requires a publicly trusted certificate for your API's host name and an answer from it, and locates that address instead (ONP-2 §4, ONP-3 §6.4). An origin reachable only through a tunnel cannot be checked.
+- `country` and `[data_policy]` are your declarations, and registries show them as declared. Give `[data_policy] source` (your published privacy policy or data processing terms) and `checked` (its date) so clients can read what you committed to.
 - The probe key is held as pending until your challenge passes, is sent only to your card's own endpoints, and never appears in any registry API. Give it a small dedicated quota.
 - `health` defaults to your `/models` endpoint. Card-only listings carry no ONP receipts and no revision enforcement — clients call your API exactly as they do today.
 - Once you're verified, imported catalog listings that point at your own API (for example from models.dev) are retired automatically, so your verified listing replaces them rather than appearing beside them. Listings that reach your models through Hugging Face's or OpenRouter's routers stay: those are their routes, not yours.

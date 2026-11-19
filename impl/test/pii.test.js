@@ -3,6 +3,7 @@
 // a request is masked.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { PASSED_LOCATION } from './server-check.js';
 import {
   createApp, listen, closeApp, sendJson, readJson, trustedView,
   regexDetector, sidecarDetector, llmDetector, compositeDetector, piiDetectorFrom, isLocalEndpoint, parseLlmPiiAnswer,
@@ -177,7 +178,7 @@ test('embeddings: string inputs are masked, token arrays are reported as unmaska
 
 const TRUSTED = Object.freeze({
   node_id: 'io.lab.eu', offering_id: 'm', tier: 'verified', model: { lineage_origins: ['FR'] },
-  jurisdiction: { country: 'DE', basis: 'declared', location: null }, data_policy: { retention: 'none', training_on_inputs: false },
+  jurisdiction: { country: 'DE', basis: 'declared', location: PASSED_LOCATION }, data_policy: { retention: 'none', training_on_inputs: false },
   endpoints: { openai: 'https://lab.example/v1' },
 });
 
@@ -192,7 +193,8 @@ test('masking applies to the open pool by default, never to the user\'s own mach
   assert.equal(needsMasking({ ...TRUSTED, tier: 'lan', model: {} }, { view }), false);
   assert.equal(needsMasking(TRUSTED, { view, mode: 'all' }), true);
   assert.equal(needsMasking({ ...TRUSTED, model: {} }, { view, mode: 'off' }), false);
-  assert.equal(needsMasking({ ...TRUSTED, jurisdiction: { country: 'UA', basis: 'declared' } }, { view: trustedView('EU,CA,UA') }), false);
+  assert.equal(needsMasking({ ...TRUSTED, jurisdiction: { country: 'UA', basis: 'declared', location: { ...PASSED_LOCATION, server_country: 'UA' } } }, { view: trustedView('EU,CA,UA') }), false);
+  assert.equal(needsMasking({ ...TRUSTED, jurisdiction: { country: 'DE', basis: 'declared', location: null } }, { view }), true);   // no server check: open pool
 });
 
 test('mask modes: a misspelt value is an error, and a request can only ask for more masking', () => {
