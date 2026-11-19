@@ -10,8 +10,8 @@ import { startRegistry } from '@opennodes/registry';
 import { createSqliteStore } from '@opennodes/registry/src/store.js';
 import { createPgStore } from '@opennodes/registry/src/store-pg.js';
 import { isoWeek, weekStart, recentWeeks, nodeIdsIn, makeRequestCounter } from '@opennodes/registry/src/counts.js';
-import { CONTEXT_FRACTIONS, CAPACITY_RAMP, IDENTITY_SAMPLE, IDENTITY_CAPTURE } from '@opennodes/registry/src/stageb.js';
-import { LIVENESS_INTERVAL_MS, BLIND_INTERVAL_MS, JITTER, BLIND_FAIL_THRESHOLD, MAX_EXCUSED_409_PER_DAY } from '@opennodes/registry/src/stagec.js';
+import { CONTEXT_FRACTIONS, CAPACITY_RAMP, IDENTITY_SAMPLE, IDENTITY_CAPTURE, MAX_EXCUSED_409 } from '@opennodes/registry/src/stageb.js';
+import { LIVENESS_INTERVAL_MS, BLIND_INTERVAL_MS, JITTER, BLIND_FAIL_THRESHOLD, MAX_EXCUSED_409_PER_DAY, BLIND_MAX_TOKENS, IDENTITY_SHARE, FOLLOW_UP_MS, FOLLOW_UP_TICK_MS } from '@opennodes/registry/src/stagec.js';
 import { SCHEDULE_DEFAULTS } from '@opennodes/registry/src/schedule.js';
 
 const FIXTURE = 'org.opennodes.fixture';
@@ -270,6 +270,17 @@ test('the qualification page states the probe load the code uses', () => {
   has(`at most every ${stageBIntervalMs / 86_400_000}&nbsp;days`);
   has(`${BLIND_FAIL_THRESHOLD} blind calls in a row`);
   has(`${MAX_EXCUSED_409_PER_DAY} a day`);
+  // Follow-up review (points 6 and 8) and the Stage B 409 rule.
+  has(`at temperature 0 and at most ${BLIND_MAX_TOKENS} output tokens`);
+  has(`about 1 in ${Math.round(1 / IDENTITY_SHARE)} of those calls asks one of the identity prompts`);
+  assert.ok(FOLLOW_UP_MS[1] + JITTER[1] * FOLLOW_UP_TICK_MS < 3_600_000);
+  has('one more blind chat completion against the new revision at a random time within the hour');
+  assert.ok(SCHEDULE_DEFAULTS.stageBIdentityMs[1] + JITTER[1] * SCHEDULE_DEFAULTS.tickMs <= 3_600_000);
+  has('within 1&nbsp;hour of a confirmed identity mismatch in a blind call');
+  assert.ok(SCHEDULE_DEFAULTS.staleRetryMs[1] + JITTER[1] * SCHEDULE_DEFAULTS.tickMs <= 3_600_000);
+  const stages = html.slice(html.indexOf('id="view-qualification"'), html.indexOf('id="probe-load"'));
+  assert.ok(stages.includes(`runs again within the hour, at most ${MAX_EXCUSED_409} times before a run is judged`), 'Stage B states the 409 rule');
+  assert.ok(stages.includes('stays at community until the registry has bought access to your API as an ordinary customer'), 'and the card-only rule');
 });
 
 test('a database from before the founding mark gains the column (sqlite and postgres)', async (t) => {

@@ -21,6 +21,9 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS probe_keys (
     node_id TEXT PRIMARY KEY, secret TEXT, pending TEXT, updated_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS customer_keys (
+    node_id TEXT PRIMARY KEY, secret TEXT NOT NULL, recorded_at TEXT NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS probes (
     id SERIAL PRIMARY KEY, node_id TEXT NOT NULL, offering_id TEXT,
     stage TEXT NOT NULL, kind TEXT NOT NULL, ok INTEGER NOT NULL,
@@ -110,6 +113,15 @@ export async function createPgStore({ connectionString, pool } = {}) {
     async getProbeKey(nodeId) {
       return (await q('SELECT secret FROM probe_keys WHERE node_id = $1', [nodeId]))[0]?.secret ?? null;
     },
+    /** Record the customer access the registry bought for a node (a key), or remove it with null. */
+    async setCustomerKey(nodeId, key) {
+      if (key == null) await q('DELETE FROM customer_keys WHERE node_id = $1', [nodeId]);
+      else await q(`INSERT INTO customer_keys (node_id, secret, recorded_at) VALUES ($1, $2, $3)
+        ON CONFLICT (node_id) DO UPDATE SET secret = excluded.secret, recorded_at = excluded.recorded_at`, [nodeId, key, now()]);
+    },
+    async getCustomerKey(nodeId) {
+      return (await q('SELECT secret FROM customer_keys WHERE node_id = $1', [nodeId]))[0]?.secret ?? null;
+    },
     async setChallenge(nodeId, token, ttlMs = 72 * 3600 * 1000) {
       await q(`INSERT INTO challenges (node_id, token, expires_at) VALUES ($1, $2, $3)
         ON CONFLICT (node_id) DO UPDATE SET token=excluded.token, expires_at=excluded.expires_at`,
@@ -162,6 +174,11 @@ export async function createPgStore({ connectionString, pool } = {}) {
           revision=excluded.revision, digest=excluded.digest, pending_digest=excluded.pending_digest, failures=excluded.failures`,
         [nodeId, stage, s.last_at ?? null, s.next_at ?? null, s.ok == null ? null : (s.ok ? 1 : 0),
           s.revision ?? null, s.digest ?? null, s.pending_digest ?? null, s.failures ?? 0]);
+    },
+    /** Node ids whose row for `stage` has a next_at at or before an ISO time, soonest first. */
+    async dueSchedules(stage, before) {
+      return (await q('SELECT node_id FROM schedule WHERE stage = $1 AND next_at IS NOT NULL AND next_at <= $2 ORDER BY next_at',
+        [stage, before])).map((r) => r.node_id);
     },
     async vendorNamespaces() {
       return (await q('SELECT vendor, namespaces FROM vendor_namespaces ORDER BY vendor'))

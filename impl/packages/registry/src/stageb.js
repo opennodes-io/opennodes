@@ -20,8 +20,20 @@ export { IDENTITY_CAPTURE, IDENTITY_SAMPLE };
 export const UNSIGNED_CARD = 'card signature not verified: a card must be signed for the verified tier (ONP-2 §8)';
 /** Why an offering's identity could not be checked: nothing to compare against. */
 export const NO_REFERENCE = 'no identity reference for this artefact';
+/** Why a card-only listing that passes Stage B stays at community (ONP-3 §4, §4a). */
+export const CUSTOMER_ACCESS_NEEDED = 'card-only listing: its probes carry the operator\'s own probe key, so verified needs probes sent with access the registry bought as a customer (ONP-3 §4)';
+/**
+ * Output cap of an identity request: reference capture, Stage B and the blind identity check. Every
+ * Stage C blind invocation is sent with it too (and at temperature 0), so the ones carrying an
+ * identity prompt look like the rest.
+ */
+export const IDENTITY_MAX_TOKENS = 64;
 
-async function chatOnce(safeFetch, card, offering, content, maxTokens = 64, timeoutMs = 60_000) {
+/**
+ * One chat completion at temperature 0, the request every identity comparison is made with
+ * (Stage C blind invocations use it as well). Body keys in this order, every time.
+ */
+export async function chatOnce(safeFetch, card, offering, content, maxTokens = IDENTITY_MAX_TOKENS, timeoutMs = 60_000) {
   const t0 = performance.now();
   const { status, body } = await fetchJsonCapped(safeFetch, `${card.endpoints.openai}/chat/completions`, {
     method: 'POST',
@@ -59,26 +71,66 @@ export async function captureFingerprints(safeFetch, card, offering, prompts = D
   return refs;
 }
 
+/** Whether a reply's text is the reference's: the exact-output comparison of ONP-3 §4a.4. */
+export const matchesReference = (text, ref) => typeof text === 'string' && sha256(text) === ref.expected_hash;
+
+/** 409s to identity prompts excused (the run stops unjudged and is retried) since the node's last judged Stage B. */
+export const MAX_EXCUSED_409 = 3;
+/** The probe record of an excused one. */
+export const STAGE_B_409 = 'identity-409';
+
+/**
+ * What a 409 to an identity prompt means (ONP-3 §4a.4), by Stage C's rule: the card is re-fetched,
+ * and only a really new revision excuses it. `revisionMoved()` re-fetches and returns the new
+ * revision, or null when the pinned one is still current.
+ * - `stale`: a new revision, within the bound: recorded, the run stops unjudged, the caller retries;
+ * - `refused`: the current revision was pinned: a reply that does not match;
+ * - `moved`: a new revision again, beyond the bound: the run ends as not passed, never as a dispute
+ *   (the card the run holds is stale now, so even an honest node refuses what follows).
+ */
+function makeOn409(store, nodeId, card, { revisionMoved, maxExcused409 }) {
+  return async (offering) => {
+    const fresh = revisionMoved ? await revisionMoved() : null;
+    if (!fresh) return { kind: 'refused' };
+    const since = (await store.getSchedule(nodeId, 'B'))?.last_at ?? '';
+    const excused = await store.countProbes(nodeId, STAGE_B_409, since);
+    if (excused >= maxExcused409) {
+      return { kind: 'moved', reason: `the card revision moved again during Stage B, after ${excused} such 409s since the last judged run (at most ${maxExcused409} are excused)` };
+    }
+    await store.recordProbe(nodeId, offering.offering_id, 'B', STAGE_B_409, false,
+      `409 with revision ${card.revision} pinned; card re-indexed at ${fresh}; Stage B runs again later`);
+    return { kind: 'stale' };
+  };
+}
+
 /**
  * DS-ADM-02: identity check against stored references. A reply that does not match is asked once
  * more before it counts (ONP-3 §6.3 disputes only a confirmed failure: batching on an engine with
- * parallel slots can change a temperature-0 reply now and then).
+ * parallel slots can change a temperature-0 reply now and then). A 409 counts as a reply that does
+ * not match unless `on409` excuses it (makeOn409).
  */
-async function probeIdentity(safeFetch, card, offering, refs) {
-  let matches = 0, stale = false, retried = 0;
+async function probeIdentity(safeFetch, card, offering, refs, on409) {
+  let matches = 0, retried = 0, refused = 0, stop = null;
   const ask = async (prompt) => {
     const { status, text } = await chatOnce(safeFetch, card, offering, prompt);
-    if (status === 409) stale = true;   // pinned revision is no longer current: not evidence about identity
+    if (status === 409) {
+      const what = await on409(offering);
+      if (what.kind === 'refused') refused++; else stop = what;
+      return null;
+    }
     return status === 200 && text !== null ? sha256(text) : null;
   };
   for (const ref of refs) {
     let hash = await ask(ref.prompt);
-    if (hash !== ref.expected_hash && !stale) { retried++; hash = await ask(ref.prompt); }
+    if (hash !== ref.expected_hash && !stop) { retried++; hash = await ask(ref.prompt); }
     if (hash === ref.expected_hash) matches++;
-    if (stale) break;
+    if (stop) break;
   }
+  const extra = { ...(retried ? { retried } : {}), ...(refused ? { refused } : {}) };
+  if (stop?.kind === 'stale') return { ok: false, matches, total: refs.length, ...extra, stale: true };
+  if (stop?.kind === 'moved') return { ok: false, matches, total: refs.length, ...extra, moved: true, reason: stop.reason };
   // Deterministic battery: require all prompts to match the reference distribution.
-  return { ok: matches === refs.length, matches, total: refs.length, ...(retried ? { retried } : {}), ...(stale ? { stale: true } : {}) };
+  return { ok: matches === refs.length, matches, total: refs.length, ...extra };
 }
 
 /** The needle counts as retrieved if its number appears in the reply as a whole number. */
@@ -180,14 +232,14 @@ async function probeCapacity(safeFetch, card, offering, corpus, { steps = CAPACI
  *   offering cannot be verified: no usable reference for the artefact, or a proprietary artefact
  *   claimed outside the vendor's namespace.
  */
-async function identityOf(store, nodeId, safeFetch, card, offering, { corpus, vendors, identitySample }) {
+async function identityOf(store, nodeId, safeFetch, card, offering, { corpus, vendors, identitySample, on409 }) {
   const artifact = offering.model?.artifact;
   const claim = vendorClaim(artifact, nodeId, vendors);
   if (!claim.ok) return { ok: false, unverified: true, reason: `${artifact} is not this node's to claim (vendor namespace)` };
   // References captured with public prompts prove nothing: a node could have recognised them.
   const refs = (await store.getFingerprints(artifact)).filter((r) => corpus.usableReference(r.prompt));
   if (!refs.length) return { ok: false, unverified: true, reason: NO_REFERENCE };
-  return probeIdentity(safeFetch, card, offering, sample(refs, identitySample));
+  return probeIdentity(safeFetch, card, offering, sample(refs, identitySample), on409);
 }
 
 /**
@@ -196,10 +248,14 @@ async function identityOf(store, nodeId, safeFetch, card, offering, { corpus, ve
  * Not ok, with `reason`, when the card is unsigned (`signed: false`), when no offering can be
  * tested, when any tested offering's identity could not be checked (no reference: unverified, not a
  * dispute), or when the capacity ramp fails. `identityFailed` (a reference mismatch) means disputed.
+ * `stale`: an excused 409 stopped the run unjudged. `revisionMoved` (see makeOn409): without it,
+ * every 409 to an identity prompt counts as a reply that does not match.
  */
 export async function runStageB(store, nodeId, card, {
   safeFetch, capacity = {}, corpus = DEV_CORPUS, vendors = vendorTable(), signed = true, identitySample = IDENTITY_SAMPLE,
+  revisionMoved = null, maxExcused409 = MAX_EXCUSED_409,
 } = {}) {
+  const on409 = makeOn409(store, nodeId, card, { revisionMoved, maxExcused409 });
   const untested = untestedOfferings(card);
   if (!signed) {
     await store.recordProbe(nodeId, null, 'B', 'signature', false, UNSIGNED_CARD);
@@ -213,13 +269,20 @@ export async function runStageB(store, nodeId, card, {
     if (!testable(offering)) continue;
     const verdict = { offering_id: offering.offering_id, identity: null, context: null, capacity: null };
 
-    verdict.identity = await identityOf(store, nodeId, safeFetch, card, offering, { corpus, vendors, identitySample });
+    verdict.identity = await identityOf(store, nodeId, safeFetch, card, offering, { corpus, vendors, identitySample, on409 });
     if (verdict.identity.stale) {
-      // The node rejected our pinned revision (409). Abort without judging: the caller re-indexes and retries.
+      // The card's revision really moved (an excused 409, recorded). Abort without judging: the caller retries.
       return { ok: false, identityFailed: false, stale: true, verdicts: [...verdicts, verdict], untested };
     }
+    const { matches, total, refused } = verdict.identity;
     await store.recordProbe(nodeId, offering.offering_id, 'B', 'identity', verdict.identity.ok,
-      verdict.identity.unverified ? `identity unverified: ${verdict.identity.reason}` : `${verdict.identity.matches}/${verdict.identity.total} reference matches`);
+      verdict.identity.unverified ? `identity unverified: ${verdict.identity.reason}`
+        : verdict.identity.moved ? `not judged: ${verdict.identity.reason}`
+          : `${matches}/${total} reference matches${refused ? `; ${refused} replies refused with 409, the current card revision pinned` : ''}`);
+    if (verdict.identity.moved) {
+      // Beyond the bound: not passed, and nothing more is sent on a card that is no longer current.
+      return { ok: false, identityFailed: false, reason: `${offering.offering_id}: ${verdict.identity.reason}`, verdicts: [...verdicts, verdict], untested };
+    }
 
     verdict.context = await probeContext(safeFetch, card, offering, corpus);
     await store.recordProbe(nodeId, offering.offering_id, 'B', 'context', verdict.context.ok,

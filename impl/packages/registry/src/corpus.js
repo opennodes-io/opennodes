@@ -11,6 +11,9 @@
 //     "filler":   ["long passages of plain prose"],     // the context probes' haystack
 //     "needles":  [{"fact": "… {n} …", "question": "…"}] // the fact hidden in the haystack ({n}: an 8-digit number)
 //   }
+// Identity prompts must read like the chat prompts (same kind of request, length and tone), or be
+// left out so that references are captured from chat prompts: Stage C asks some of them in blind
+// probes (stagec.js), which only work if a node cannot pick them out from the ordinary ones.
 import { readFileSync } from 'node:fs';
 
 /**

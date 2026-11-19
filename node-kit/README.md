@@ -100,6 +100,7 @@ ONP_PROBE_KEY=<a key with a small quota> onp-node register https://registry.open
 
 - The node id is the reverse of the host serving the card (`ai.example.com` → `com.example.ai`); your API may live on any host.
 - The probe key is held as pending until your challenge passes, is sent only to your card's own endpoints, and never appears in any registry API. Give it a small dedicated quota.
+- Every probe that carries the probe key is easy for you to pick out, so a card-only listing stays at community, even when it passes, until the registry has bought access to your API as an ordinary customer. From then on probes use that access instead, and the next scheduled Stage B can verify the listing.
 - `health` defaults to your `/models` endpoint. Card-only listings carry no ONP receipts and no revision enforcement — clients call your API exactly as they do today.
 - Once you're verified, imported catalog listings that point at your own API (for example from models.dev) are retired automatically, so your verified listing replaces them rather than appearing beside them. Listings that reach your models through Hugging Face's or OpenRouter's routers stay: those are their routes, not yours.
 

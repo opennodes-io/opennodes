@@ -15,8 +15,9 @@ import { createSqliteStore } from '@opennodes/registry/src/store.js';
 import { createPgStore } from '@opennodes/registry/src/store-pg.js';
 import { loadCorpus, BUILTIN_CORPUS, LEGACY_IDENTITY_PROMPTS, IDENTITY_CAPTURE } from '@opennodes/registry/src/corpus.js';
 import { vendorClaim, vendorTable, artifactClaimProblems, ownLabel, nodeDomain } from '@opennodes/registry/src/vendors.js';
-import { UNSIGNED_CARD, NO_REFERENCE } from '@opennodes/registry/src/stageb.js';
+import { UNSIGNED_CARD, NO_REFERENCE, IDENTITY_MAX_TOKENS, MAX_EXCUSED_409, STAGE_B_409, CUSTOMER_ACCESS_NEEDED } from '@opennodes/registry/src/stageb.js';
 import { SCHEDULE_DEFAULTS, servingDigest } from '@opennodes/registry/src/schedule.js';
+import { FOLLOW_UP, LIGHT_CHECK, FOLLOW_UP_MS, FOLLOW_UP_TICK_MS, JITTER, IDENTITY_SHARE, IDENTITY_STAGE_B_GAP_MS } from '@opennodes/registry/src/stagec.js';
 
 const FIXTURE = 'org.opennodes.fixture';
 const FAST = { durationMs: 200, steps: [1] };
@@ -373,7 +374,9 @@ test('blind probes: a 409 after a real revision change is recorded, re-indexed a
   const excused = await waitFor(async () => (await probes()).find((p) => p.kind === 'blind-409'));
   assert.ok(excused, 'the 409 is recorded');
   assert.equal(excused.ok, 0);
-  assert.match(excused.detail, /^409 with revision .* pinned; card re-indexed at .* and probe retried$/);
+  assert.match(excused.detail, /^409 with revision .* pinned; card re-indexed at .*, probe retried, a fresh one due within the hour$/);
+  const owed = await registry.store.getSchedule(FIXTURE, FOLLOW_UP);
+  assert.ok(Date.parse(owed.next_at) - Date.parse(excused.at) <= FOLLOW_UP_MS[1], 'a fresh blind probe is owed within the hour');
   const retried = await waitFor(async () => {
     const list = await probes();
     const i = list.findIndex((p) => p.kind === 'blind-409');
@@ -389,6 +392,310 @@ test('blind probes: a 409 after a real revision change is recorded, re-indexed a
   assert.ok(failed, 'the second 409 within 24 h is a failure');
   assert.equal(failed.ok, 0);
   assert.equal((await probes()).filter((p) => p.kind === 'blind-409').length, 1, 'only one was excused');
+});
+
+// ---------------------------------------------------------------- follow-up review, point 6
+
+test('blind probes: a node that bumps its revision on every probe still gets probed within the hour', async (t) => {
+  // The real window: owed at a random time that, with the follow-up tick's lateness, falls within the hour.
+  assert.ok(FOLLOW_UP_MS[1] + JITTER[1] * FOLLOW_UP_TICK_MS < 3_600_000);
+  {
+    const { node, registry } = await verifiedWithStageC(t, {}, { blindIntervalMs: 1e9, followUpTickMs: 1e9 });
+    node.dodge(1);
+    const before = Date.now();
+    await registry.blindSweep();
+    const owed = await registry.store.getSchedule(FIXTURE, FOLLOW_UP);
+    assert.equal(owed.revision, node.card.revision, 'owed against the revision the node moved to');
+    const due = Date.parse(owed.next_at) - before;
+    assert.ok(due >= FOLLOW_UP_MS[0] && due <= FOLLOW_UP_MS[1] + 1000, `follow-up due ${due} ms after the excused 409`);
+  }
+
+  // Scaled down: "the hour" is 700 ms. The node refuses every probe it does not know for one, each
+  // time with a new card revision, and answers only the registry's immediate retry.
+  const WINDOW = [400, 700];
+  const { node, registry } = await verifiedWithStageC(t, {}, {
+    blindIntervalMs: 1e9, followUpTickMs: 20, followUpMs: WINDOW, maxExcused409: 3, blindFailThreshold: 3,
+  });
+  const probes = async () => (await detail(registry)).probes;
+  node.dodge(100, { answerWithinMs: 300 });
+  await registry.blindSweep();   // one regular probe; every excused 409 after it comes from a follow-up
+
+  // Three excused 409s (the daily bound), each followed within the window by a probe pinned to the new revision.
+  const third = await waitFor(async () => (await probes()).find((p) => p.kind === 'blind' && /again after 3 card revisions in 24 h/.test(p.detail ?? '')));
+  assert.ok(third, 'the fourth 409 in 24 h counts as a failure');
+  const excused = (await probes()).filter((p) => p.kind === 'blind-409').reverse();
+  assert.equal(excused.length, 3);
+  for (const e of excused) {
+    const revision = e.detail.match(/re-indexed at (\S+),/)[1];
+    const [retry, followUp] = node.calls.filter((c) => c.pinned === revision);
+    assert.equal(retry.status, 200, 'the immediate retry is answered');
+    assert.ok(followUp, `a fresh probe pinned to ${revision}`);
+    const after = Date.parse(followUp.at) - Date.parse(e.at);
+    assert.ok(after >= WINDOW[0] - 50 && after <= WINDOW[1] + 250, `follow-up ${after} ms after the excused 409`);
+  }
+  assert.equal((await registry.store.getSchedule(FIXTURE, FOLLOW_UP)).next_at, null, 'a 409 that is not excused owes nothing');
+
+  // Dodging on: regular probes now fail, and the third failure in a row costs the tier.
+  for (let i = 0; i < 2; i++) { await sleep(350); await registry.blindSweep(); }
+  const d = await detail(registry);
+  assert.equal(d.state, 'community');
+  assert.equal(d.history.at(-1).reason, 'blind: 3 consecutive failed blind invocations');
+
+  // Retries and follow-ups go out exactly like any other blind invocation.
+  const shapes = new Set(node.calls.filter((c) => c.at > excused[0].at).map((c) => JSON.stringify([c.keys, { ...c.params, model: null }])));
+  assert.equal(shapes.size, 1, [...shapes].join('\n'));
+});
+
+// ---------------------------------------------------------------- follow-up review, point 8
+
+/** A verified fixture on a registry with the timetable on, Stage C driven by the test, and the private corpus. */
+async function verifiedWithLightCheck(t, { schedule = true, ...stageC } = {}) {
+  const node = await startFixtureNode();
+  const registry = await startRegistry({
+    allowPrivateTargets: true, stageBCapacity: FAST, probeCorpus: CORPUS,
+    schedule: schedule ? { tickMs: 3_600_000 } : null,
+    stageC: { livenessIntervalMs: 1e9, blindIntervalMs: 1e9, followUpTickMs: 1e9, identityShare: 1, ...stageC },
+  });
+  t.after(async () => { await registry.close(); await node.close(); });
+  await register(registry, node);
+  await capture(registry);
+  assert.equal((await admit(registry)).body.state, 'verified');
+  return { node, registry };
+}
+
+const stageBDue = async (registry) => Date.parse((await registry.store.getSchedule(FIXTURE, 'B')).next_at);
+
+test('light identity check: a node that swaps its model after passing is sent to Stage B within the hour; only Stage B disputes', async (t) => {
+  const { node, registry } = await verifiedWithLightCheck(t);
+  const day = 24 * 3_600_000;
+  const references = new Set(CORPUS.identity);
+  const planned = await stageBDue(registry);
+  assert.ok(planned - Date.now() >= SCHEDULE_DEFAULTS.stageBMinGapMs - 1000, 'after the pass, the next Stage B is a day or more away');
+
+  // The honest node: its reply is the reference's, and nothing changes.
+  await registry.blindSweep();
+  assert.ok(references.has(node.calls.at(-1).prompt), 'the blind probe asked an identity prompt');
+  assert.equal((await registry.store.getSchedule(FIXTURE, LIGHT_CHECK)).ok, true);
+  assert.equal(await stageBDue(registry), planned);
+
+  // Batching changed one reply: it is asked once more, matches, and nothing changes either.
+  node.perturb(1);
+  const n = node.calls.length;
+  await registry.blindSweep();
+  assert.equal(node.calls.length, n + 2, 'one repeat');
+  assert.equal(node.calls.at(-1).prompt, node.calls.at(-2).prompt);
+  assert.equal((await registry.store.getSchedule(FIXTURE, LIGHT_CHECK)).ok, true);
+  assert.equal(await stageBDue(registry), planned);
+
+  // The node swaps its model under the same card. The next light check sees it.
+  node.swapModel();
+  const before = Date.now();
+  await registry.blindSweep();
+  let d = await detail(registry);
+  assert.equal(d.state, 'verified', 'a light check never changes the tier');
+  const blind = d.probes.find((p) => p.stage === 'C');
+  assert.deepEqual([blind.kind, blind.ok, blind.detail], ['blind', 1, null], 'the public record says only that the reply conformed');
+  assert.ok(!JSON.stringify(d).includes(node.calls.at(-1).prompt), 'nor what was asked');
+  const light = await registry.store.getSchedule(FIXTURE, LIGHT_CHECK);
+  assert.deepEqual([light.ok, light.failures], [false, 1]);
+  const due = await stageBDue(registry);
+  assert.ok(due >= before && due - before <= SCHEDULE_DEFAULTS.stageBIdentityMs[1], `Stage B due ${due - before} ms after the mismatch`);
+  assert.ok(SCHEDULE_DEFAULTS.stageBIdentityMs[1] + JITTER[1] * SCHEDULE_DEFAULTS.tickMs <= 3_600_000, 'and it runs within the hour');
+
+  // At most one Stage B a day from light checks: had that run passed, the next mismatch waits.
+  const b = await registry.store.getSchedule(FIXTURE, 'B');
+  await registry.store.setSchedule(FIXTURE, 'B', { ...b, next_at: new Date(Date.now() + 30 * day).toISOString() });
+  await registry.blindSweep();
+  assert.ok(await stageBDue(registry) > Date.now() + 29 * day, 'no second Stage B within 24 h');
+  assert.equal((await registry.store.getSchedule(FIXTURE, LIGHT_CHECK)).failures, 2, 'the mismatch is still recorded');
+  const l = await registry.store.getSchedule(FIXTURE, LIGHT_CHECK);
+  await registry.store.setSchedule(FIXTURE, LIGHT_CHECK, { ...l, next_at: new Date(Date.now() - IDENTITY_STAGE_B_GAP_MS - 1000).toISOString() });
+  await registry.blindSweep();
+  assert.ok(await stageBDue(registry) - Date.now() <= SCHEDULE_DEFAULTS.stageBIdentityMs[1], 'a day later it may ask again');
+
+  // The hour passes; the scheduler runs Stage B, whose identity check disputes the node.
+  await registry.store.setSchedule(FIXTURE, 'B', { ...(await registry.store.getSchedule(FIXTURE, 'B')), next_at: new Date(Date.now() - 1000).toISOString() });
+  await registry.scheduleTick();
+  d = await detail(registry);
+  assert.equal(d.state, 'disputed');
+  assert.equal(d.history.at(-1).reason, 'Stage B identity fingerprint mismatch');
+  assert.equal(d.history.filter((h) => h.to_state === 'disputed').length, 1, 'and nothing before it did');
+});
+
+test('light identity check: about 1 in 4 blind probes of a verified node carries one', async (t) => {
+  let r = 0.9;
+  const { node, registry } = await verifiedWithLightCheck(t, { identityShare: IDENTITY_SHARE, random: () => r });
+  assert.equal(IDENTITY_SHARE, 0.25);
+  const asked = async (value) => { r = value; await registry.blindSweep(); return node.calls.at(-1).prompt; };
+  assert.ok(CORPUS.chat.includes(await asked(0.9)), 'three draws in four: an ordinary prompt');
+  assert.ok(CORPUS.chat.includes(await asked(IDENTITY_SHARE)), 'the boundary is ordinary too');
+  assert.ok(CORPUS.identity.includes(await asked(0.2)), 'one in four: an identity reference');
+});
+
+test('light identity check: it goes out like any blind probe, and without a timetable a mismatch is only recorded', async (t) => {
+  const { node, registry } = await verifiedWithLightCheck(t, { schedule: false });
+  // The reference capture and Stage B's identity battery so far: the requests a light check must look like.
+  const references = node.calls.filter((c) => CORPUS.identity.includes(c.prompt));
+  assert.equal(references.length, IDENTITY_CAPTURE + 3);
+  await registry.blindSweep();
+  const identity = node.calls.at(-1);
+  assert.ok(CORPUS.identity.includes(identity.prompt));
+  await registry.store.clearFingerprints(node.card.offerings[0].model.artifact);
+  await registry.blindSweep();
+  const ordinary = node.calls.at(-1);
+  assert.ok(CORPUS.chat.includes(ordinary.prompt), 'no reference: an ordinary prompt');
+  for (const c of [ordinary, ...references]) {
+    assert.deepEqual(c.keys, identity.keys);
+    assert.deepEqual(c.params, identity.params);
+  }
+  assert.deepEqual(identity.params, { model: identity.params.model, temperature: 0, max_tokens: IDENTITY_MAX_TOKENS });
+
+  // No timetable here (ONP_SCHEDULE=0): Stage B runs only on admin request, so nothing is scheduled.
+  await capture(registry);
+  const before = await registry.store.getSchedule(FIXTURE, 'B');
+  node.swapModel();
+  await registry.blindSweep();
+  assert.equal((await registry.store.getSchedule(FIXTURE, LIGHT_CHECK)).ok, false);
+  assert.deepEqual(await registry.store.getSchedule(FIXTURE, 'B'), before);
+  assert.equal((await detail(registry)).state, 'verified');
+});
+
+// ---------------------------------------------------------------- Stage B 409s (found with point 8)
+
+/** Make Stage B due now and run one scheduler pass. */
+async function runDueStageB(registry) {
+  const b = await registry.store.getSchedule(FIXTURE, 'B');
+  await registry.store.setSchedule(FIXTURE, 'B', { ...b, next_at: new Date(Date.now() - 1000).toISOString() });
+  await registry.scheduleTick();
+}
+
+test('Stage B: a 409 with the current revision pinned is a reply that does not match, so a swapped node that refuses the repeat is disputed', async (t) => {
+  const { node, registry } = await verifiedWithLightCheck(t);
+  node.swapModel();
+  node.refuseRepeats();
+  await registry.blindSweep();   // the light check: a refused repeat counts as a second miss
+  assert.ok(await stageBDue(registry) - Date.now() <= SCHEDULE_DEFAULTS.stageBIdentityMs[1], 'sent to Stage B');
+  await runDueStageB(registry);
+  const d = await detail(registry);
+  assert.equal(d.state, 'disputed', 'a verdict, not an abort');
+  assert.equal(d.history.at(-1).reason, 'Stage B identity fingerprint mismatch');
+  const identity = d.probes.find((p) => p.stage === 'B' && p.kind === 'identity');
+  assert.match(identity.detail, /^0\/3 reference matches; \d+ replies refused with 409, the current card revision pinned$/);
+  assert.ok(!d.probes.some((p) => p.kind === STAGE_B_409), 'nothing excused');
+});
+
+test('Stage B: a node that publishes a new revision to refuse the repeat is excused a bounded number of times, then the run counts as not passed', async (t) => {
+  const { node, registry } = await verifiedWithLightCheck(t);
+  node.swapModel();
+  node.refuseRepeats(true, { newRevision: true });
+  for (let i = 1; i <= MAX_EXCUSED_409; i++) {
+    await runDueStageB(registry);
+    const d = await detail(registry);
+    assert.equal(d.state, 'verified', `run ${i}: stopped unjudged`);
+    assert.equal(d.probes.filter((p) => p.kind === STAGE_B_409).length, i, 'every excused 409 is recorded');
+    const retry = await stageBDue(registry) - Date.now();
+    assert.ok(retry <= SCHEDULE_DEFAULTS.staleRetryMs[1], `run ${i}: tried again within the hour (${retry} ms)`);
+  }
+  await runDueStageB(registry);
+  const d = await detail(registry);
+  assert.equal(d.state, 'community', 'the next one is judged: not passed');
+  assert.match(d.history.at(-1).reason, /^Stage B failed: echo-1: the card revision moved again during Stage B, after 3 such 409s since the last judged run/);
+  assert.ok(!d.history.some((h) => h.to_state === 'disputed'), 'no dispute: no reply was compared on a current card');
+  assert.match(d.probes.find((p) => p.stage === 'B' && p.kind === 'identity').detail, /^not judged: /);
+});
+
+test('Stage B: an honest card change during the run is excused, and the next run passes', async (t) => {
+  const node = await startFixtureNode();
+  const registry = await startRegistry({ allowPrivateTargets: true, stageBCapacity: FAST });
+  t.after(async () => { await node.close(); await registry.close(); });
+  await register(registry, node);
+  await capture(registry);
+  node.answer409(1, { newRevision: true });   // the node restarts just as the first identity prompt arrives
+  const stale = await admit(registry);
+  assert.equal(stale.status, 409);
+  assert.equal(stale.body.title, 'stale-card');
+  const excused = (await detail(registry)).probes.find((p) => p.kind === STAGE_B_409);
+  assert.match(excused.detail, /^409 with revision \S+ pinned; card re-indexed at \S+; Stage B runs again later$/);
+  assert.equal((await admit(registry)).body.state, 'verified');
+});
+
+// ---------------------------------------------------------------- follow-up review, point 5: card-only listings
+
+const ADMIN = 'adm1n';
+async function cardOnlyRegistry(t) {
+  const node = await startFixtureNode();
+  const registry = await startRegistry({ allowPrivateTargets: true, stageBCapacity: FAST, adminToken: ADMIN, schedule: { tickMs: 3_600_000 } });
+  t.after(async () => { await node.close(); await registry.close(); });
+  const admin = api(registry, ADMIN);
+  const registerWith = async (body) => {
+    const reg = await (await fetch(`${registry.origin}/v0/nodes`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ card_url: `${node.origin}/.well-known/open-node.json`, ...body }),
+    })).json();
+    node.setChallenge(reg.challenge.token);
+    return (await fetch(`${registry.origin}${reg.challenge.verify}`, { method: 'POST' })).json();
+  };
+  const access = (key) => admin.postJson(`/v0/admin/nodes/${FIXTURE}/customer-access`, { key });
+  return { node, registry, admin, registerWith, access, admitAs: () => admin.postJson(`/v0/nodes/${FIXTURE}/admit`) };
+}
+
+test('card-only listing: Stage B may pass it but it stays at community until customer access is recorded; then probes carry that access', async (t) => {
+  const { node, registry, admin, registerWith, access, admitAs } = await cardOnlyRegistry(t);
+  assert.equal((await registerWith({ probe_key: 'pk-dedicated' })).state, 'community');
+  assert.equal(node.lastAuth, 'Bearer pk-dedicated');
+  assert.equal((await admin.postJson('/v0/fingerprints/capture', { node_id: FIXTURE, offering_id: 'echo-1' })).status, 200);
+
+  let { body } = await admitAs();
+  assert.equal(body.stage_b.ok, true, 'the battery passed');
+  assert.equal(body.stage_b.held, CUSTOMER_ACCESS_NEEDED);
+  assert.equal(body.state, 'community', 'but on probes the operator could pick out');
+  assert.equal((await detail(registry)).probes.find((p) => p.kind === 'customer-access').detail, CUSTOMER_ACCESS_NEEDED);
+
+  // Only the admin records customer access; recording it does not promote on the earlier pass.
+  assert.equal((await api(registry).postJson(`/v0/admin/nodes/${FIXTURE}/customer-access`, { key: 'ck-bought' })).status, 401);
+  assert.equal((await access('')).status, 400);
+  const before = Date.now();
+  const recorded = await access('ck-bought');
+  assert.deepEqual(recorded.body, { node_id: FIXTURE, customer_access: true, state: 'community' });
+  const due = await stageBDue(registry) - before;
+  assert.ok(due <= SCHEDULE_DEFAULTS.stageBFirstMs[1] + 1000, 'a fresh Stage B, at a time the registry picks');
+
+  // From now on every probe carries the customer key instead of the dedicated one.
+  await fetch(`${registry.origin}/v0/nodes/${FIXTURE}/ping`, { method: 'PUT' });
+  assert.equal(node.lastAuth, 'Bearer ck-bought');
+  ({ body } = await admitAs());
+  assert.equal(body.state, 'verified');
+  assert.equal(body.stage_b.held, undefined);
+  assert.equal(node.lastAuth, 'Bearer ck-bought');
+
+  // The key is never published, and nothing public says customer access was recorded.
+  for (const path of [`/v0/nodes/${FIXTURE}`, '/v0/nodes', '/v0/offerings', '/v0/export', '/v0/health']) {
+    const text = await (await fetch(`${registry.origin}${path}`)).text();
+    assert.ok(!text.includes('ck-bought') && !text.includes('pk-dedicated'), `no key in ${path}`);
+    assert.ok(!text.includes('customer_access'), `no recorded flag in ${path}`);
+  }
+  assert.ok(!JSON.stringify(recorded.body).includes('ck-bought'), 'nor in the admin response');
+
+  // Removing it: a verified card-only listing goes back to community at once, and the dedicated key is used again.
+  assert.deepEqual((await access(null)).body, { node_id: FIXTURE, customer_access: false, state: 'community' });
+  assert.equal((await detail(registry)).history.at(-1).reason, CUSTOMER_ACCESS_NEEDED);
+  await fetch(`${registry.origin}/v0/nodes/${FIXTURE}/ping`, { method: 'PUT' });
+  assert.equal(node.lastAuth, 'Bearer pk-dedicated');
+});
+
+test('card-only listing: a verified node that hands over a probe key goes back to community until customer access is recorded', async (t) => {
+  const { node, registry, admin, registerWith, access, admitAs } = await cardOnlyRegistry(t);
+  await registerWith({});
+  await admin.postJson('/v0/fingerprints/capture', { node_id: FIXTURE, offering_id: 'echo-1' });
+  assert.equal((await admitAs()).body.state, 'verified', 'no probe key: probes look like any client');
+  assert.equal(node.lastAuth, null);
+
+  assert.equal((await registerWith({ probe_key: 'pk-later' })).state, 'community');
+  assert.equal((await detail(registry)).history.at(-1).reason, CUSTOMER_ACCESS_NEEDED);
+  assert.equal((await access('ck-bought')).body.state, 'community');
+  assert.equal((await admitAs()).body.state, 'verified');
+  assert.equal(node.lastAuth, 'Bearer ck-bought');
+  assert.equal((await api(registry, ADMIN).postJson('/v0/admin/nodes/io.example.nobody/customer-access', { key: 'x' })).status, 404);
 });
 
 // ---------------------------------------------------------------- 4.3a: the schedule
@@ -512,6 +819,22 @@ async function storeConformance(store) {
   await store.recordProbe('io.x.a', 'm', 'C', 'blind-409', false, 'y');
   await store.recordProbe('io.x.a', 'm', 'C', 'blind', true);
   assert.equal(await store.countProbes('io.x.a', 'blind-409', since), 2);
+
+  // Private Stage C rows (stagec.js): which nodes are owed a follow-up by now, soonest first.
+  await store.setSchedule('io.x.b', 'C:follow-up', { next_at: '2026-11-19T10:00:00.000Z', revision: 'r2' });
+  await store.setSchedule('io.x.a', 'C:follow-up', { next_at: '2026-11-19T09:00:00.000Z', revision: 'r1' });
+  await store.setSchedule('io.x.c', 'C:follow-up', { next_at: null });
+  await store.setSchedule('io.x.d', 'C:follow-up', { next_at: '2026-11-19T12:00:00.000Z' });
+  assert.deepEqual(await store.dueSchedules('C:follow-up', '2026-11-19T11:00:00.000Z'), ['io.x.a', 'io.x.b']);
+  assert.deepEqual(await store.dueSchedules('B', '2026-11-19T11:00:00.000Z'), []);
+
+  // Customer access (ONP-3 §4): recorded, replaced, removed.
+  assert.equal(await store.getCustomerKey('io.x.a'), null);
+  await store.setCustomerKey('io.x.a', 'ck-1');
+  await store.setCustomerKey('io.x.a', 'ck-2');
+  assert.equal(await store.getCustomerKey('io.x.a'), 'ck-2');
+  await store.setCustomerKey('io.x.a', null);
+  assert.equal(await store.getCustomerKey('io.x.a'), null);
   assert.equal(await store.countProbes('io.x.a', 'blind-409', new Date(Date.now() + 60_000).toISOString()), 0);
   await store.close();
 }
