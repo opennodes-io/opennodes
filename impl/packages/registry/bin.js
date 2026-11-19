@@ -14,7 +14,15 @@ const registry = await startRegistry({
   keyPath: process.env.ONP_REGISTRY_KEY ?? (persistent ? `${dbPath}.key.pem` : (dbPath.startsWith('postgres') ? 'onp-registry-key.pem' : null)),
   allowPrivateTargets: process.env.ONP_ALLOW_PRIVATE === '1', // dev only: permit localhost nodes
   registerPerHour: Number(process.env.ONP_REGISTER_PER_HOUR ?? 30),          // per client address
-  admitCooldownMs: Number(process.env.ONP_ADMIT_COOLDOWN_MS ?? 30 * 60_000),  // Stage B per node
+  // Probe prompts for Stages A, B and C: a private JSON file (impl/packages/registry/src/corpus.js
+  // has the format). Unset = the public built-in corpus, which nodes can recognise: dev only.
+  probeCorpus: process.env.ONP_PROBE_CORPUS || null,
+  // Stage A at least every 6 h and Stage B quarterly, on change and after reaching community
+  // (ONP-3 §4a). ONP_SCHEDULE=0 turns the timetable off; Stage B then runs only on admin request.
+  schedule: process.env.ONP_SCHEDULE === '0' ? null : {
+    ...(process.env.ONP_STAGE_A_MS ? { stageAIntervalMs: Number(process.env.ONP_STAGE_A_MS) } : {}),
+    ...(process.env.ONP_STAGE_B_MS ? { stageBIntervalMs: Number(process.env.ONP_STAGE_B_MS) } : {}),
+  },
   trustProxy: process.env.ONP_TRUST_PROXY === '1',                            // behind Caddy / a CDN
   adminToken: process.env.ONP_ADMIN_TOKEN ?? null,
   // Operator jurisdictions of the trusted pool (ONP-3 §5e): "EU,CA" unless set, e.g. "EU,CA,CH".
@@ -42,5 +50,6 @@ const registry = await startRegistry({
   } : null,
 });
 if (process.env.ONP_ALLOW_PRIVATE === '1') console.log('WARNING: SSRF guard disabled (ONP_ALLOW_PRIVATE=1) — dev only');
+if (!process.env.ONP_PROBE_CORPUS) console.log('WARNING: no private probe corpus (ONP_PROBE_CORPUS): probes use the public built-in prompts, which nodes can recognise — dev only');
 console.log(`opennodes registry listening at ${registry.origin}`);
 console.log(`health: ${registry.origin}/v0/health`);

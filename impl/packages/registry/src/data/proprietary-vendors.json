@@ -1,0 +1,12 @@
+{
+  "about": "Namespaces that may claim urn:proprietary:{vendor}:* artefacts (ONP-3 §6.3). A vendor listed here is admitted only from a node id inside one of its namespaces; any other vendor slug only from the node's own namespace (the id's second label). Registry admins add or replace entries with POST /v0/admin/vendors/{vendor}.",
+  "vendors": {
+    "openai": ["com.openai"],
+    "anthropic": ["com.anthropic"],
+    "google": ["com.google", "com.googleapis"],
+    "mistral": ["ai.mistral"],
+    "cohere": ["com.cohere", "ai.cohere"],
+    "deepseek": ["com.deepseek"],
+    "xai": ["ai.x"]
+  }
+}

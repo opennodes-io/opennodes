@@ -93,6 +93,9 @@ test('mixed node: chat is verified, speech and embeddings are labeled untested a
   assert.deepEqual(v.stage_a.results.filter((x) => x.kind === 'blind-invocation').map((x) => x.offeringId), ['echo-1']);
   assert.ok(!v.stage_a.results.some((x) => x.kind === 'tested-offerings'));
 
+  await fetch(`${registry.origin}/v0/fingerprints/capture`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ node_id: FIXTURE, offering_id: 'echo-1' }),
+  });
   const { status, body } = await r.admit();
   assert.equal(status, 200);
   assert.equal(body.state, 'verified');

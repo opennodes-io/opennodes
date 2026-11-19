@@ -44,12 +44,12 @@ test('a card claiming an id its host does not control is refused, and the real l
   assert.equal((await (await fetch(`${dev.origin}/v0/offerings`)).json()).offerings.length, 1, 'still listed');
 });
 
-test('registration rate limit and Stage B cooldown', async (t) => {
+test('registration rate limit; Stage B on request is admin-only', async (t) => {
   const limiter = makeRateLimiter(2, 60_000);
   assert.deepEqual([limiter('a'), limiter('a'), limiter('a'), limiter('b')], [true, true, false, true]);
 
   const node = await startFixtureNode();
-  const registry = await startRegistry({ allowPrivateTargets: true, registerPerHour: 3, admitCooldownMs: 60_000, stageBCapacity: { durationMs: 200, steps: [1] } });
+  const registry = await startRegistry({ allowPrivateTargets: true, registerPerHour: 3, adminToken: 'adm1n', stageBCapacity: { durationMs: 200, steps: [1] } });
   t.after(async () => { await node.close(); await registry.close(); });
   const cardUrl = `${node.origin}/.well-known/open-node.json`;
   const reg = await (await post(`${registry.origin}/v0/nodes`, { card_url: cardUrl })).json();     // 1
@@ -58,9 +58,12 @@ test('registration rate limit and Stage B cooldown', async (t) => {
   assert.equal((await post(`${registry.origin}/v0/nodes`, { card_url: cardUrl })).status, 202);     // 3
   assert.equal((await post(`${registry.origin}/v0/nodes`, { card_url: cardUrl })).status, 429);     // 4 -> limited
 
-  const first = await post(`${registry.origin}/v0/nodes/org.opennodes.fixture/admit`);
-  assert.equal(first.status, 200);
-  const second = await post(`${registry.origin}/v0/nodes/org.opennodes.fixture/admit`);
-  assert.equal(second.status, 429);
-  assert.match((await second.json()).detail, /next run allowed/);
+  // Nobody but the registry chooses when Stage B runs: the operator and third parties get 401.
+  const before = node.requestCount;
+  const anyone = await post(`${registry.origin}/v0/nodes/org.opennodes.fixture/admit`);
+  assert.equal(anyone.status, 401);
+  assert.equal(node.requestCount, before, 'nothing was sent to the node');
+  const admin = await fetch(`${registry.origin}/v0/nodes/org.opennodes.fixture/admit`, { method: 'POST', headers: { authorization: 'Bearer adm1n' } });
+  assert.equal(admin.status, 200);
+  assert.equal((await admin.json()).state, 'community', 'no identity reference yet, so not verified');
 });

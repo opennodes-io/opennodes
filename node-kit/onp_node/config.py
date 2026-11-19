@@ -48,6 +48,9 @@ keep = 50000
 # Ollama engines report size, quantization and tool/vision support themselves, vLLM the context
 # length it serves; add or correct anything here, keyed by the engine's model id. Claimed values:
 # the registry's measurements are shown next to them.
+# `artifact` names the public record of the weights, which registries check the model's identity
+# against: the kit writes ollama:<name> for Ollama models and hf:<org>/<repo> for Hugging Face ids.
+# Set it for a model you created under a local name, e.g. artifact = "hf:speakleash/Bielik-1.5B-v3.0-Instruct".
 # [model."Qwen/Qwen3-235B-A22B-FP8"]
 # params_b = 235
 # context_window = 32768
@@ -113,6 +116,46 @@ def _claimed(value):
     return {"p50": float(value), "basis": "claimed"}
 
 
+# model.artifact as the card schema allows it (ONP-2 §5).
+ARTIFACT = re.compile(r"^(hf:[^/\s]+/[^/\s]+|ollama:[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)?(:[A-Za-z0-9._-]+)?"
+                      r"|urn:proprietary:[a-z0-9-]+:[A-Za-z0-9._-]+)$")
+
+
+def artifact_for(node_id: str, model_id: str, info: dict) -> str:
+    """The public record of a model's weights, which registries test its identity against.
+
+    - `artifact` in the operator's [model."<id>"] table wins;
+    - an Ollama model is `ollama:<name>[:<tag>]` (the library record; the tag names the quantization),
+      and one Ollama pulled from Hugging Face (`hf.co/<org>/<repo>:<quant>`) is `hf:<org>/<repo>`;
+    - a Hugging Face id (`<org>/<repo>`, as vLLM and TGI serve them) is `hf:<org>/<repo>`;
+    - anything else has no public record the kit can name: `urn:proprietary:<own namespace>:<model>`,
+      which registries accept only from the operator's own namespace and can never verify.
+    """
+    if info.get("artifact"):
+        if not ARTIFACT.match(str(info["artifact"])):
+            raise SystemExit(f'[model."{model_id}"] artifact = "{info["artifact"]}" is not hf:<org>/<repo>, '
+                             f'ollama:<name>[:<tag>] or urn:proprietary:<vendor>:<model>')
+        return str(info["artifact"])
+    if info.get("engine") == "ollama":
+        if model_id.startswith("hf.co/") and model_id.count("/") >= 2:
+            org, repo = model_id.split("/")[1], model_id.split("/")[2].split(":")[0]
+            candidate = f"hf:{org}/{repo}"
+        else:
+            candidate = f"ollama:{model_id}"
+        if ARTIFACT.match(candidate):
+            return candidate
+    elif "/" in model_id and ARTIFACT.match(f"hf:{model_id}"):
+        return f"hf:{model_id}"
+    return f"urn:proprietary:{slug(node_id.split('.')[1])}:{slug(model_id)}"
+
+
+def unverifiable(card: dict) -> list[str]:
+    """Offerings whose artefact is the kit's own proprietary fallback: registries cannot check their
+    identity, so they can reach community but never verified."""
+    own = f"urn:proprietary:{slug(card['node']['id'].split('.')[1])}:"
+    return [o["binding"]["model_id"] for o in card.get("offerings", []) if o["model"]["artifact"].startswith(own)]
+
+
 def build_card(cfg: dict, model_ids: list[str], details: dict | None = None) -> dict:
     node, serving, pricing = cfg["node"], cfg.get("serving", {}), cfg.get("pricing", {})
     data_policy = cfg.get("data_policy", {})
@@ -122,8 +165,7 @@ def build_card(cfg: dict, model_ids: list[str], details: dict | None = None) -> 
         info = _model_info(cfg, details, model_id)
         model = {
             "name": model_id,
-            "artifact": f"hf:{model_id}" if "/" in model_id
-                        else f"urn:proprietary:{slug(node['id'].split('.')[1])}:{slug(model_id)}",
+            "artifact": artifact_for(node["id"], model_id, info),
             **{k: info[k] for k in ("family", "quantization") if info.get(k)},
             **({"params_b": float(info["params_b"])} if info.get("params_b") else {}),
         }

@@ -29,7 +29,7 @@ const EXTRA_OFFERINGS = {
   },
 };
 
-function buildCard(origin, revision, claimContextTokens = 8192, lineage = null, kinds = ['chat']) {
+function buildCard(origin, revision, claimContextTokens = 8192, lineage = null, kinds = ['chat'], artifact = 'urn:proprietary:opennodes:echo-1') {
   return {
     onp: '0.1',
     revision,
@@ -47,7 +47,7 @@ function buildCard(origin, revision, claimContextTokens = 8192, lineage = null, 
     offerings: kinds.map((kind) => kind === 'chat' ? {
       offering_id: 'echo-1',
       modality: 'text',
-      model: { name: 'Echo 1', family: 'echo', artifact: 'urn:proprietary:opennodes:echo-1', params_b: 0.001,
+      model: { name: 'Echo 1', family: 'echo', artifact, params_b: 0.001,
         ...(lineage ? { lineage_origins: lineage } : {}) },
       serving: {
         context_window: claimContextTokens,
@@ -84,9 +84,14 @@ export async function startFixtureNode({
   impersonate = false,               // serve different outputs under the same artifact claim
   lineage = null,                    // model.lineage_origins to declare, e.g. ['FR'] (null = undeclared)
   offerings = ['chat'],              // offerings on the card, in order: 'chat', 'embeddings', 'speech'
+  artifact = undefined,              // the chat offering's model.artifact (default urn:proprietary:opennodes:echo-1)
+  badSignature = false,              // sign the card with a key the JWKS does not publish
 } = {}) {
   const keys = generateKeypair();
-  const state = { challenges: new Map(), card: null, origin: null, requests: 0 };
+  const strangerKey = generateKeypair().privateKey;
+  const state = { challenges: new Map(), card: null, origin: null, requests: 0, prompts: [], conflicts: 0, badSignature };
+  const sign = (card) => signCard(card, state.badSignature ? strangerKey : keys.privateKey);
+  const build = (revision, kinds = offerings) => buildCard(state.origin, revision, claimContextTokens ?? realContextTokens, lineage, kinds, artifact);
   const streamedReceipts = new Map();   // receipt_id -> JWS, for streams (receipt by URL)
 
   // request_hash = sha256 over the raw request body bytes as received (ONP-5 §5).
@@ -142,17 +147,25 @@ export async function startFixtureNode({
       if (pinned && pinned !== state.card.revision) {
         return problem(res, 409, 'price_changed', `pinned ${pinned}, current ${state.card.revision}`);
       }
+      if (state.conflicts > 0) {   // a node refusing what it takes for a probe
+        state.conflicts--;
+        // With newRevision, it first publishes a new card, so the 409 looks like a real change.
+        if (state.conflictsBump) state.card = sign(build(nextRevision()));
+        return problem(res, 409, 'price_changed', `pinned ${pinned}, current ${state.card.revision}`);
+      }
 
       state.requests++;
       state.lastAuth = req.headers.authorization ?? null;
       const prompt = (body.messages ?? []).map((m) => typeof m.content === 'string' ? m.content : '').join('\n');
+      state.prompts.push(prompt);
       // Like real engines (Ollama's num_ctx), an over-long prompt loses its *front*: the model only
       // sees the last realContextTokens, and usage reports the tokens it actually read.
       const visible = prompt.slice(-realContextTokens * 4);
       const prefix = impersonate ? 'mimic:' : 'echo:';
-      const magic = visible.match(/magic number is (\d+)/);
+      // The context probes hide an 8-digit number in a long text and ask for it.
+      const magic = visible.length > 2000 ? visible.match(/(?:^|[^0-9])(\d{8})(?:[^0-9]|$)/) : null;
       const reply = magic
-        ? `${prefix} the magic number is ${magic[1]}`
+        ? `${prefix} the number is ${magic[1]}`
         : `${prefix} ${visible.slice(0, 500)}`;
       const usage = {
         prompt_tokens: approxTokens(visible),
@@ -191,10 +204,12 @@ export async function startFixtureNode({
 
   const actualPort = await listen(app, port, host);
   state.origin = `http://${host}:${actualPort}`;
-  const unsigned = buildCard(state.origin, new Date().toISOString(), claimContextTokens ?? realContextTokens, lineage, offerings);
+  const unsigned = build(new Date().toISOString());
   const errors = validateCard(unsigned);
   if (errors.length) throw new Error('fixture card invalid: ' + errors.join('; '));
-  state.card = signCard(unsigned, keys.privateKey);
+  state.card = sign(unsigned);
+  let revisions = 0;
+  const nextRevision = () => new Date(Date.now() + 1000 * ++revisions).toISOString();
 
   return {
     port: actualPort,
@@ -203,20 +218,39 @@ export async function startFixtureNode({
     get card() { return state.card; },
     get requestCount() { return state.requests; },
     get lastAuth() { return state.lastAuth ?? null; },
+    /** Every chat prompt received, in order (the registry's probes included). */
+    get prompts() { return state.prompts; },
     setChallenge: (token) => state.challenges.set(token, true),
     /** Publish a new revision (e.g. price change) — used to test 409 price_changed. */
     reprice: (outputPerMtok) => {
-      const next = buildCard(state.origin, new Date(Date.now() + 1000).toISOString(), claimContextTokens ?? realContextTokens, lineage, offerings);
+      const next = build(nextRevision());
       next.offerings[0].pricing.output_per_mtok = outputPerMtok;
-      state.card = signCard(next, keys.privateKey);
+      state.card = sign(next);
       return state.card.revision;
     },
     /** Publish a new revision with these offerings, e.g. ['speech'] to drop chat. */
     setOfferings: (kinds) => {
       offerings = kinds;
-      state.card = signCard(buildCard(state.origin, new Date(Date.now() + 1000).toISOString(), claimContextTokens ?? realContextTokens, lineage, kinds), keys.privateKey);
+      state.card = sign(build(nextRevision(), kinds));
       return state.card.revision;
     },
+    /** Publish a new revision whose chat offering declares other serving details (a model change). */
+    setContextWindow: (tokens) => {
+      claimContextTokens = tokens;
+      state.card = sign(build(nextRevision()));
+      return state.card.revision;
+    },
+    /** Publish a new revision signed with a key the JWKS does not publish (or the right key again). */
+    setBadSignature: (bad = true) => {
+      state.badSignature = bad;
+      state.card = sign(build(nextRevision()));
+      return state.card.revision;
+    },
+    /**
+     * Answer the next `n` chat requests with 409 even when the current revision is pinned; with
+     * `newRevision`, publish a new card revision just before each of them.
+     */
+    answer409: (n = 1, { newRevision = false } = {}) => { state.conflicts = n; state.conflictsBump = newRevision; },
     close: () => closeApp(app),
   };
 }

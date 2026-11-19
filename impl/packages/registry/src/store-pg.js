@@ -43,6 +43,14 @@ const SCHEMA = `
     node_id TEXT NOT NULL, week TEXT NOT NULL, surface TEXT NOT NULL, n INTEGER NOT NULL,
     PRIMARY KEY (node_id, week, surface)
   );
+  CREATE TABLE IF NOT EXISTS schedule (
+    node_id TEXT NOT NULL, stage TEXT NOT NULL, last_at TEXT, next_at TEXT, ok INTEGER,
+    revision TEXT, digest TEXT, pending_digest TEXT, failures INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (node_id, stage)
+  );
+  CREATE TABLE IF NOT EXISTS vendor_namespaces (
+    vendor TEXT PRIMARY KEY, namespaces TEXT NOT NULL, updated_at TEXT NOT NULL
+  );
 `;
 
 const NODE_FLAGS = ['institutional', 'founding'];   // same list as store.js
@@ -88,6 +96,10 @@ export async function createPgStore({ connectionString, pool } = {}) {
       const rows = await q('SELECT raw FROM card_revisions WHERE node_id = $1 ORDER BY revision DESC LIMIT 1', [nodeId]);
       return rows[0] ? JSON.parse(rows[0].raw) : null;
     },
+    async latestRevision(nodeId) {
+      const row = (await q('SELECT revision, sig_ok, fetched_at FROM card_revisions WHERE node_id = $1 ORDER BY revision DESC LIMIT 1', [nodeId]))[0];
+      return row ? { revision: row.revision, sig_ok: Boolean(Number(row.sig_ok)), fetched_at: row.fetched_at } : null;
+    },
     async setPendingProbeKey(nodeId, key) {
       await q(`INSERT INTO probe_keys (node_id, secret, pending, updated_at) VALUES ($1, NULL, $2, $3)
         ON CONFLICT (node_id) DO UPDATE SET pending=excluded.pending, updated_at=excluded.updated_at`, [nodeId, key, now()]);
@@ -115,6 +127,9 @@ export async function createPgStore({ connectionString, pool } = {}) {
     async probesFor(nodeId) {
       return q('SELECT * FROM probes WHERE node_id = $1 ORDER BY id DESC LIMIT 100', [nodeId]);
     },
+    async countProbes(nodeId, kind, since) {
+      return Number((await q('SELECT COUNT(*) AS n FROM probes WHERE node_id = $1 AND kind = $2 AND at > $3', [nodeId, kind, since]))[0].n);
+    },
     async transitionsFor(nodeId) {
       return q('SELECT * FROM transitions WHERE node_id = $1 ORDER BY id ASC', [nodeId]);
     },
@@ -132,6 +147,31 @@ export async function createPgStore({ connectionString, pool } = {}) {
     },
     async getFingerprints(artifact) {
       return q('SELECT prompt, expected_hash FROM fingerprints WHERE artifact = $1', [artifact]);
+    },
+    async clearFingerprints(artifact) {
+      await q('DELETE FROM fingerprints WHERE artifact = $1', [artifact]);
+    },
+    async getSchedule(nodeId, stage) {
+      const row = (await q('SELECT * FROM schedule WHERE node_id = $1 AND stage = $2', [nodeId, stage]))[0];
+      return row ? { ...row, ok: row.ok == null ? null : Boolean(Number(row.ok)), failures: Number(row.failures ?? 0) } : null;
+    },
+    async setSchedule(nodeId, stage, s) {
+      await q(`INSERT INTO schedule (node_id, stage, last_at, next_at, ok, revision, digest, pending_digest, failures)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (node_id, stage) DO UPDATE SET last_at=excluded.last_at, next_at=excluded.next_at, ok=excluded.ok,
+          revision=excluded.revision, digest=excluded.digest, pending_digest=excluded.pending_digest, failures=excluded.failures`,
+        [nodeId, stage, s.last_at ?? null, s.next_at ?? null, s.ok == null ? null : (s.ok ? 1 : 0),
+          s.revision ?? null, s.digest ?? null, s.pending_digest ?? null, s.failures ?? 0]);
+    },
+    async vendorNamespaces() {
+      return (await q('SELECT vendor, namespaces FROM vendor_namespaces ORDER BY vendor'))
+        .map((r) => ({ vendor: r.vendor, namespaces: JSON.parse(r.namespaces) }));
+    },
+    async setVendorNamespaces(vendor, namespaces) {
+      if (namespaces == null) await q('DELETE FROM vendor_namespaces WHERE vendor = $1', [vendor]);
+      else await q(`INSERT INTO vendor_namespaces (vendor, namespaces, updated_at) VALUES ($1, $2, $3)
+        ON CONFLICT (vendor) DO UPDATE SET namespaces=excluded.namespaces, updated_at=excluded.updated_at`,
+        [vendor, JSON.stringify(namespaces), now()]);
     },
     async setObservation(nodeId, offeringId, key, value) {
       await q(`INSERT INTO observations (node_id, offering_id, key, value, at) VALUES ($1, $2, $3, $4, $5)

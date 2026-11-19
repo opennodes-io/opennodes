@@ -2,6 +2,7 @@
 // Imported records enter as unverified, unsigned, source='import', and are
 // excluded from verified tiers until claimed by their operator.
 import { validateCard } from '@opennodes/core';
+import { ARTIFACT } from './vendors.js';
 
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^[^a-z0-9]+/, '').slice(0, 100);
 const vendorSlug = (s) => slug(s).replace(/[._]/g, '-');
@@ -299,7 +300,8 @@ export async function importOllamaLibrary(store, entries) {
       model: {
         name: e.name,
         family: vendorSlug(e.name.split(/[.:0-9]/)[0] || e.name),
-        artifact: `urn:proprietary:ollama:${vendorSlug(e.name)}`,
+        // Library models are open weights with a public record: ollama:{name} (ONP-2 §5), not a proprietary URN.
+        artifact: ARTIFACT.test(`ollama:${e.name}`) ? `ollama:${e.name}` : `urn:proprietary:ollama:${vendorSlug(e.name)}`,
         ...(paramsCandidates.length ? { params_b: Math.max(...paramsCandidates) } : {}),
         ...(e.description ? { description: String(e.description).slice(0, 500) } : {}),
       },

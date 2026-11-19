@@ -67,6 +67,22 @@ languages = ["en", "de", { lang = "pl", grade = "native" }]
 expected_tps = 60                        # claimed; the registry's measurements are shown beside it
 ```
 
+**Name the weights.** Each offering's `model.artifact` is the public record registries check the
+model's identity against before they grant the verified tier. The kit writes `ollama:<name>` for an
+Ollama model (`ollama:llama3.2:1b`; the tag names the quantization), `hf:<org>/<repo>` for a
+Hugging Face id or an Ollama pull from `hf.co/…`. For a model you created under a local name, name
+the weights yourself:
+
+```toml
+[model."bielik-1.5b-v3.0-instruct:latest"]
+artifact = "ollama:SpeakLeash/bielik-1.5b-v3.0-instruct:Q8_0"
+```
+
+A bare model id on another engine has no public record the kit can name, so it falls back to
+`urn:proprietary:<your namespace>:<model>`: registries accept that only from your own namespace and
+can never verify it, and `serve` warns about it. Stage B runs on the registry's schedule, not on
+request, and needs a signed card (the kit signs it) and identity references the registry captures.
+
 ## Card-only listing (you already run an OpenAI-compatible API)
 
 If you operate a production API and won't put a proxy in its path, list it with a static card instead. The kit signs the card once; you host two JSON files on your domain; the registry probes your real API with a key you provide.

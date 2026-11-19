@@ -26,6 +26,7 @@ async function network(t, { lineage = null, offerings = ['chat'] } = {}) {
   const reg = await (await post('/v0/nodes', { card_url: `${node.origin}/.well-known/open-node.json` })).json();
   node.setChallenge(reg.challenge.token);
   await post(reg.challenge.verify);
+  await post('/v0/fingerprints/capture', { node_id: FIXTURE, offering_id: 'echo-1' });
   assert.equal((await (await post(`/v0/nodes/${FIXTURE}/admit`)).json()).state, 'verified');
   return { node, registry, sent: recordUpstream(t, node.origin) };
 }

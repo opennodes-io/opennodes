@@ -49,6 +49,7 @@ async function network(t, { lineage = ['FR'], admit = true, registryOptions = {}
   const post = (path, body) => fetch(`${registry.origin}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
   await post('/v0/import/models-dev', { catalog: CATALOG });
   await registerAndVerify(registry, node);
+  await post('/v0/fingerprints/capture', { node_id: FIXTURE, offering_id: 'echo-1' });   // identity references: no verified tier without them
   if (admit) assert.equal((await (await post(`/v0/nodes/${FIXTURE}/admit`)).json()).state, 'verified');
   const get = async (path) => (await fetch(`${registry.origin}${path}`)).json();
   const tool = async (name, args) => (await (await fetch(`${registry.origin}/mcp`, {

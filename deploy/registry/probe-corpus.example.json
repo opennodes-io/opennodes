@@ -1,0 +1,20 @@
+{
+  "_about": "FORMAT EXAMPLE ONLY. A registry's probe corpus must stay private: copy this file to data/probe-corpus.json on the server, replace every entry with your own text, and never publish or commit it. Nodes that know the prompts can recognise probes. chat: at least 5 short, ordinary requests (Stage A, the capacity ramp, Stage C blind probes); a few hundred varied ones are better. identity: prompts for identity references, answered at temperature 0 (defaults to chat). filler: long passages of plain prose for the context probes' haystack. needles: facts hidden in the haystack; {n} becomes an 8-digit number, and the question asks for it.",
+  "chat": [
+    "Replace with an ordinary short request a customer might send.",
+    "Replace with another ordinary short request, on a different subject.",
+    "Replace with a third request: a question, an instruction, a rewrite.",
+    "Replace with a fourth request.",
+    "Replace with a fifth request."
+  ],
+  "identity": [
+    "Replace with a prompt that has one short, stable answer.",
+    "Replace with another such prompt."
+  ],
+  "filler": [
+    "Replace with a long passage of plain prose (several hundred words), on any everyday subject, with no numbers of eight digits in it."
+  ],
+  "needles": [
+    { "fact": "Replace with a sentence that states the number {n}.", "question": "Replace with a question that asks for that number and nothing else." }
+  ]
+}

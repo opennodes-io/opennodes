@@ -1,6 +1,32 @@
 # ONP Draft 0.1 — known issues and what happens to them
 
-Two independent technical reviews of Draft 0.1 (October 2026) raised the points below. This page records each one and its outcome: **fixed** in the Draft 0.1 errata of 2026-10-23, **planned** for Draft 0.2, or **not adopted** with the reason. New reports are welcome as [GitHub issues](https://github.com/opennodes-io/opennodes/issues).
+Three independent reviews of Draft 0.1 raised the points below: two technical reviews in October 2026, and a review of node validation and trust by Two Minds (Mark Lindley) on 18 November 2026. This page records each point and its outcome: **fixed** (in the errata of 2026-10-23 or in a later revision), **planned** for Draft 0.2, **open**, or **not adopted** with the reason. New reports are welcome as [GitHub issues](https://github.com/opennodes-io/opennodes/issues).
+
+## Two Minds review (2026-11-18): node validation and trust
+
+The review found that "verified" could not yet carry personal data: the admission battery could be timed, avoided or cleared, and the Ollama router treated any LAN peer as the user's own network. Its "Now" items for the Ollama router (section 4.11) are fixed in revision 10, and those for the registry and the Node Kit (sections 4.2, 4.3, 4.3a, 4.6) in revision 11 ([CHANGES](CHANGES.md)); the rest is listed with its status. Section numbers are the review's.
+
+| Finding | Status | Where |
+|---|---|---|
+| 4.11 Ollama router: CORS `*` and no authentication, so any web page could add a "LAN" peer, read receipts and spend keys | **Fixed** (rev. 10): no wildcard CORS; the router API needs a token; model routes only for local Host and Origin; `--public-bind` needs a token | ONP-3 §5b |
+| 4.11 Ollama router: mDNS on by default, and any LAN peer, with any advertised origin, counted as the user's own network for private, EU and sensitive routing | **Fixed** (rev. 10): mDNS opt-in; a LAN peer is the user's network only when its card is signed by a pinned key and it answers at that card's origin; a missing data policy is unknown | ONP-3 §5b, §5e |
+| 4.3a Stage B ran only on an unauthenticated `/admit`: the operator chose the time, and anyone could trigger it against any node | **Fixed** (rev. 11): `/admit` is admin-only; Stage B runs on the registry's own, unpublished schedule | ONP-3 §4, §4a |
+| 4.3a Scheduled Stage A (6 h) and Stage B (quarterly) were not implemented | **Fixed** (rev. 11): Stage A at least every 6 h and on every revision; Stage B after `community`, on change, and at a random time 1–91 days after a pass | ONP-3 §4a re-verification |
+| 4.3 A missing identity reference counted as a pass | **Fixed** (rev. 11): identity unverified, no `verified` | ONP-3 §4a.4 |
+| 4.3 Identity prompts were fixed and public | **Fixed** (rev. 11): references from a private corpus, a random subset per run; old references ignored | ONP-3 §4a |
+| 4.3 The Node Kit named open-weight models `urn:proprietary:…`, so they never had a reference | **Fixed** (rev. 11): `ollama:{name}` / `hf:{org}/{repo}`, operator override, warning for the fallback | ONP-2 §5; Node Kit |
+| 4.3 The vendor-namespace rule was specified but not enforced | **Fixed** (rev. 11): vendor table, Stage A `artifact-namespace` | ONP-3 §6.3 |
+| 4.3 A disputed node cleared itself by registering again (demo node, 4 Oct) | **Fixed** (rev. 11): a dispute ends only with a recorded resolution | ONP-3 §3, §4 |
+| 4.2 An unsigned card could reach `verified` | **Fixed** (rev. 11): refused at Stage B; a `verified` node with a failing re-fetched card is demoted | ONP-2 §8 |
+| 4.6 Blind probes used fixed text ("ONP continuous probe …"), as did Stage A and the capacity ramp | **Fixed** (rev. 11): every probe prompt from the private corpus | ONP-3 §4a |
+| 4.6 A `409` to a blind probe was skipped unrecorded; blind failures never demoted | **Fixed** (rev. 11): every `409` recorded, excused only after a real revision change and at most 3 a day; repeated failures cost a tier | ONP-3 §4a.9 |
+| 4.3 Exact-hash comparison of short replies separates models and quantisations poorly | **Planned** (Draft 0.2): log-probability or distribution comparison, references per quantisation, thresholds and an appeal step | ONP-3 §4a.4 |
+| 4.6 Other ways to spot a probe: the dedicated probe key of card-only listings, one source address | **Open**: the registry buying access as a customer, varied networks | — |
+| 4.6 Blind probes check no identity; receipt sampling is not implemented | **Open**: identity checks inside blind probes, receipt sampling with local token counts | ONP-3 §4a.9 marks receipt sampling as not implemented |
+| 4.2 No key rotation or revocation; plaintext key file; clients cache the JWKS for the process | **Open** | — |
+| 4.4 Context probes: repetitive filler, a deterministic number, self-reported token counts, 90% maximum | **Partly fixed** (rev. 11): haystack and question from the private corpus, a random number per probe. Self-reported counts and the 90% maximum remain | ONP-3 §4a.5 |
+| 4.11 Gateway: no Host or Origin check on loopback; failover multiplies disclosure | **Open** | — |
+| 4.5, 4.7–4.10, 4.12, 5 (load ramp and rank weighting, location evidence, receipts, registry trust root, supply chain, EU residency) | **Open**: outside revisions 10 and 11 | — |
 
 ## Fixed in the errata (2026-10-23)
 

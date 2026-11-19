@@ -10,8 +10,9 @@ import { startRegistry } from '@opennodes/registry';
 import { createSqliteStore } from '@opennodes/registry/src/store.js';
 import { createPgStore } from '@opennodes/registry/src/store-pg.js';
 import { isoWeek, weekStart, recentWeeks, nodeIdsIn, makeRequestCounter } from '@opennodes/registry/src/counts.js';
-import { CONTEXT_FRACTIONS, CAPACITY_RAMP, FINGERPRINT_PROMPTS } from '@opennodes/registry/src/stageb.js';
-import { LIVENESS_INTERVAL_MS, BLIND_INTERVAL_MS, JITTER } from '@opennodes/registry/src/stagec.js';
+import { CONTEXT_FRACTIONS, CAPACITY_RAMP, IDENTITY_SAMPLE, IDENTITY_CAPTURE } from '@opennodes/registry/src/stageb.js';
+import { LIVENESS_INTERVAL_MS, BLIND_INTERVAL_MS, JITTER, BLIND_FAIL_THRESHOLD, MAX_EXCUSED_409_PER_DAY } from '@opennodes/registry/src/stagec.js';
+import { SCHEDULE_DEFAULTS } from '@opennodes/registry/src/schedule.js';
 
 const FIXTURE = 'org.opennodes.fixture';
 const ACME = 'import.modelsdev.acmecloud';
@@ -230,13 +231,15 @@ test('probe load: Stage A sends one chat call per chat offering; Stage B 3 + 1 +
 
   let before = node.requestCount;
   assert.equal((await api.post(`/v0/nodes/${FIXTURE}/admit`)).status, 200);
-  assert.equal(node.requestCount - before, 1 + CONTEXT_FRACTIONS.length + ramp, 'no reference fingerprints: battery skipped');
+  assert.equal(node.requestCount - before, 1 + CONTEXT_FRACTIONS.length + ramp, 'no identity reference: nothing to compare, the rest is measured');
 
+  before = node.requestCount;
   await api.post('/v0/fingerprints/capture', { node_id: FIXTURE, offering_id: 'echo-1' });
+  assert.equal(node.requestCount - before, IDENTITY_CAPTURE, 'a capture asks the known-good deployment once per reference');
   before = node.requestCount;
   assert.equal((await api.post(`/v0/nodes/${FIXTURE}/admit`)).status, 200);
-  assert.equal(node.requestCount - before, FINGERPRINT_PROMPTS.length + 1 + CONTEXT_FRACTIONS.length + ramp);
-  assert.equal(FINGERPRINT_PROMPTS.length + 1 + CONTEXT_FRACTIONS.length + ramp, 20);
+  assert.equal(node.requestCount - before, IDENTITY_SAMPLE + 1 + CONTEXT_FRACTIONS.length + ramp);
+  assert.equal(IDENTITY_SAMPLE + 1 + CONTEXT_FRACTIONS.length + ramp, 20);
 });
 
 test('the qualification page states the probe load the code uses', () => {
@@ -251,14 +254,22 @@ test('the qualification page states the probe load the code uses', () => {
   has(`about ${Math.round(CONTEXT_FRACTIONS.reduce((a, b) => a + b, 0) * 100) / 100} times the window`);
   has(`${steps[0]}, ${steps[1]} and ${steps[2]} parallel requests (${ramp} calls`);
   has(`${durationMs / 1000}-second budget`);
-  has(`${FINGERPRINT_PROMPTS.length} fixed prompts`);
-  has(`up to ${FINGERPRINT_PROMPTS.length + 1 + CONTEXT_FRACTIONS.length + ramp} chat completions`);
+  has(`${IDENTITY_SAMPLE} prompts drawn at random from the ${IDENTITY_CAPTURE} reference prompts`);
+  has(`up to ${IDENTITY_SAMPLE + 1 + CONTEXT_FRACTIONS.length + ramp} chat completions`);
   const live = LIVENESS_INTERVAL_MS / 60_000;
   has(`every ${live}&nbsp;minutes on average (each gap is random, ${live * JITTER[0]} to ${live * JITTER[1]}&nbsp;minutes)`);
   assert.equal(BLIND_INTERVAL_MS, 3_600_000);
   has(`per hour on average (${60 * JITTER[0]} to ${60 * JITTER[1]}&nbsp;minutes apart`);
   has(`about ${(24 * 60) / live} health checks and ${(24 * 3_600_000) / BLIND_INTERVAL_MS} chat calls a day`);
-  assert.doesNotMatch(html, /Re-run every 6/, 'Stage A has no timed re-run');
+  // The schedule (schedule.js) and the Stage C rules, as the page states them.
+  const { stageAIntervalMs, stageBIntervalMs, stageBFirstMs, stageBChangeMs, stageBRetryMs } = SCHEDULE_DEFAULTS;
+  has(`at least every ${stageAIntervalMs / 3_600_000}&nbsp;hours`);
+  has(`between ${stageBFirstMs[0] / 3_600_000} and ${stageBFirstMs[1] / 3_600_000}&nbsp;hours after your node reaches`);
+  has(`within ${stageBChangeMs[1] / 3_600_000}&nbsp;hour of a change`);
+  has(`again after ${stageBRetryMs / 86_400_000}&nbsp;days`);
+  has(`at most every ${stageBIntervalMs / 86_400_000}&nbsp;days`);
+  has(`${BLIND_FAIL_THRESHOLD} blind calls in a row`);
+  has(`${MAX_EXCUSED_409_PER_DAY} a day`);
 });
 
 test('a database from before the founding mark gains the column (sqlite and postgres)', async (t) => {
