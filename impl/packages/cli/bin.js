@@ -31,7 +31,7 @@ const [cmd, ...args] = process.argv.slice(2);
 // Default: the hosted OpenNodes registry. Point ONP_REGISTRY at http://127.0.0.1:4300 for a local one.
 const registry = process.env.ONP_REGISTRY ?? 'https://registry.opennodes.io';
 // Personal data: --sensitive or ONP_SENSITIVE=1 keeps every request in the trusted pool
-// (operators in ONP_TRUSTED_JURISDICTIONS, default EU,CA; see ONP-3 §5e).
+// (operators that declare a country in ONP_TRUSTED_JURISDICTIONS, default EU,CA, with a passing server check; ONP-3 §5e).
 const sensitive = args.includes('--sensitive') || ['1', 'true', 'yes'].includes(String(process.env.ONP_SENSITIVE ?? '').toLowerCase());
 const client = new OnpClient({ registry, policy: { sensitive } });
 
@@ -53,7 +53,7 @@ try {
     case 'search': {
       const params = {};
       for (const key of ['modality', 'family', 'min_context', 'supports', 'max_input_price', 'scheme', 'tier', 'lang', 'q', 'sort',
-        'jurisdiction', 'region', 'exclude_lineage', 'lineage', 'retention', 'no_training', 'trust']) {
+        'jurisdiction', 'server_check', 'region', 'exclude_lineage', 'lineage', 'retention', 'no_training', 'trust']) {
         const v = flag(key);
         if (v !== undefined) params[key] = v;
       }
@@ -169,7 +169,7 @@ try {
       console.log(`gateway API (/gateway/receipts, /gateway/advice, /gateway/reputation) needs "authorization: Bearer <token>"; the token is ${api.where}`);
       console.log(`point Cursor / VS Code / Open WebUI base URL here`);
       console.log(sensitive
-        ? `sensitive: every request stays in the trusted pool (${gw.trusted.jurisdictions} operators, declared lineage without CN, verified+, no retention, no training)`
+        ? `sensitive: every request stays in the trusted pool (${gw.trusted.jurisdictions}-declared operators with a passing server check, declared lineage without CN, verified+, declared no retention and no training)`
         : 'sensitive requests: send header "onp-sensitive: 1" or use model onp/auto-sensitive (trusted pool only); --sensitive marks every request');
       console.log({
         open: `PII masking (${gw.pii.detector}): personal data is replaced by placeholders before an open-pool offering, and put back in the answer`,
@@ -221,7 +221,7 @@ try {
     default:
       console.log(`onp — OpenNodes client (MVP)
 usage:
-  onp search [--modality text] [--tier community] [--lang en:strong] [--sort price|rank] [--trust trusted] [--retention none] [--no_training true] [--lineage declared] ...
+  onp search [--modality text] [--tier community] [--lang en:strong] [--sort price|rank] [--jurisdiction eea] [--server_check passed] [--trust trusted] [--retention none] [--no_training true] [--lineage declared] ...
   onp estimate --offering <node_id>/<offering_id> [--in 1000] [--out 500]
   onp invoke --offering <node_id>/<offering_id> [--prompt "..."] [--sensitive] [--mask-pii off|open|all] [--pii-service <url>] [--pii-llm <model>[@<url>]]
   onp card <node-origin-url>
@@ -235,11 +235,19 @@ usage:
   onp mcp [--print-config] [--sensitive]    # stdio MCP server for Cursor / VS Code / Claude Desktop
   onp health
 --sensitive (or ONP_SENSITIVE=1): the requests carry personal data, so only the trusted pool is used
+--jurisdiction eea|DE,FI (and the gateway's onp/auto-eu, onp/auto-<country>): operators that DECLARE a country there in their
+     signed card, or, for unclaimed imported listings, that the registry infers. A declaration, not proof of where requests
+     are processed: the registry's server check only drops a server front it located outside. Each result's
+     jurisdiction.evidence says what was checked, e.g. "FR operator (EEA, declared), server front checked (FR)".
+--server_check passed: only offerings whose server front the registry located in the declared country or region
+     (behind a CDN: every origin address the card declares). A network tripwire, not proof: a front that forwards
+     requests elsewhere passes it. The trusted pool requires it.
+--retention / --no_training: the operator's declared data policy; it cannot be verified by probing.
 --mask-pii (or ONP_MASK_PII): open (default) masks personal data before open-pool offerings and puts it back in the answer;
      all: before every hosted offering; off: never. Add a local Presidio service (--pii-service, ONP_PII_SERVICE)
      or a local model (--pii-llm, ONP_PII_LLM) to find names and addresses. Masking does not make a request trusted.
 env: ONP_REGISTRY (default https://registry.opennodes.io; a local registry runs at http://127.0.0.1:4300),
-     ONP_TRUSTED_JURISDICTIONS (operators of the trusted pool; default EU,CA)`);
+     ONP_TRUSTED_JURISDICTIONS (operators of the trusted pool, by declared country; default EU,CA)`);
   }
 } catch (err) {
   console.error('error:', err.message);

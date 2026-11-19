@@ -143,7 +143,7 @@
 
 <header class="hero"><div class="wrap">
   <h1>AI inference, measured — not just&nbsp;claimed</h1>
-  <p class="lede">OpenNodes is an open registry of AI inference endpoints, from your own Ollama box to sovereign EU clouds. It checks what each one really serves: which model, how much context actually works, how fast it answers, where it runs. <strong>Your prompts go straight to the endpoint you pick — OpenNodes is never in the data path.</strong></p>
+  <p class="lede">OpenNodes is an open registry of AI inference endpoints, from your own Ollama box to sovereign EU clouds. It checks what each one really serves: which model, how much context actually works, how fast it answers, and where its server answers from. <strong>Your prompts go straight to the endpoint you pick — OpenNodes is never in the data path.</strong></p>
 
   <div class="actions">
     <a class="btn primary" href="https://registry.opennodes.io/">Open the registry</a>
@@ -161,7 +161,7 @@
       <tbody>
         <tr><th scope="row">Model</th><td class="claim" data-label="Claimed">bielik-1.5b-v3.0-instruct</td><td data-label="Measured"><span class="ok" aria-hidden="true">✓</span> serves that model (identity check)</td></tr>
         <tr><th scope="row">Context window</th><td class="claim" data-label="Claimed">8,192 tokens</td><td data-label="Measured"><span class="ok" aria-hidden="true">✓</span> <span data-k="ctx">8,192 tokens held in a real test</span></td></tr>
-        <tr><th scope="row">Server</th><td class="claim" data-label="Claimed">Finland</td><td data-label="Measured"><span class="ok" aria-hidden="true">✓</span> <span data-k="loc">in Finland, Hetzner network</span></td></tr>
+        <tr><th scope="row">Server</th><td class="claim" data-label="Claimed">Finland (declared)</td><td data-label="Measured"><span class="ok" aria-hidden="true">✓</span> <span data-k="loc">server front located in Finland, Hetzner network</span></td></tr>
         <tr><th scope="row">Speed</th><td class="claim" data-label="Claimed">not claimed</td><td data-label="Measured"><span data-k="speed">2.2 s to first token · 35 tokens/s</span></td></tr>
         <tr><th scope="row">Reliability</th><td class="claim" data-label="Claimed">not claimed</td><td data-label="Measured"><span data-k="probes">100 of the last 100 blind checks passed</span></td></tr>
       </tbody>
@@ -312,7 +312,7 @@ if (navigator.clipboard) document.querySelectorAll('pre').forEach((pre) => {
     if (s.context_window) set('ctx', s.context_capped_from
       ? `capped to ${n(s.context_window)} tokens: the claimed ${n(s.context_capped_from)} failed the test`
       : `${n(s.context_window)} tokens held in a real test`);
-    if (loc?.verdict === 'match' && loc.network) set('loc', `in ${new Intl.DisplayNames(['en'], { type: 'region' }).of(loc.server_country)}, ${loc.network.replace(/^[A-Z0-9-]+ /, '').replace(/ (GmbH|Ltd|Oy|AB|S\.A\.?)$/, '')} network`);
+    if (loc?.verdict === 'match' && loc.network) set('loc', `server front located in ${new Intl.DisplayNames(['en'], { type: 'region' }).of(loc.server_country)}, ${loc.network.replace(/^[A-Z0-9-]+ /, '').replace(/ (GmbH|Ltd|Oy|AB|S\.A\.?)$/, '')} network`);
     if (obs.ttft_ms?.p50 && obs.tps) set('speed', `${(obs.ttft_ms.p50 / 1000).toFixed(1)} s to first token · ${obs.tps} tokens/s`);
     if (obs.probes) set('probes', `${Math.round((obs.probe_success ?? 0) * obs.probes)} of the last ${obs.probes} blind checks passed`);
     set('stamp', 'Live from registry.opennodes.io.');

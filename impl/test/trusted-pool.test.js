@@ -7,13 +7,14 @@ import { PassThrough } from 'node:stream';
 import {
   createApp, listen, closeApp, sendJson, readJson,
   meetsDataPolicy, lineageAllowed, trustedView, inTrustedPool, trustGaps, poolOf, recommend, extractFeatures,
-  parseAutoModel, AUTO_MODEL_NAMES, sensitiveHeader, trustedJurisdictionsFrom, retentionRank,
+  parseAutoModel, AUTO_MODEL_NAMES, sensitiveHeader, trustedJurisdictionsFrom, retentionRank, serverCheckOf, jurisdictionEvidence,
 } from '@opennodes/core';
 import { startFixtureNode } from '@opennodes/fixture-node';
 import { startRegistry } from '@opennodes/registry';
 import { startGateway } from '@opennodes/cli/src/gateway.js';
 import { createStdioMcp } from '@opennodes/cli/src/mcpserver.js';
 import { startOllamaRouter } from '@opennodes/ollama-router';
+import { passServerCheck, PASSED_LOCATION } from './server-check.js';
 
 const FIXTURE = 'org.opennodes.fixture';
 const ACME = 'import.modelsdev.acmecloud';
@@ -24,13 +25,15 @@ const CATALOG = { acmecloud: { id: 'acmecloud', name: 'Acme Cloud', api: 'https:
 const TRUSTED = Object.freeze({
   node_id: 'io.lab.eu', offering_id: 'm', tier: 'verified', modality: 'text',
   model: { name: 'Lab M', params_b: 8, lineage_origins: ['FR'] },
-  jurisdiction: { country: 'DE', basis: 'declared', location: null },
+  jurisdiction: { country: 'DE', basis: 'declared', location: PASSED_LOCATION },
   data_policy: { retention: 'none', training_on_inputs: false },
   serving: { context_window: 32_000, supports: [] }, binding: { model_id: 'm' },
   pricing: { currency: 'USD', input_per_mtok: 1, output_per_mtok: 2, schemes: ['prepaid'] },
   endpoints: { openai: 'https://lab.example/v1' }, observed: { probe_success: 1 }, card_revision: 'r1',
 });
 const variant = (patch) => ({ ...TRUSTED, ...patch });
+/** An operator declaring `country`, with a passing server check there. */
+const at = (country) => ({ jurisdiction: { country, basis: 'declared', location: { ...PASSED_LOCATION, server_country: country } } });
 
 async function registerAndVerify(registry, node) {
   const reg = await (await fetch(`${registry.origin}/v0/nodes`, {
@@ -50,6 +53,7 @@ async function network(t, { lineage = ['FR'], admit = true, registryOptions = {}
   await post('/v0/import/models-dev', { catalog: CATALOG });
   await registerAndVerify(registry, node);
   await post('/v0/fingerprints/capture', { node_id: FIXTURE, offering_id: 'echo-1' });   // identity references: no verified tier without them
+  await passServerCheck(registry, FIXTURE);   // the trusted pool needs a passing server-location check
   if (admit) assert.equal((await (await post(`/v0/nodes/${FIXTURE}/admit`)).json()).state, 'verified');
   const get = async (path) => (await fetch(`${registry.origin}${path}`)).json();
   const tool = async (name, args) => (await (await fetch(`${registry.origin}/mcp`, {
@@ -87,11 +91,33 @@ test('trust rules: data policy, lineage, the trusted view and why an offering is
   assert.match(trustGaps(variant({ jurisdiction: { country: 'DE', location: { server_country: 'US', cdn: false, verdict: 'mismatch' } } }))[0], /server in US/);
   assert.deepEqual(trustGaps(variant({ data_policy: null })), ['no data_policy']);
   assert.match(trustGaps(variant({ data_policy: { retention: 'logged', training_on_inputs: true } }))[0], /retention logged, training_on_inputs true/);
-  assert.ok(inTrustedPool(variant({ jurisdiction: { country: 'NO' } })), 'EU means the EEA in jurisdiction filters');
-  assert.ok(!inTrustedPool(variant({ jurisdiction: { country: 'CH' } })));
-  assert.ok(inTrustedPool(variant({ jurisdiction: { country: 'CH' } }), trustedView('EU,CA,CH')), 'the trusted set is configurable');
-  assert.ok(inTrustedPool(variant({ jurisdiction: { country: 'GB' } }), trustedView('EU,CA,UK')), 'UK means GB');
+  assert.ok(inTrustedPool(variant(at('NO'))), 'EU means the EEA in jurisdiction filters');
+  assert.ok(!inTrustedPool(variant(at('CH'))));
+  assert.ok(inTrustedPool(variant(at('CH')), trustedView('EU,CA,CH')), 'the trusted set is configurable');
+  assert.ok(inTrustedPool(variant(at('GB')), trustedView('EU,CA,UK')), 'UK means GB');
   assert.ok(!inTrustedPool(TRUSTED, trustedView('')), 'no trusted country: no hosted offering is trusted');
+
+  // a passing server-location check (ONP-3 §5e, §6.4): match or same_region, or every declared origin behind a CDN
+  const checked = (location) => variant({ jurisdiction: { country: 'DE', basis: 'declared', location } });
+  assert.equal(trustedView().server_check, 'passed');
+  assert.deepEqual(trustGaps(checked(null)), ['server location check not passed: server front not checked']);
+  assert.ok(inTrustedPool(checked({ ...PASSED_LOCATION, verdict: 'same_region', server_country: 'FI' })), 'same_region passes');
+  assert.match(trustGaps(checked({ verdict: 'unknown', reason: 'no public IPv4 address' }))[0], /server front not checked/);
+  assert.match(trustGaps(checked({ verdict: 'inconsistent', server_country: 'DE', cdn: false }))[0], /inconsistent/);
+  assert.match(trustGaps(checked({ verdict: 'cdn', server_country: 'US', cdn: true }))[0], /behind a CDN, not located/, 'a CDN front alone does not pass');
+  const viaOrigin = { verdict: 'cdn', server_country: 'US', cdn: true, origin: { verdict: 'match', addresses: [{ address: '198.51.100.9', verdict: 'match', server_country: 'DE' }] } };
+  assert.equal(serverCheckOf(checked(viaOrigin)), 'passed_origin');
+  assert.ok(inTrustedPool(checked(viaOrigin)), 'a CDN front whose declared origins all pass is back in');
+  assert.match(trustGaps(checked({ ...viaOrigin, origin: { verdict: 'unknown', addresses: [{ address: 'o.example', verdict: 'unknown', reason: 'does not serve' }] } }))[0], /declared origin failed the check \(unknown\)/);
+  const outside = { ...viaOrigin, origin: { verdict: 'mismatch', addresses: [{ address: 'o.example', verdict: 'mismatch', server_country: 'RU' }] } };
+  assert.deepEqual(trustGaps(checked(outside)), ['declared origin o.example in RU, outside EU,CA'], 'an origin located outside fails the jurisdiction too');
+  assert.equal(serverCheckOf(checked({ verdict: 'mismatch', server_country: 'RU', cdn: false, origin: viaOrigin.origin })), 'mismatch', 'an origin check rescues only a CDN front');
+  assert.equal(serverCheckOf(checked({ verdict: 'unknown', origin: viaOrigin.origin })), 'unchecked');
+  // the label says what is declared and what was checked
+  assert.equal(jurisdictionEvidence(TRUSTED), 'DE operator (EEA, declared), server front checked (DE)');
+  assert.equal(jurisdictionEvidence({ jurisdiction: { country: 'FR', basis: 'inferred', location: { verdict: 'cdn', cdn: true } } }),
+    'FR operator (EEA, inferred by the registry), server front behind a CDN, not located');
+  assert.equal(jurisdictionEvidence({ jurisdiction: { country: 'CA', basis: 'declared', location: null } }), 'CA operator (declared), server front not checked');
 
   // the user's own machine or a LAN peer pinned by card key: nothing reaches an operator, but the lineage rule still applies
   const local = { node_id: 'local', offering_id: 'tiny', tier: 'local', model: { name: 'tiny' }, data_policy: null };
@@ -140,6 +166,13 @@ test('registry search: data policy, strict lineage and trust filters, pool label
   assert.deepEqual(await ids('trust=trusted'), [FIXTURE]);
   assert.deepEqual(await ids('trust=open'), [ACME, FIXTURE], 'open is both pools');
 
+  // the server check as evidence: only the registered node was located
+  assert.deepEqual(await ids('server_check=passed'), [FIXTURE]);
+  assert.deepEqual(await ids('server_check=any'), [ACME, FIXTURE]);
+  const listed = Object.fromEntries((await get('/v0/offerings')).offerings.map((o) => [o.node_id, o.jurisdiction]));
+  assert.deepEqual([listed[FIXTURE].server_check, listed[FIXTURE].evidence], ['passed', 'DE operator (EEA, declared), server front checked (DE)']);
+  assert.equal(listed[ACME].server_check, 'unchecked');
+
   // data policy: the import declares none, so it fails every data-policy filter
   assert.deepEqual(await ids('retention=none'), [FIXTURE]);
   assert.deepEqual(await ids('retention=logged'), [FIXTURE]);
@@ -153,7 +186,7 @@ test('registry search: data policy, strict lineage and trust filters, pool label
   assert.deepEqual(await ids('lineage=declared&exclude_lineage=fr'), []);
 
   // a typo must not widen a sensitive search: unknown values are refused
-  for (const qs of ['trust=yes', 'retention=forever', 'lineage=strict', 'no_training=maybe']) {
+  for (const qs of ['trust=yes', 'retention=forever', 'lineage=strict', 'no_training=maybe', 'server_check=yes']) {
     const bad = await fetch(`${registry.origin}/v0/offerings?${qs}`);
     assert.equal(bad.status, 400, qs);
     assert.equal((await bad.json()).title, 'bad-query');
@@ -165,8 +198,9 @@ test('registry search: data policy, strict lineage and trust filters, pool label
   const { trust } = await get('/v0/health');
   assert.equal(trust.trusted.jurisdictions, 'EU,CA');
   assert.ok(trust.trusted.countries.includes('DE') && trust.trusted.countries.includes('CA') && !trust.trusted.countries.includes('CH'));
-  assert.deepEqual([trust.trusted.exclude_lineage, trust.trusted.lineage, trust.trusted.min_tier, trust.trusted.retention, trust.trusted.no_training],
-    [['CN'], 'declared', 'verified', 'none', true]);
+  assert.deepEqual([trust.trusted.exclude_lineage, trust.trusted.lineage, trust.trusted.min_tier, trust.trusted.server_check, trust.trusted.retention, trust.trusted.no_training],
+    [['CN'], 'declared', 'verified', 'passed', 'none', true]);
+  assert.equal(trust.server_location_checks, false, 'this registry runs no location checks of its own');
 
   // MCP search_offerings takes the same filters
   const viaMcp = (await tool('search_offerings', { trust: 'trusted' })).structuredContent.offerings;

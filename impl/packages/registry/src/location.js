@@ -8,14 +8,37 @@
 //      is a soft warning (congestion or a forwarding hop can also cause it).
 // A front server that forwards requests elsewhere still defeats both; attested residency
 // (an auditor's credential) is the strong guarantee, planned for Draft 0.2.
+// Behind a CDN the front says nothing, so an operator may declare in its signed card the origin
+// addresses that serve the API (ONP-2 §4 `endpoints.origin_addresses`): each one must present a
+// publicly trusted certificate for the API host and answer it, and is then located the same way.
 import net from 'node:net';
+import https from 'node:https';
 import dns from 'node:dns/promises';
-import { EEA_COUNTRIES, distanceKm } from '@opennodes/core';
+import { EEA_COUNTRIES, SERVER_CHECK_PASSES, distanceKm } from '@opennodes/core';
 import { isPrivateHost } from './namespace.js';
 
 const RIPESTAT = 'https://stat.ripe.net/data';
 const LOOKUP_TIMEOUT_MS = 30_000;
 const KM_PER_MS_RTT = 100;   // ~2/3 c in fibre, out and back
+/** At most this many declared origin addresses are checked; a card that declares more fails the origin check. */
+export const MAX_ORIGIN_ADDRESSES = 4;
+
+// Addresses an operator-declared origin may never be: the registry must not be steered into its own
+// network. (Documentation ranges stay allowed: they are not routable, and tests use them.)
+const NON_PUBLIC = new net.BlockList();
+for (const [a, p] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16],
+  ['172.16.0.0', 12], ['192.168.0.0', 16], ['224.0.0.0', 4], ['240.0.0.0', 4]]) NON_PUBLIC.addSubnet(a, p, 'ipv4');
+for (const [a, p] of [['::', 127], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]]) NON_PUBLIC.addSubnet(a, p, 'ipv6');
+
+/** A public unicast IP literal (v4 or v6)? An IPv4-mapped IPv6 address is judged by its IPv4 part. */
+export function isPublicAddress(ip) {
+  const text = String(ip).toLowerCase();
+  const mapped = text.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mapped) return isPublicAddress(mapped[1]);
+  const family = net.isIP(text);
+  if (family === 6 && text.startsWith('::ffff:')) return false;   // mapped, in hex form: refuse rather than decode
+  return family !== 0 && !NON_PUBLIC.check(text, family === 6 ? 'ipv6' : 'ipv4');
+}
 
 /** Networks whose addresses are anycast / CDN edges: their IP says nothing about where inference runs. */
 export const CDN_ASNS = new Map([
@@ -120,23 +143,9 @@ export async function remoteRtt(agent, host, fetchImpl = fetch) {
   return { site: body.site ?? agent.site, lat: body.lat ?? agent.lat, lon: body.lon ?? agent.lon, rtt_ms: body.rtt_ms ?? null };
 }
 
-/**
- * Check one node: resolve its API host, geolocate the first public IPv4, measure RTT from every
- * probe site, and compare with the declared country.
- * opts: { selfSite: {site, lat, lon}, agents: [{site, lat, lon, url, token}], fetchImpl, resolve, rtt }
- */
-export async function checkNodeLocation(card, opts = {}) {
+/** Geolocate one address, measure RTT to it from every probe site, and compare with the declared country. */
+async function locateAddress(ip, declared, opts) {
   const fetchImpl = opts.fetchImpl ?? fetch;
-  let host = null;
-  try { host = new URL(card?.endpoints?.openai).hostname; } catch { /* listing without an API */ }
-  const declared = card?.node?.operator?.country ? String(card.node.operator.country).toUpperCase() : null;
-  const out = { host, declared, checked_at: new Date().toISOString() };
-  if (!host) return { ...out, verdict: 'unknown', reason: 'no API endpoint' };
-
-  const ips = net.isIP(host) ? [host] : await (opts.resolve ?? ((h) => dns.resolve4(h)))(host).catch(() => []);
-  const ip = ips.find((a) => !isPrivateHost(a));
-  if (!ip) return { ...out, ips, verdict: 'unknown', reason: 'no public IPv4 address' };
-
   const server = await lookupIp(ip, { fetchImpl, asHolders: opts.asHolders });
   const vantages = [];
   const rtt = opts.rtt ?? measureRtt;
@@ -150,11 +159,101 @@ export async function checkNodeLocation(card, opts = {}) {
   let verdict = countryVerdict(declared, server);
   if (latency.verdict === 'too_fast' && verdict !== 'cdn') verdict = 'inconsistent';   // the geolocation itself is wrong
   return {
-    ...out, ips,
     server: { country: server.country, city: server.city, asn: server.asn, network: server.network, cdn: server.cdn },
     verdict,
     latency,
   };
+}
+
+/**
+ * Does the server at `ip` serve the API host? It must complete a TLS handshake for `host` (SNI) with a
+ * certificate valid for that name under the public CA roots, and answer GET `path` with Host: `host`
+ * with any status below 500. The certificate is the binding; the status only shows an HTTP server
+ * answers (a card-only listing's health endpoint is often `{openai}/models`, which wants a key and says
+ * 401). Connects to the address itself on port 443: no DNS, no redirects.
+ */
+export function probeOrigin(ip, host, { path = '/', timeoutMs = 10_000, port = 443 } = {}) {
+  return new Promise((resolve) => {
+    const req = https.request({
+      host: ip, port, servername: host, path, method: 'GET', agent: false, timeout: timeoutMs,
+      headers: { host, accept: 'application/json', 'user-agent': 'opennodes-registry (origin check)' },
+    }, (res) => {
+      res.resume();
+      resolve(res.statusCode < 500 ? { ok: true, status: res.statusCode } : { ok: false, status: res.statusCode, reason: `HTTP ${res.statusCode} for ${path}` });
+    });
+    req.on('timeout', () => req.destroy(Object.assign(new Error('timed out'), { code: 'timed out' })));
+    req.on('error', (err) => resolve({ ok: false, reason: err.code === 'ERR_TLS_CERT_ALTNAME_INVALID' ? `certificate not valid for ${host}` : String(err.code ?? err.message) }));
+    req.end();
+  });
+}
+
+/** What an origin check requests: the card's health endpoint when it is on the API host, else `{api path}/models`. */
+function originProbeTarget(card, host) {
+  try {
+    const health = new URL(card.endpoints.health);
+    if (health.hostname === host) return { path: `${health.pathname}${health.search}` };
+  } catch { /* no usable health URL */ }
+  const api = new URL(card.endpoints.openai);
+  return { path: `${api.pathname.replace(/\/$/, '')}/models` };
+}
+
+/**
+ * Behind a CDN: check every origin address the card declares (`endpoints.origin_addresses`, ONP-2 §4).
+ * Each must be (or resolve to) a public address, serve the API host (probeOrigin), and be located with
+ * match or same_region; one that sits on a CDN network itself is `cdn`, not an origin. The result's
+ * verdict is `match` or `same_region` only when every declared address passes. Null when none is declared.
+ */
+export async function checkOrigins(card, host, declared, opts = {}) {
+  const listed = declaredOrigins(card);
+  if (!listed.length) return null;
+  if (listed.length > MAX_ORIGIN_ADDRESSES) {
+    return { declared: listed, verdict: 'unknown', reason: `more than ${MAX_ORIGIN_ADDRESSES} origin addresses declared`, addresses: [] };
+  }
+  const target = originProbeTarget(card, host);
+  const addresses = [];
+  for (const address of listed) {
+    const ips = net.isIP(address) ? [address] : await (opts.resolve ?? ((h) => dns.resolve4(h)))(address).catch(() => []);
+    const ip = ips.find(isPublicAddress);
+    if (!ip) { addresses.push({ address, verdict: 'unknown', reason: ips.length ? 'not a public address' : 'does not resolve' }); continue; }
+    const serves = await (opts.probeOrigin ?? probeOrigin)(ip, host, target).catch((err) => ({ ok: false, reason: String(err.message) }));
+    if (!serves.ok) { addresses.push({ address, ip, verdict: 'unknown', reason: `does not serve ${host}: ${serves.reason}` }); continue; }
+    const located = await locateAddress(ip, declared, opts);
+    addresses.push({ address, ip, serves: true, server_country: located.server.country, ...located });
+  }
+  const failed = addresses.find((a) => !SERVER_CHECK_PASSES.includes(a.verdict));
+  return {
+    declared: listed,
+    verdict: failed ? failed.verdict : addresses.every((a) => a.verdict === 'match') ? 'match' : 'same_region',
+    addresses,
+  };
+}
+
+/** The card's `endpoints.origin_addresses`, normalised (trimmed, IPv6 brackets removed); [] when none. */
+export function declaredOrigins(card) {
+  const listed = card?.endpoints?.origin_addresses;
+  return Array.isArray(listed) ? listed.map((a) => String(a).trim().replace(/^\[|\]$/g, '')).filter(Boolean) : [];
+}
+
+/**
+ * Check one node: resolve its API host, geolocate the first public IPv4, measure RTT from every
+ * probe site, and compare with the declared country. Behind a CDN, also check the origin addresses
+ * the card declares (`origin`).
+ * opts: { selfSite: {site, lat, lon}, agents: [{site, lat, lon, url, token}], fetchImpl, resolve, rtt, probeOrigin }
+ */
+export async function checkNodeLocation(card, opts = {}) {
+  let host = null;
+  try { host = new URL(card?.endpoints?.openai).hostname; } catch { /* listing without an API */ }
+  const declared = card?.node?.operator?.country ? String(card.node.operator.country).toUpperCase() : null;
+  const out = { host, declared, checked_at: new Date().toISOString() };
+  if (!host) return { ...out, verdict: 'unknown', reason: 'no API endpoint' };
+
+  const ips = net.isIP(host) ? [host] : await (opts.resolve ?? ((h) => dns.resolve4(h)))(host).catch(() => []);
+  const ip = ips.find((a) => !isPrivateHost(a));
+  if (!ip) return { ...out, ips, verdict: 'unknown', reason: 'no public IPv4 address' };
+
+  const front = await locateAddress(ip, declared, opts);
+  const origin = front.verdict === 'cdn' ? await checkOrigins(card, host, declared, opts) : null;
+  return { ...out, ips, ...front, ...(origin ? { origin } : {}) };
 }
 
 /** Parse "FI Helsinki 60.17 24.93 https://host/onp-probe" (agents) or "DE Nuremberg 49.45 11.08" (self). */

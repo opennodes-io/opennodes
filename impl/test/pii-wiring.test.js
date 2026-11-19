@@ -9,6 +9,7 @@ import { startRegistry } from '@opennodes/registry';
 import { startGateway } from '@opennodes/cli/src/gateway.js';
 import { OnpClient } from '@opennodes/cli';
 import { startOllamaRouter } from '@opennodes/ollama-router';
+import { passServerCheck } from './server-check.js';
 
 const FIXTURE = 'org.opennodes.fixture';
 const PROMPT = 'Send the invoice to jane@example.org and call 416-555-0199 if it bounces.';
@@ -27,6 +28,7 @@ async function network(t, { lineage = null, offerings = ['chat'] } = {}) {
   node.setChallenge(reg.challenge.token);
   await post(reg.challenge.verify);
   await post('/v0/fingerprints/capture', { node_id: FIXTURE, offering_id: 'echo-1' });
+  await passServerCheck(registry, FIXTURE);   // the trusted pool needs a passing server-location check
   assert.equal((await (await post(`/v0/nodes/${FIXTURE}/admit`)).json()).state, 'verified');
   return { node, registry, sent: recordUpstream(t, node.origin) };
 }

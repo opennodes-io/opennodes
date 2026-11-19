@@ -1,8 +1,8 @@
 # ONP Draft 0.1 — known issues and what happens to them
 
-Three independent reviews of Draft 0.1 raised the points below: two technical reviews in October 2026, and a review of node validation and trust by an expert reviewer on 18 November 2026. This page records each point and its outcome: **fixed** (in the errata of 2026-10-23 or in a later revision), **planned** for Draft 0.2, **open**, or **not adopted** with the reason. New reports are welcome as [GitHub issues](https://github.com/opennodes-io/opennodes/issues).
+Three independent reviews of Draft 0.1 raised the points below: two technical reviews in October 2026, and a security review of node validation and trust by Mark Lindley, Two Minds (twomindsworks.com) on 18 November 2026. This page records each point and its outcome: **fixed** (in the errata of 2026-10-23 or in a later revision), **planned** for Draft 0.2, **open**, or **not adopted** with the reason. New reports are welcome as [GitHub issues](https://github.com/opennodes-io/opennodes/issues).
 
-## Expert review (2026-11-18): node validation and trust
+## Security review by Mark Lindley, Two Minds (twomindsworks.com), 2026-11-18: node validation and trust
 
 The review found that "verified" could not yet carry personal data: the admission battery could be timed, avoided or cleared, and the Ollama router treated any LAN peer as the user's own network. Its "Now" items for the Ollama router (section 4.11) are fixed in revision 10, and those for the registry and the Node Kit (sections 4.2, 4.3, 4.3a, 4.6) in revision 11 ([CHANGES](CHANGES.md)); the rest is listed with its status. Section numbers are the review's.
 
