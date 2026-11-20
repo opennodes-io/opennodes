@@ -505,6 +505,7 @@ export async function startRegistry({
       }
       await store.setCustomerKey(node.id, key);
       if (key && LISTED.includes(node.state)) await planner.firstStageB(node.id, await store.latestCard(node.id), 'first');
+      if (location) locateNode(node.id).catch(() => {});   // behind a CDN the origin check asks with this key
       if (!key) await holdCardOnly(node.id);
       sendJson(res, 200, { node_id: node.id, customer_access: Boolean(key), state: (await store.getNode(node.id)).state });
     }],
@@ -849,7 +850,11 @@ export async function startRegistry({
   const asHolders = new Map();
   async function locateNode(nodeId) {
     const card = await store.latestCard(nodeId);
-    const result = await checkNodeLocation(card, { ...location, asHolders });
+    // Behind a CDN the origin check asks the API for its model list with the key the probes carry
+    // (authFetch), and counts declared origins only in a signed card.
+    const key = (await store.getCustomerKey(nodeId)) ?? (await store.getProbeKey(nodeId));
+    const signed = Boolean((await store.latestRevision(nodeId))?.sig_ok);
+    const result = await checkNodeLocation(card, { ...location, asHolders, key, signed });
     await store.setObservation(nodeId, '_node', 'location', result);
     return result;
   }
@@ -860,7 +865,8 @@ export async function startRegistry({
     const host = (() => { try { return new URL(card?.endpoints?.openai).hostname; } catch { return null; } })();
     const declared = card?.node?.operator?.country ? String(card.node.operator.country).toUpperCase() : null;
     const originsChanged = JSON.stringify(declaredOrigins(card)) !== JSON.stringify(loc?.origin?.declared ?? []);
-    if (!loc || loc.host !== host || (loc.declared ?? null) !== declared || (loc.verdict === 'cdn' && originsChanged)) await locateNode(nodeId);
+    const signedChanged = Boolean(loc?.origin) && (loc.origin.signed ?? true) !== Boolean((await store.latestRevision(nodeId))?.sig_ok);
+    if (!loc || loc.host !== host || (loc.declared ?? null) !== declared || (loc.verdict === 'cdn' && (originsChanged || signedChanged))) await locateNode(nodeId);
   }
   // Daily sweep over registered nodes and imports that carry a country (the ones jurisdiction
   // filters can select), one at a time so the lookup service is never hammered.
