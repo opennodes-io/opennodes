@@ -8,7 +8,12 @@ import { startFixtureNode } from '@opennodes/fixture-node';
 import { locationSummary } from '../packages/registry/src/search.js';
 import { passServerCheck } from './server-check.js';
 import http from 'node:http';
-import { assessLatency, countryVerdict, haversineKm, checkNodeLocation, parseSite, probeOrigin } from '../packages/registry/src/location.js';
+import https from 'node:https';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { assessLatency, countryVerdict, haversineKm, checkNodeLocation, parseSite, probeOrigin, modelIds } from '../packages/registry/src/location.js';
 
 const NUREMBERG = { site: 'DE-Nuremberg', lat: 49.4527, lon: 11.0783 };
 const HELSINKI = { site: 'FI-Helsinki', lat: 60.1719, lon: 24.9347 };
@@ -107,7 +112,7 @@ test('registry: location check is stored, shown, and excludes a mislocated node 
   assert.equal(inJurisdiction(berget, 'eea'), true);
 });
 
-test('declared origin addresses: behind a CDN, each declared origin must serve the API host and is located instead', async () => {
+test('declared origin addresses: behind a CDN, each declared origin must answer the API like the CDN and is located instead', async () => {
   const CF = { country: 'US', lat: 37.75, lon: -97.82, asn: 13335 };
   const table = {
     '198.51.100.8': CF,                                                      // the CDN front
@@ -122,9 +127,10 @@ test('declared origin addresses: behind a CDN, each declared origin must serve t
       'origin-de.lab.example': ['198.51.100.31'], 'inside.lab.example': ['10.1.2.3'] }[h] ?? []),
     fetchImpl: fakeRipestat(table), selfSite: NUREMBERG,
     rtt: async (ip) => (ip === '198.51.100.32' ? 45 : 12),
-    probeOrigin: async (ip, host, target) => { calls.push({ ip, host, ...target }); return { ok: true, status: 200 }; },
+    probeOrigin: async (ip, host, target) => { calls.push({ ip, host, ...target }); return { ok: true, status: 200, models: LIST }; },
     ...extra,
   });
+  const LIST = ['bielik-1.5b', 'llama3.2:1b'];
   const card = (origins, { api = 'https://api.lab.example/v1', health = 'https://api.lab.example/onp/health' } = {}) =>
     ({ node: { operator: { country: 'FR' } }, endpoints: { openai: api, health, ...(origins ? { origin_addresses: origins } : {}) } });
 
@@ -134,22 +140,59 @@ test('declared origin addresses: behind a CDN, each declared origin must serve t
   assert.deepEqual(ok.origin.declared, ['198.51.100.30', 'origin-de.lab.example']);
   assert.deepEqual(ok.origin.addresses.map((a) => [a.address, a.ip, a.serves, a.verdict]),
     [['198.51.100.30', '198.51.100.30', true, 'match'], ['origin-de.lab.example', '198.51.100.31', true, 'same_region']]);
-  assert.deepEqual(calls[0], { ip: '198.51.100.30', host: 'api.lab.example', path: '/onp/health' }, 'asked for the API host, at the address itself');
+  assert.deepEqual(calls.slice(0, 2), [
+    { ip: '198.51.100.8', host: 'api.lab.example', path: '/v1/models', headers: {} },
+    { ip: '198.51.100.30', host: 'api.lab.example', path: '/v1/models', headers: {} },
+  ], 'the model list through the CDN first, then the same request at each address itself');
+  assert.deepEqual(ok.origin.front, { status: 200, models: 2 });
+  assert.equal(ok.origin.signed, true);
   assert.equal(serverCheckOf({ jurisdiction: { location: locationSummary(ok, card(['198.51.100.30', 'origin-de.lab.example'])) } }), 'passed_origin');
 
-  // health on another host: the API path is asked instead
+  // the declaration counts only in a signed card: nothing is contacted for an unsigned one
   calls.length = 0;
-  await checkNodeLocation(card(['198.51.100.30'], { health: 'https://status.lab.example/health' }), opts());
-  assert.deepEqual(calls[0], { ip: '198.51.100.30', host: 'api.lab.example', path: '/v1/models' });
-  // a card-only listing's health is often {openai}/models, which answers 401 without a key: the certificate binds, not the status
-  const keyed = await checkNodeLocation(card(['198.51.100.30'], { health: 'https://api.lab.example/v1/models' }), opts({
-    probeOrigin: async (ip, host, target) => { calls.push({ ip, host, ...target }); return { ok: true, status: 401 }; } }));
+  const unsigned = await checkNodeLocation(card(['198.51.100.30']), opts({ signed: false }));
+  assert.equal(unsigned.origin.verdict, 'unknown');
+  assert.match(unsigned.origin.reason, /only in a signed card/);
+  assert.equal(calls.length, 0);
+  assert.equal(serverCheckOf({ jurisdiction: { location: locationSummary(unsigned, card(['198.51.100.30'])) } }), 'cdn');
+
+  // a keyed API: with no list through the CDN there is nothing to compare, so the check fails;
+  // with the key the registry probes with, the same request carries it to the front and to each origin
+  const keyedApi = async (ip, host, target) => {
+    calls.push({ ip, host, ...target });
+    return target.headers.authorization === 'Bearer k-123' ? { ok: true, status: 200, models: LIST } : { ok: true, status: 401, models: null };
+  };
+  const noKey = await checkNodeLocation(card(['198.51.100.30']), opts({ probeOrigin: keyedApi }));
+  assert.equal(noKey.origin.verdict, 'unknown');
+  assert.match(noKey.origin.reason, /no model list through the CDN \(HTTP 401\)/);
+  calls.length = 0;
+  const keyed = await checkNodeLocation(card(['198.51.100.30']), opts({ probeOrigin: keyedApi, key: 'k-123' }));
   assert.equal(keyed.origin.verdict, 'match');
-  assert.equal(calls.at(-1).path, '/v1/models');
+  assert.deepEqual(calls.map((c) => [c.ip, c.headers.authorization]), [['198.51.100.8', 'Bearer k-123'], ['198.51.100.30', 'Bearer k-123']]);
+  assert.equal(JSON.stringify(keyed).includes('k-123'), false, 'the key is never stored with the result');
+
+  // an origin that holds a certificate for the host but does not answer the API (a 401 or 404, or a page
+  // that is no model list), or lists other models, fails, and so does the whole check
+  const answering = (byIp) => async (ip) => byIp[ip] ?? { ok: true, status: 200, models: LIST };
+  for (const [answer, reason] of [
+    [{ ok: true, status: 404, models: null }, /does not answer like the API through the CDN \(HTTP 404\)/],
+    [{ ok: true, status: 401, models: null }, /HTTP 401/],
+    [{ ok: true, status: 200, models: null }, /HTTP 200, no model list/],
+    [{ ok: true, status: 200, models: ['llama3.2:1b'] }, /lists other models than the API through the CDN \(1 missing, 0 more\)/],
+    [{ ok: true, status: 200, models: [...LIST, 'gpt-4o'] }, /\(0 missing, 1 more\)/],
+  ]) {
+    const decoy = await checkNodeLocation(card(['198.51.100.30', 'origin-de.lab.example']), opts({ probeOrigin: answering({ '198.51.100.31': answer }) }));
+    assert.equal(decoy.origin.verdict, 'unknown');
+    assert.equal(decoy.origin.addresses[0].verdict, 'match');
+    assert.match(decoy.origin.addresses[1].reason, reason);
+    assert.equal(decoy.origin.addresses[1].server, undefined, 'not located: it does not serve the API');
+  }
+  // the front's own answer decides what counts: an empty list is nothing to compare with
+  assert.match((await checkNodeLocation(card(['198.51.100.30']), opts({ probeOrigin: answering({ '198.51.100.8': { ok: true, status: 200, models: [] } }) }))).origin.reason, /an empty list/);
 
   // an address that does not serve the API host (e.g. no certificate for it) fails, and so does the whole check
   const noCert = await checkNodeLocation(card(['198.51.100.30', 'origin-de.lab.example']), opts({
-    probeOrigin: async (ip) => (ip === '198.51.100.31' ? { ok: false, reason: 'certificate not valid for api.lab.example' } : { ok: true, status: 200 }) }));
+    probeOrigin: answering({ '198.51.100.31': { ok: false, reason: 'certificate not valid for api.lab.example' } }) }));
   assert.equal(noCert.origin.verdict, 'unknown');
   assert.match(noCert.origin.addresses[1].reason, /does not serve api\.lab\.example: certificate not valid/);
 
@@ -159,11 +202,11 @@ test('declared origin addresses: behind a CDN, each declared origin must serve t
   assert.equal(moscow.origin.verdict, 'mismatch');
   assert.equal(moscow.origin.addresses[0].server_country, 'RU');
 
-  // private addresses are never contacted
+  // private addresses are never contacted (only the front is asked)
   calls.length = 0;
   const inside = await checkNodeLocation(card(['inside.lab.example', '10.0.0.5', '::1', '169.254.169.254']), opts());
   assert.deepEqual(inside.origin.addresses.map((a) => a.reason), Array(4).fill('not a public address'));
-  assert.equal(calls.length, 0);
+  assert.deepEqual(calls.map((c) => c.ip), ['198.51.100.8']);
   assert.equal((await checkNodeLocation(card(['nowhere.lab.example']), opts())).origin.addresses[0].reason, 'does not resolve');
 
   // at most four addresses; and origins are checked only behind a CDN
@@ -223,6 +266,13 @@ test('a server check applies only to the card it was made for: same API host, de
   assert.equal((await current()).verdict, 'match');
 });
 
+test('modelIds: the ids of an OpenAI-style model list, or null', () => {
+  assert.deepEqual(modelIds('{"object":"list","data":[{"id":"b"},{"id":"a"},{"id":"b"},{"id":""},{"name":"x"}]}'), ['a', 'b']);
+  assert.deepEqual(modelIds('{"data":[]}'), []);
+  assert.equal(modelIds('{"status":"ok"}'), null);
+  assert.equal(modelIds('<html>not found</html>'), null);
+});
+
 test('probeOrigin: only a TLS server that answers for the API host counts', async (t) => {
   // nothing listening
   const closed = await probeOrigin('127.0.0.1', 'api.lab.example', { port: 9, timeoutMs: 2000 });
@@ -234,6 +284,55 @@ test('probeOrigin: only a TLS server that answers for the API host counts', asyn
   const result = await probeOrigin('127.0.0.1', 'api.lab.example', { port: plain.address().port, path: '/onp/health', timeoutMs: 2000 });
   assert.equal(result.ok, false);
   assert.ok(result.reason);
+});
+
+const OPENSSL = spawnSync('openssl', ['version']).status === 0;
+test('probeOrigin over TLS: the certificate, the credential and the model list', { skip: !OPENSSL && 'needs openssl to make a test certificate' }, async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'onp-origin-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const certFor = (name) => {
+    const key = path.join(dir, `${name}.key`), crt = path.join(dir, `${name}.crt`);
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-days', '1',
+      '-keyout', key, '-out', crt, '-subj', `/CN=${name}`, '-addext', `subjectAltName=DNS:${name}`], { stdio: 'ignore' });
+    return { key: fs.readFileSync(key), cert: fs.readFileSync(crt) };
+  };
+  const api = certFor('api.lab.example'), other = certFor('other.example');
+  const serve = async (creds, handler) => {
+    const server = https.createServer(creds, handler);
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    t.after(() => server.close());
+    return server.address().port;
+  };
+  const seen = [];
+  const port = await serve(api, (req, res) => {
+    seen.push({ host: req.headers.host, auth: req.headers.authorization ?? null, path: req.url });
+    if (req.url === '/v1/models' && req.headers.authorization === 'Bearer k-1') return res.end(JSON.stringify({ object: 'list', data: [{ id: 'm2' }, { id: 'm1' }] }));
+    if (req.url === '/v1/models') { res.writeHead(401); return res.end('{"error":"a key is needed"}'); }
+    if (req.url === '/big') return res.end(`{"data":[${'{"id":"x"},'.repeat(120_000)}{"id":"y"}]}`);
+    if (req.url === '/drip') {   // headers at once, then a byte every 100 ms: never idle, never done
+      res.writeHead(200, { 'content-type': 'application/json' });
+      const drip = setInterval(() => res.write(' '), 100);
+      return res.on('close', () => clearInterval(drip));
+    }
+    res.writeHead(404); res.end('not found');
+  });
+  const ask = (p, extra = {}) => probeOrigin('127.0.0.1', 'api.lab.example', { port, path: p, ca: api.cert, timeoutMs: 5000, ...extra });
+  assert.deepEqual(await ask('/v1/models', { headers: { authorization: 'Bearer k-1' } }), { ok: true, status: 200, models: ['m1', 'm2'] });
+  assert.deepEqual(seen.at(-1), { host: 'api.lab.example', auth: 'Bearer k-1', path: '/v1/models' }, 'asked as the API host, with the credential');
+  assert.deepEqual(await ask('/v1/models'), { ok: true, status: 401, models: null });
+  assert.deepEqual(await ask('/nothing'), { ok: true, status: 404, models: null });
+  assert.equal((await ask('/big')).models, null, 'an over-long answer is no list');
+  const started = Date.now();
+  assert.deepEqual(await ask('/drip', { timeoutMs: 600 }), { ok: false, reason: 'timed out' });
+  assert.ok(Date.now() - started < 3000, 'a dripping answer is cut off at the deadline');
+
+  // a certificate for another name fails before anything is sent, so the credential never leaves
+  const sent = [];
+  const otherPort = await serve(other, (req, res) => { sent.push(req.headers.authorization); res.end('{"data":[]}'); });
+  const wrong = await probeOrigin('127.0.0.1', 'api.lab.example', { port: otherPort, path: '/v1/models', ca: other.cert, headers: { authorization: 'Bearer k-1' }, timeoutMs: 5000 });
+  assert.equal(wrong.ok, false);
+  assert.equal(wrong.reason, 'certificate not valid for api.lab.example');
+  assert.deepEqual(sent, []);
 });
 
 test('card schema: endpoints.origin_addresses and the dated data-policy link are optional, and bounded', () => {

@@ -10,7 +10,8 @@
 // (an auditor's credential) is the strong guarantee, planned for Draft 0.2.
 // Behind a CDN the front says nothing, so an operator may declare in its signed card the origin
 // addresses that serve the API (ONP-2 §4 `endpoints.origin_addresses`): each one must present a
-// publicly trusted certificate for the API host and answer it, and is then located the same way.
+// publicly trusted certificate for the API host, answer the API's model list exactly as the API
+// does through the CDN, and is then located the same way. Unsigned cards' origins count for nothing.
 import net from 'node:net';
 import https from 'node:https';
 import dns from 'node:dns/promises';
@@ -165,64 +166,113 @@ async function locateAddress(ip, declared, opts) {
   };
 }
 
+/** The most of a model list an origin check reads; a longer answer counts as no list. */
+const MAX_LIST_BYTES = 1_000_000;
+
+/** The model ids of an OpenAI-style list (`{"data": [{"id": …}]}`), unique and sorted; null when the body is not one. */
+export function modelIds(body) {
+  try {
+    const data = JSON.parse(body)?.data;
+    if (!Array.isArray(data)) return null;
+    return [...new Set(data.map((m) => m?.id).filter((id) => typeof id === 'string' && id))].sort();
+  } catch { return null; }
+}
+
 /**
- * Does the server at `ip` serve the API host? It must complete a TLS handshake for `host` (SNI) with a
- * certificate valid for that name under the public CA roots, and answer GET `path` with Host: `host`
- * with any status below 500. The certificate is the binding; the status only shows an HTTP server
- * answers (a card-only listing's health endpoint is often `{openai}/models`, which wants a key and says
- * 401). Connects to the address itself on port 443: no DNS, no redirects.
+ * Ask the server at `ip` for the API, as the API host: it must complete a TLS handshake for `host` (SNI)
+ * with a certificate valid for that name under the public CA roots, then answer GET `path` with Host:
+ * `host` (and `headers`, such as the registry's probe credential, sent only after the certificate is
+ * accepted). Connects to the address itself on port 443: no DNS, no redirects. `ok` when the handshake
+ * completes and the status is below 500; `models` is the model list when the answer is 200 with an
+ * OpenAI-style list, else null. Used for the CDN front and for each declared origin alike. (`ca` replaces
+ * the public roots in tests only.)
  */
-export function probeOrigin(ip, host, { path = '/', timeoutMs = 10_000, port = 443 } = {}) {
+export function probeOrigin(ip, host, { path = '/', headers = {}, timeoutMs = 10_000, port = 443, ca } = {}) {
   return new Promise((resolve) => {
+    // One deadline for the whole exchange: the socket's idle timeout alone would let a server that
+    // drips its answer hold the check (and the daily sweep behind it) open.
+    let deadline = null;
+    const settle = (result) => { clearTimeout(deadline); resolve(result); };
     const req = https.request({
-      host: ip, port, servername: host, path, method: 'GET', agent: false, timeout: timeoutMs,
-      headers: { host, accept: 'application/json', 'user-agent': 'opennodes-registry (origin check)' },
+      host: ip, port, servername: host, path, method: 'GET', agent: false, timeout: timeoutMs, ...(ca ? { ca } : {}),
+      headers: { ...headers, host, accept: 'application/json', 'user-agent': 'opennodes-registry (origin check)' },
     }, (res) => {
-      res.resume();
-      resolve(res.statusCode < 500 ? { ok: true, status: res.statusCode } : { ok: false, status: res.statusCode, reason: `HTTP ${res.statusCode} for ${path}` });
+      const status = res.statusCode;
+      const chunks = [];
+      let size = 0;
+      const done = () => {
+        const models = status === 200 && size <= MAX_LIST_BYTES ? modelIds(Buffer.concat(chunks).toString('utf8')) : null;
+        settle(status < 500 ? { ok: true, status, models } : { ok: false, status, models: null, reason: `HTTP ${status} for ${path}` });
+      };
+      res.on('data', (chunk) => { size += chunk.length; if (size > MAX_LIST_BYTES) res.destroy(); else chunks.push(chunk); });
+      res.on('end', done);
+      res.on('close', done);   // also after a destroy: an over-long answer has no list
     });
+    deadline = setTimeout(() => { settle({ ok: false, reason: 'timed out' }); req.destroy(); }, timeoutMs);
     req.on('timeout', () => req.destroy(Object.assign(new Error('timed out'), { code: 'timed out' })));
-    req.on('error', (err) => resolve({ ok: false, reason: err.code === 'ERR_TLS_CERT_ALTNAME_INVALID' ? `certificate not valid for ${host}` : String(err.code ?? err.message) }));
+    req.on('error', (err) => settle({ ok: false, reason: err.code === 'ERR_TLS_CERT_ALTNAME_INVALID' ? `certificate not valid for ${host}` : String(err.code ?? err.message) }));
     req.end();
   });
 }
 
-/** What an origin check requests: the card's health endpoint when it is on the API host, else `{api path}/models`. */
-function originProbeTarget(card, host) {
-  try {
-    const health = new URL(card.endpoints.health);
-    if (health.hostname === host) return { path: `${health.pathname}${health.search}` };
-  } catch { /* no usable health URL */ }
+/** What an origin check requests, from the front and from each origin: the API's model list, `{api path}/models`. */
+function originProbePath(card) {
   const api = new URL(card.endpoints.openai);
-  return { path: `${api.pathname.replace(/\/$/, '')}/models` };
+  return `${api.pathname.replace(/\/$/, '')}/models`;
+}
+
+/** How two model lists differ, in words; null when they hold the same ids. */
+function listDifference(origin, front) {
+  const have = new Set(origin), want = new Set(front);
+  const missing = front.filter((id) => !have.has(id)).length, extra = origin.filter((id) => !want.has(id)).length;
+  return missing || extra ? `lists other models than the API through the CDN (${missing} missing, ${extra} more)` : null;
 }
 
 /**
  * Behind a CDN: check every origin address the card declares (`endpoints.origin_addresses`, ONP-2 §4).
- * Each must be (or resolve to) a public address, serve the API host (probeOrigin), and be located with
- * match or same_region; one that sits on a CDN network itself is `cdn`, not an origin. The result's
- * verdict is `match` or `same_region` only when every declared address passes. Null when none is declared.
+ * The declaration counts only in a signed card (`opts.signed`): it is the operator's signed statement of
+ * where the API runs. The registry first asks the API for its model list through the CDN (the front
+ * address `opts.frontIp`, with the key it probes with, `opts.key`); with no list there is nothing to
+ * compare, and the check fails. Each origin must then be (or resolve to) a public address, answer the
+ * same request as the API host with the same model list (probeOrigin), and be located with match or
+ * same_region; one that sits on a CDN network itself is `cdn`, not an origin. The result's verdict is
+ * `match` or `same_region` only when every declared address passes. Null when none is declared.
  */
 export async function checkOrigins(card, host, declared, opts = {}) {
   const listed = declaredOrigins(card);
   if (!listed.length) return null;
-  if (listed.length > MAX_ORIGIN_ADDRESSES) {
-    return { declared: listed, verdict: 'unknown', reason: `more than ${MAX_ORIGIN_ADDRESSES} origin addresses declared`, addresses: [] };
+  const signed = opts.signed !== false;
+  const fail = (reason, extra = {}) => ({ declared: listed, signed, verdict: 'unknown', reason, ...extra, addresses: [] });
+  if (!signed) return fail('origin addresses count only in a signed card (ONP-2 §8)');
+  if (listed.length > MAX_ORIGIN_ADDRESSES) return fail(`more than ${MAX_ORIGIN_ADDRESSES} origin addresses declared`);
+  const probe = opts.probeOrigin ?? probeOrigin;
+  const target = { path: originProbePath(card), headers: opts.key ? { authorization: `Bearer ${opts.key}` } : {} };
+  const asked = (ip) => probe(ip, host, target).catch((err) => ({ ok: false, reason: String(err.message) }));
+  // What the API answers through the CDN: every origin must give the same answer.
+  const front = opts.frontIp ? await asked(opts.frontIp) : { ok: false, reason: 'no front address' };
+  if (!front.models?.length) {
+    const why = front.models ? 'an empty list' : front.status ? `HTTP ${front.status}` : front.reason;
+    return fail(`the API gives the registry no model list through the CDN (${why}), so no origin can be compared with it`,
+      { front: { status: front.status ?? null, models: 0 } });
   }
-  const target = originProbeTarget(card, host);
   const addresses = [];
   for (const address of listed) {
     const ips = net.isIP(address) ? [address] : await (opts.resolve ?? ((h) => dns.resolve4(h)))(address).catch(() => []);
     const ip = ips.find(isPublicAddress);
     if (!ip) { addresses.push({ address, verdict: 'unknown', reason: ips.length ? 'not a public address' : 'does not resolve' }); continue; }
-    const serves = await (opts.probeOrigin ?? probeOrigin)(ip, host, target).catch((err) => ({ ok: false, reason: String(err.message) }));
+    const serves = await asked(ip);
     if (!serves.ok) { addresses.push({ address, ip, verdict: 'unknown', reason: `does not serve ${host}: ${serves.reason}` }); continue; }
+    const differs = serves.models ? listDifference(serves.models, front.models)
+      : `does not answer like the API through the CDN (HTTP ${serves.status}${serves.status === 200 ? ', no model list' : ''})`;
+    if (differs) { addresses.push({ address, ip, verdict: 'unknown', reason: differs }); continue; }
     const located = await locateAddress(ip, declared, opts);
     addresses.push({ address, ip, serves: true, server_country: located.server.country, ...located });
   }
   const failed = addresses.find((a) => !SERVER_CHECK_PASSES.includes(a.verdict));
   return {
     declared: listed,
+    signed,
+    front: { status: front.status, models: front.models.length },
     verdict: failed ? failed.verdict : addresses.every((a) => a.verdict === 'match') ? 'match' : 'same_region',
     addresses,
   };
@@ -238,7 +288,8 @@ export function declaredOrigins(card) {
  * Check one node: resolve its API host, geolocate the first public IPv4, measure RTT from every
  * probe site, and compare with the declared country. Behind a CDN, also check the origin addresses
  * the card declares (`origin`).
- * opts: { selfSite: {site, lat, lon}, agents: [{site, lat, lon, url, token}], fetchImpl, resolve, rtt, probeOrigin }
+ * opts: { selfSite: {site, lat, lon}, agents: [{site, lat, lon, url, token}], fetchImpl, resolve, rtt, probeOrigin,
+ *         key (the credential the registry probes the node with), signed (whether its card's signature verified) }
  */
 export async function checkNodeLocation(card, opts = {}) {
   let host = null;
@@ -252,7 +303,7 @@ export async function checkNodeLocation(card, opts = {}) {
   if (!ip) return { ...out, ips, verdict: 'unknown', reason: 'no public IPv4 address' };
 
   const front = await locateAddress(ip, declared, opts);
-  const origin = front.verdict === 'cdn' ? await checkOrigins(card, host, declared, opts) : null;
+  const origin = front.verdict === 'cdn' ? await checkOrigins(card, host, declared, { ...opts, frontIp: ip }) : null;
   return { ...out, ips, ...front, ...(origin ? { origin } : {}) };
 }
 

@@ -316,7 +316,7 @@
     <input type="text" id="f-q" placeholder="Search models, families, nodes…">
     <span class="switchrow hostedonly" id="f-verified" title="identity-fingerprinted · context-verified · continuously probed"><span class="switch"></span><b style="font-size:0.78rem">Verified only</b></span>
     <span class="switchrow hostedonly" id="f-eea" title="Operators whose country is in the EU, Iceland, Liechtenstein or Norway, as declared in a registered node's signed card, or inferred by the registry for an unclaimed imported listing of a known European provider. A declaration, not proof of where requests are processed: the registry drops only a server it located outside. Each listing shows what its server check found."><span class="switch"></span><b style="font-size:0.78rem">EU-declared operator</b></span>
-    <span class="switchrow hostedonly" id="f-srvcheck" title="Only listings whose API server front the registry located in the operator's declared country or region (behind a CDN: every origin address the card declares). A network tripwire for honest mistakes, not proof: a front that forwards requests elsewhere passes it."><span class="switch"></span><b style="font-size:0.78rem">server front checked</b></span>
+    <span class="switchrow hostedonly" id="f-srvcheck" title="Only listings whose API server front the registry located in the operator's declared country or region (behind a CDN: every origin address the signed card declares, each answering like the API). A network tripwire for honest mistakes, not proof: a front that forwards requests elsewhere passes it."><span class="switch"></span><b style="font-size:0.78rem">server front checked</b></span>
     <select id="f-modality">
       <option value="">any modality</option>
       <option>text</option><option>multimodal</option><option>image</option>
@@ -2633,7 +2633,7 @@ function locationRow(loc, imported, check) {
     match: `✓ server in ${esc(srv.country)}, matching the country ${imported ? 'inferred for this unclaimed listing' : 'the operator declared'}`,
     same_region: `✓ server in ${esc(srv.country)} (EEA); country ${claim}: ${esc(loc.declared)}`,
     mismatch: `<b style="color:var(--bad, #b42318)">⚠ server in ${esc(srv.country)}; country ${claim}: ${esc(loc.declared)}</b>`,
-    cdn: `behind a CDN (${esc(srv.network || 'anycast')}) — location not determinable from the network${loc.origin ? '' : `<br><span style="color:var(--muted)">${imported ? 'Once the operator claims this listing, its card' : 'The card'} can declare the origin addresses behind the CDN (<code>endpoints.origin_addresses</code>, ONP-2 §4) for the registry to check instead.</span>`}`,
+    cdn: `behind a CDN (${esc(srv.network || 'anycast')}) — location not determinable from the network${loc.origin ? '' : `<br><span style="color:var(--muted)">${imported ? 'Once the operator claims this listing, its signed card' : 'A signed card'} can declare the origin addresses behind the CDN (<code>endpoints.origin_addresses</code>, ONP-2 §4) for the registry to check instead.</span>`}`,
     inconsistent: `<b style="color:var(--bad, #b42318)">⚠ geolocation (${esc(srv.country || '?')}) contradicted by measured latency</b>`,
     unknown: `not determined${loc.reason ? ' — ' + esc(loc.reason) : ''}`,
   };
