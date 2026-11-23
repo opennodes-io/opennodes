@@ -142,7 +142,7 @@
 </div>
 <div class="card" id="cursor">
   <h3>Cursor <span class="kind">MCP</span></h3>
-  <p class="install"><a class="btn primary" href="cursor://anysphere.cursor-deeplink/mcp/install?name=opennodes&amp;config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBvcGVubm9kZXMvY2xpIiwibWNwIl19">Add to Cursor</a> <span>opens Cursor, which asks you to confirm</span></p>
+  <p class="install"><a class="btn primary" href="cursor://anysphere.cursor-deeplink/mcp/install?name=opennodes&amp;config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBvcGVubm9kZXMvY2xpQDAuMS4zNCIsIm1jcCJdfQ==">Add to Cursor</a> <span>opens Cursor, which asks you to confirm</span></p>
   <p>Or add to <code>~/.cursor/mcp.json</code> (or Settings → MCP → Add new server):</p><pre><code>{ "mcpServers": { "opennodes": { "command": "npx", "args": ["-y", "@opennodes/cli@0.1.34", "mcp"] } } }</code></pre>
   <p><b>Quote before run.</b> Add the rule to a project, and before bulk AI work Cursor's agent shows a priced table of options (what you use now, your own machine, checked hosts, the cheapest, an in-region one), each with what it means for your data, and runs nothing until you choose. Then it can pilot the chosen option through the local gateway. From the project folder:</p><pre><code>mkdir -p .cursor/rules
 curl -fsSL -o .cursor/rules/opennodes-quote.mdc https://raw.githubusercontent.com/opennodes-io/opennodes/main/plugins/cursor/opennodes-quote.mdc</code></pre>

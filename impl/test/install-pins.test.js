@@ -140,3 +140,22 @@ test('the workflow check catches tag-pinned actions, npm@latest, npm install and
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("Cursor's base64 install link is checked and pinned inside its decoded config", () => {
+  const root = mkdtempSync(join(tmpdir(), 'onp-pins-'));
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64');
+  const unb64 = (s) => JSON.parse(Buffer.from(s, 'base64').toString('utf8'));
+  try {
+    const link = (args) => `<a href="cursor://anysphere.cursor-deeplink/mcp/install?name=opennodes&amp;config=${b64({ command: 'npx', args })}">Add to Cursor</a>`;
+    writeFileSync(join(root, 'page.html'), link(['-y', '@opennodes/cli', 'mcp']));
+    assert.match(checkPins(root).problems.join('\n'), /page\.html:1: unpinned: Cursor install link/);
+
+    const changed = applyPins({ live: { cli: '0.1.34' }, own: {} }, root);
+    assert.deepEqual(changed, ['page.html']);
+    const config = readFileSync(join(root, 'page.html'), 'utf8').match(/config=([A-Za-z0-9+/=]+)/)[1];
+    assert.deepEqual(unb64(config), { command: 'npx', args: ['-y', '@opennodes/cli@0.1.34', 'mcp'] });
+    assert.ok(!checkPins(root).problems.some((p) => /Cursor install link/.test(p)), 'pinned link passes the check');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
