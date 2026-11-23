@@ -42,7 +42,7 @@ export const PACKAGES = {
 // impl/packages/cli/server.json (the MCP Registry entry, published by hand after npm) follows the cli manifest.
 const EXTENSIONS = new Set(['.md', '.mdc', '.html', '.json', '.js', '.mjs']);
 const EXTRA_FILES = ['Dockerfile'];
-const SKIP_DIRS = new Set(['node_modules', '.git', '.wrangler', 'dist', 'build']);
+const SKIP_DIRS = new Set(['node_modules', '.git', '.wrangler', 'dist', 'build', '.claude', 'private']);   // .claude: other sessions' worktrees; private: git-ignored notes
 const SKIP_PATHS = ['spec', 'requirements', 'impl/test', 'impl/packages/registry/src/web'];
 const SKIP_FILES = new Set(['deploy/pin-versions.mjs', 'impl/package-lock.json']);
 export const SERVER_JSON = 'impl/packages/cli/server.json';
@@ -68,6 +68,10 @@ const FORMS = [
   { sep: '==', re: new RegExp(String.raw`(pipx?\s+install\s+(?:-U\s+|--upgrade\s+)?)(onp-node)(?:==(${VER}))?(?![\w.=\[-])` + PAD, 'g') },
 ];
 const EXACT = /^\d+\.\d+\.\d+$/;
+/** Cursor's install link carries its MCP config base64-encoded: decode it so the forms above apply inside. */
+const CURSOR_LINK = /(cursor-deeplink\/mcp\/install\?name=[\w.-]+&(?:amp;)?config=)([A-Za-z0-9+/]+={0,2})/g;
+const fromB64 = (s) => Buffer.from(s, 'base64').toString('utf8');
+const toB64 = (s) => Buffer.from(s, 'utf8').toString('base64');
 
 /** Is this line in the package's own shipped files, naming that package? */
 export const isOwnLine = (file, pkg) => file.startsWith(PACKAGES[pkg].dir);
@@ -119,6 +123,15 @@ export function findPins(root = ROOT) {
     for (const { re } of FORMS) {
       for (const m of text.matchAll(re)) {
         found.push({ file, line: text.slice(0, m.index).split('\n').length, pkg: m[2], version: m[3] ?? null, own: isOwnLine(file, m[2]), text: m[0].trimEnd() });
+      }
+    }
+    for (const link of text.matchAll(CURSOR_LINK)) {
+      const line = text.slice(0, link.index).split('\n').length;
+      const config = fromB64(link[2]);
+      for (const { re } of FORMS) {
+        for (const m of config.matchAll(re)) {
+          found.push({ file, line, pkg: m[2], version: m[3] ?? null, own: isOwnLine(file, m[2]), text: `Cursor install link: ${m[0].trimEnd()}` });
+        }
       }
     }
   }
@@ -211,18 +224,27 @@ export function applyPins({ live = {}, own = {} } = {}, root = ROOT) {
   for (const file of managedFiles(root)) {
     const abs = join(root, file);
     const before = readFileSync(abs, 'utf8');
-    let after = before;
-    for (const { re, sep: s } of FORMS) {
-      after = after.replace(re, (all, prefix, pkg, _version, pad) => {
-        const version = isOwnLine(file, pkg) && own[pkg] ? own[pkg] : live[pkg];
-        if (!version) return all;
-        const pinned = `${prefix}${pkg}${s}${version}`;
-        if (typeof pad !== 'string') return pinned;
-        // keep a following "# comment" in its column: take the growth out of the spaces before it
-        const grown = pinned.length - (all.length - pad.length);
-        return pinned + ' '.repeat(Math.max(1, pad.length - grown));
-      });
-    }
+    const pin = (text) => {
+      for (const { re, sep: s } of FORMS) {
+        text = text.replace(re, (all, prefix, pkg, _version, pad) => {
+          const version = isOwnLine(file, pkg) && own[pkg] ? own[pkg] : live[pkg];
+          if (!version) return all;
+          const pinned = `${prefix}${pkg}${s}${version}`;
+          if (typeof pad !== 'string') return pinned;
+          // keep a following "# comment" in its column: take the growth out of the spaces before it
+          const grown = pinned.length - (all.length - pad.length);
+          return pinned + ' '.repeat(Math.max(1, pad.length - grown));
+        });
+      }
+      return text;
+    };
+    let after = pin(before);
+    // Cursor install links: pin inside the decoded config, then encode it again
+    after = after.replace(CURSOR_LINK, (all, prefix, b64) => {
+      const config = fromB64(b64);
+      const pinned = pin(config);
+      return pinned === config ? all : `${prefix}${toB64(pinned)}`;
+    });
     if (after !== before) { writeFileSync(abs, after); changed.push(file); }
   }
   // server.json follows the cli's manifest version (its two "version" fields), formatting kept
