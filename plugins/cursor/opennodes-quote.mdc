@@ -69,7 +69,7 @@ Ask which option they want. **Stop there.** Don't change code, start servers, or
 ## 4. After they choose
 
 - **What they use now**: carry on as before.
-- **Code changes**: the OpenNodes gateway speaks the OpenAI API. Start it with `npx -y @opennodes/cli@0.1.33 gateway --port 4141`, point the code at `http://127.0.0.1:4141/v1`, and use the chosen `node_id/offering_id` as the model (or `onp/auto-eu`, `onp/auto-cheap`, `onp/auto-private` to let it route). Provider keys come from environment variables the user sets themselves; from cli 0.1.34 the gateway uses them only when started with `--env-keys` (or one key with `--key host=KEY`).
+- **Code changes**: the OpenNodes gateway speaks the OpenAI API. Start it with `npx -y @opennodes/cli@0.1.34 gateway --port 4141`, point the code at `http://127.0.0.1:4141/v1`, and use the chosen `node_id/offering_id` as the model (or `onp/auto-eu`, `onp/auto-cheap`, `onp/auto-private` to let it route). Provider keys come from environment variables the user sets themselves; from cli 0.1.34 the gateway uses them only when started with `--env-keys` (or one key with `--key host=KEY`).
 - **Run the batch for them**: confirm the spend limit and where results go, then:
   1. Check the gateway (`curl -s http://127.0.0.1:4141/v1/models`); start it if needed, with `--env-keys` only when the chosen option needs the user's provider key. If that key isn't set, say which environment variable to set, and stop.
   2. Write a small script in the project's language that sends each item to the gateway with the chosen model, writes each result next to its item, records `usage` per item, retries an item at most twice, and skips items that already have a result.

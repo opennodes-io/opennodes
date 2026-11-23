@@ -69,7 +69,7 @@ Ask which option they want. **Stop there.** Don't change code, start servers, or
 
 - **What they use now**: carry on as before.
 - **Any other option**: offer to hand the work to the `offload-runner` agent, which runs a small pilot through the local OpenNodes gateway, reports sample results and real cost, and only then runs the rest. Give it: the chosen `node_id/offering_id`, the files or data, what to do with each item, where to write results, the user's spend limit, and the data class.
-- **Code changes instead**: if they'd rather change their own code, the gateway speaks the OpenAI API. Start it with `npx -y @opennodes/cli@0.1.33 gateway --port 4141`, point the code at `http://127.0.0.1:4141/v1`, and use the chosen `node_id/offering_id` as the model (or `onp/auto-eu`, `onp/auto-cheap`, `onp/auto-private` to let it route). If the chosen option needs their own provider key, add `--env-keys`: from cli 0.1.34, without it the gateway uses no keys from the environment.
+- **Code changes instead**: if they'd rather change their own code, the gateway speaks the OpenAI API. Start it with `npx -y @opennodes/cli@0.1.34 gateway --port 4141`, point the code at `http://127.0.0.1:4141/v1`, and use the chosen `node_id/offering_id` as the model (or `onp/auto-eu`, `onp/auto-cheap`, `onp/auto-private` to let it route). If the chosen option needs their own provider key, add `--env-keys`: from cli 0.1.34, without it the gateway uses no keys from the environment.
 
 ## Rules
 

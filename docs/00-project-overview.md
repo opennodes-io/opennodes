@@ -78,7 +78,7 @@ The supply-side on-ramp: a reverse proxy that turns any OpenAI-compatible engine
 **Done since (October 2026):** the hosted registry is live at [registry.opennodes.io](https://registry.opennodes.io) (Hetzner EU, PostgreSQL, persistent signing key, 6-hour re-imports, 9,000+ offerings; deployment recipe in `deploy/registry/`); "OpenNodes for Ollama" shipped as `@opennodes/ollama-router`; the CLI and router default to the hosted registry.
 
 **Immediate**
-1. Hands-on editor validation (Cursor/VS Code via `npx @opennodes/cli@0.1.33 mcp --print-config`) and an Open WebUI pass over the Ollama router; then the MCP directory listings and the launch announcement.
+1. Hands-on editor validation (Cursor/VS Code via `npx @opennodes/cli@0.1.34 mcp --print-config`) and an Open WebUI pass over the Ollama router; then the MCP directory listings and the launch announcement.
    - **awesome-mcp-servers:** [punkpeye/awesome-mcp-servers#15477](https://github.com/punkpeye/awesome-mcp-servers/pull/15477), opened 2026-10-01 from `saikousoshite-ai/awesome-mcp-servers:add-opennodes`, adds `opennodes-io/opennodes` at the top of Developer Tools.
      - **Glama:** the list now requires a Glama score badge (bot notices of 2026-10-01 and 10-15). OpenNodes is evaluated there and rated **A**: official vendor server, tool definitions A, 5 tools, maintenance B.
      - **Rebased 2026-10-18** after the maintainer's merge-conflict notice. The README had gained 329 commits of entries at the same spot. The entry was re-applied unchanged on the new `main` (force-pushed, `ef80383`).
