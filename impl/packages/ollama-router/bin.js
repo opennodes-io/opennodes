@@ -49,7 +49,7 @@ PII masking: --mask-pii open (default, ONP_MASK_PII) replaces personal data with
          Names and addresses need a local detector: --pii-service <url> (Presidio, ONP_PII_SERVICE) or --pii-llm <model>[@<url>] (ONP_PII_LLM).
          Masking does not make a request trusted: sensitive requests still use the trusted pool only.
 Env:     ONP_REGISTRY (public tier; default https://registry.opennodes.io; --registry none for LAN-only), OLLAMA_UPSTREAM (local Ollama)
-Publish this machine as a node:    pipx install onp-node==0.1.9 && onp-node init --engine ${flag('ollama', process.env.OLLAMA_UPSTREAM ?? 'http://127.0.0.1:11434')}/v1 ...`);
+Publish this machine as a node:    pipx install onp-node==0.1.10 && onp-node init --engine ${flag('ollama', process.env.OLLAMA_UPSTREAM ?? 'http://127.0.0.1:11434')}/v1 ...`);
   process.exit(0);
 }
 
