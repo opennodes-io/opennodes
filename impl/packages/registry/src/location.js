@@ -178,31 +178,49 @@ export function modelIds(body) {
   } catch { return null; }
 }
 
+/** The reply text of an OpenAI-style chat completion, or null. */
+export function chatText(body) {
+  try {
+    const text = JSON.parse(body)?.choices?.[0]?.message?.content;
+    return typeof text === 'string' ? text : null;
+  } catch { return null; }
+}
+
+/** Identity comparisons through the CDN and at each origin are asked like Stage B's: temperature 0, this many tokens. */
+export const ORIGIN_IDENTITY_MAX_TOKENS = 64;
+
 /**
  * Ask the server at `ip` for the API, as the API host: it must complete a TLS handshake for `host` (SNI)
  * with a certificate valid for that name under the public CA roots, then answer GET `path` with Host:
  * `host` (and `headers`, such as the registry's probe credential, sent only after the certificate is
  * accepted). Connects to the address itself on port 443: no DNS, no redirects. `ok` when the handshake
  * completes and the status is below 500; `models` is the model list when the answer is 200 with an
- * OpenAI-style list, else null. Used for the CDN front and for each declared origin alike. (`ca` replaces
- * the public roots in tests only.)
+ * OpenAI-style list, else null. Used for the CDN front and for each declared origin alike. With `body`
+ * the request is a POST of that JSON instead (a chat completion), and `text` is the reply's text, else
+ * null. (`ca` replaces the public roots in tests only.)
  */
-export function probeOrigin(ip, host, { path = '/', headers = {}, timeoutMs = 10_000, port = 443, ca } = {}) {
+export function probeOrigin(ip, host, { path = '/', headers = {}, body = null, timeoutMs = 10_000, port = 443, ca } = {}) {
   return new Promise((resolve) => {
     // One deadline for the whole exchange: the socket's idle timeout alone would let a server that
     // drips its answer hold the check (and the daily sweep behind it) open.
     let deadline = null;
     const settle = (result) => { clearTimeout(deadline); resolve(result); };
+    const payload = body === null ? null : JSON.stringify(body);
     const req = https.request({
-      host: ip, port, servername: host, path, method: 'GET', agent: false, timeout: timeoutMs, ...(ca ? { ca } : {}),
-      headers: { ...headers, host, accept: 'application/json', 'user-agent': 'opennodes-registry (origin check)' },
+      host: ip, port, servername: host, path, method: payload === null ? 'GET' : 'POST', agent: false, timeout: timeoutMs, ...(ca ? { ca } : {}),
+      headers: {
+        ...headers, host, accept: 'application/json', 'user-agent': 'opennodes-registry (origin check)',
+        ...(payload === null ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }),
+      },
     }, (res) => {
       const status = res.statusCode;
       const chunks = [];
       let size = 0;
       const done = () => {
-        const models = status === 200 && size <= MAX_LIST_BYTES ? modelIds(Buffer.concat(chunks).toString('utf8')) : null;
-        settle(status < 500 ? { ok: true, status, models } : { ok: false, status, models: null, reason: `HTTP ${status} for ${path}` });
+        const raw = status === 200 && size <= MAX_LIST_BYTES ? Buffer.concat(chunks).toString('utf8') : null;
+        const models = raw === null ? null : modelIds(raw);
+        const reply = payload === null ? {} : { text: raw === null ? null : chatText(raw) };   // chat requests only
+        settle(status < 500 ? { ok: true, status, models, ...reply } : { ok: false, status, models: null, ...reply, reason: `HTTP ${status} for ${path}` });
       };
       res.on('data', (chunk) => { size += chunk.length; if (size > MAX_LIST_BYTES) res.destroy(); else chunks.push(chunk); });
       res.on('end', done);
@@ -211,7 +229,7 @@ export function probeOrigin(ip, host, { path = '/', headers = {}, timeoutMs = 10
     deadline = setTimeout(() => { settle({ ok: false, reason: 'timed out' }); req.destroy(); }, timeoutMs);
     req.on('timeout', () => req.destroy(Object.assign(new Error('timed out'), { code: 'timed out' })));
     req.on('error', (err) => settle({ ok: false, reason: err.code === 'ERR_TLS_CERT_ALTNAME_INVALID' ? `certificate not valid for ${host}` : String(err.code ?? err.message) }));
-    req.end();
+    req.end(payload ?? undefined);
   });
 }
 
@@ -219,6 +237,25 @@ export function probeOrigin(ip, host, { path = '/', headers = {}, timeoutMs = 10
 function originProbePath(card) {
   const api = new URL(card.endpoints.openai);
   return `${api.pathname.replace(/\/$/, '')}/models`;
+}
+
+/** The chat-completion path of the card's API, `{api path}/chat/completions`. */
+function originChatPath(card) {
+  const api = new URL(card.endpoints.openai);
+  return `${api.pathname.replace(/\/$/, '')}/chat/completions`;
+}
+
+/**
+ * The model an identity comparison asks: the first of the card's offerings that the API lists through
+ * the CDN (as the model id it is called by), else the first id of that list.
+ */
+function comparisonModel(card, models) {
+  const listed = new Set(models);
+  for (const o of card?.offerings ?? []) {
+    const id = o?.binding?.model_id ?? o?.offering_id;
+    if (typeof id === 'string' && listed.has(id)) return id;
+  }
+  return models[0];
 }
 
 /** How two model lists differ, in words; null when they hold the same ids. */
@@ -255,6 +292,34 @@ export async function checkOrigins(card, host, declared, opts = {}) {
     return fail(`the API gives the registry no model list through the CDN (${why}), so no origin can be compared with it`,
       { front: { status: front.status ?? null, models: 0 } });
   }
+  // With a private identity prompt (opts.identityPrompt, from the registry's corpus), each origin must
+  // also answer it as the API does through the CDN: a decoy can copy a model list, not a model's replies.
+  // Asked at temperature 0 like Stage B; two servers can still differ now and then, so a mismatch is
+  // asked once more on both sides. Neither the prompt nor the replies are kept with the result.
+  let compare = null;
+  if (opts.identityPrompt) {
+    const chat = {
+      path: originChatPath(card), headers: target.headers,
+      body: {
+        model: comparisonModel(card, front.models), stream: false, temperature: 0, max_tokens: ORIGIN_IDENTITY_MAX_TOKENS,
+        messages: [{ role: 'user', content: String(opts.identityPrompt) }],
+      },
+    };
+    const ask = async (ip) => (await probe(ip, host, chat).catch(() => ({})))?.text ?? null;
+    const frontTexts = [await ask(opts.frontIp)].filter((t) => t !== null);
+    if (!frontTexts.length) {
+      return fail('the API gives the registry no reply through the CDN to compare the origins with',
+        { front: { status: front.status, models: front.models.length }, identity: 'no reply through the CDN' });
+    }
+    compare = async (ip) => {
+      const first = await ask(ip);
+      if (first !== null && frontTexts.includes(first)) return { same: true, retried: false };
+      if (frontTexts.length < 2) { const again = await ask(opts.frontIp); if (again !== null) frontTexts.push(again); }
+      const second = await ask(ip);
+      if ([first, second].some((t) => t !== null && frontTexts.includes(t))) return { same: true, retried: true };
+      return { same: false, retried: true, no_reply: first === null && second === null };
+    };
+  }
   const addresses = [];
   for (const address of listed) {
     const ips = net.isIP(address) ? [address] : await (opts.resolve ?? ((h) => dns.resolve4(h)))(address).catch(() => []);
@@ -265,14 +330,25 @@ export async function checkOrigins(card, host, declared, opts = {}) {
     const differs = serves.models ? listDifference(serves.models, front.models)
       : `does not answer like the API through the CDN (HTTP ${serves.status}${serves.status === 200 ? ', no model list' : ''})`;
     if (differs) { addresses.push({ address, ip, verdict: 'unknown', reason: differs }); continue; }
+    let identity = null;
+    if (compare) {
+      identity = await compare(ip);
+      if (!identity.same) {
+        const reason = identity.no_reply ? 'does not reply to a chat request like the API through the CDN'
+          : 'replies to a private identity prompt differently from the API through the CDN';
+        addresses.push({ address, ip, verdict: 'unknown', reason, identity: { same: false, retried: true } });
+        continue;
+      }
+    }
     const located = await locateAddress(ip, declared, opts);
-    addresses.push({ address, ip, serves: true, server_country: located.server.country, ...located });
+    addresses.push({ address, ip, serves: true, ...(identity ? { identity } : {}), server_country: located.server.country, ...located });
   }
   const failed = addresses.find((a) => !SERVER_CHECK_PASSES.includes(a.verdict));
   return {
     declared: listed,
     signed,
     front: { status: front.status, models: front.models.length },
+    identity: compare ? 'compared' : 'not compared',
     verdict: failed ? failed.verdict : addresses.every((a) => a.verdict === 'match') ? 'match' : 'same_region',
     addresses,
   };

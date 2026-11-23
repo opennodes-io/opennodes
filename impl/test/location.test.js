@@ -353,3 +353,69 @@ test('card schema: endpoints.origin_addresses and the dated data-policy link are
   assert.notDeepEqual(validateCard(card({ origin_addresses: [] })), [], 'an empty list declares nothing');
   assert.notDeepEqual(validateCard(card({}, { checked: 'last week' })), [], 'checked is a date');
 });
+
+test('declared origins must also reply to a private identity prompt as the API does through the CDN', async () => {
+  const CF = { country: 'US', lat: 37.75, lon: -97.82, asn: 13335 };
+  const table = { '198.51.100.8': CF, '198.51.100.30': { country: 'FR', lat: 48.86, lon: 2.35, asn: 64510 } };
+  const LIST = ['bielik-1.5b', 'llama3.2:1b'];
+  const PROMPT = 'Which metal is liquid at room temperature?';
+  const card = (origins) => ({
+    node: { operator: { country: 'FR' } },
+    endpoints: { openai: 'https://api.lab.example/v1', health: 'https://api.lab.example/onp/health', origin_addresses: origins },
+    offerings: [{ offering_id: 'small', binding: { model_id: 'llama3.2:1b' } }],
+  });
+  const calls = [];
+  const api = (replies) => async (ip, host, target) => {
+    calls.push({ ip, post: Boolean(target.body), path: target.path, body: target.body ?? null });
+    if (!target.body) return { ok: true, status: 200, models: LIST };
+    const reply = replies[ip];
+    return { ok: true, status: 200, models: null, text: typeof reply === 'function' ? reply() : reply };
+  };
+  const opts = (probeOrigin, extra = {}) => ({
+    resolve: async (h) => ({ 'api.lab.example': ['198.51.100.8'] }[h] ?? []),
+    fetchImpl: fakeRipestat(table), selfSite: NUREMBERG, rtt: async () => 12, probeOrigin, identityPrompt: PROMPT, ...extra,
+  });
+
+  // the same reply through the CDN and at the origin: passes, each asked once, like Stage B
+  const same = await checkNodeLocation(card(['198.51.100.30']), opts(api({ '198.51.100.8': 'Mercury.', '198.51.100.30': 'Mercury.' })));
+  assert.equal(same.origin.verdict, 'match');
+  assert.equal(same.origin.identity, 'compared');
+  assert.deepEqual(same.origin.addresses[0].identity, { same: true, retried: false });
+  const posts = calls.filter((c) => c.post);
+  assert.deepEqual(posts.map((c) => c.ip), ['198.51.100.8', '198.51.100.30'], 'through the CDN first, then at the origin');
+  assert.equal(posts[0].path, '/v1/chat/completions');
+  assert.equal(posts[0].body.model, 'llama3.2:1b', "the card's offering that the API lists");
+  assert.equal(posts[0].body.temperature, 0);
+  assert.equal(posts[0].body.messages[0].content, PROMPT);
+  const stored = JSON.stringify(same);
+  assert.equal(stored.includes(PROMPT) || stored.includes('Mercury'), false, 'neither the prompt nor the replies are kept');
+
+  // a decoy that copies the model list but runs another model fails, and is not located
+  const decoy = await checkNodeLocation(card(['198.51.100.30']), opts(api({ '198.51.100.8': 'Mercury.', '198.51.100.30': 'The metal is mercury.' })));
+  assert.equal(decoy.origin.verdict, 'unknown');
+  assert.match(decoy.origin.addresses[0].reason, /replies to a private identity prompt differently from the API through the CDN/);
+  assert.deepEqual(decoy.origin.addresses[0].identity, { same: false, retried: true });
+  assert.equal(decoy.origin.addresses[0].server, undefined);
+
+  // a one-off difference (two servers can differ now and then at temperature 0) is asked once more and passes
+  let asked = 0;
+  const flaky = await checkNodeLocation(card(['198.51.100.30']), opts(api({ '198.51.100.8': 'Mercury.', '198.51.100.30': () => (asked++ === 0 ? 'Mercury!' : 'Mercury.') })));
+  assert.equal(flaky.origin.verdict, 'match');
+  assert.deepEqual(flaky.origin.addresses[0].identity, { same: true, retried: true });
+
+  // no reply through the CDN: nothing to compare with, so the check fails before any origin is asked
+  calls.length = 0;
+  const noFront = await checkNodeLocation(card(['198.51.100.30']), opts(api({ '198.51.100.8': null, '198.51.100.30': 'Mercury.' })));
+  assert.equal(noFront.origin.verdict, 'unknown');
+  assert.match(noFront.origin.reason, /no reply through the CDN/);
+  assert.equal(calls.some((c) => c.ip === '198.51.100.30'), false);
+
+  // an origin that does not reply to a chat request fails
+  const silent = await checkNodeLocation(card(['198.51.100.30']), opts(api({ '198.51.100.8': 'Mercury.', '198.51.100.30': null })));
+  assert.match(silent.origin.addresses[0].reason, /does not reply to a chat request like the API through the CDN/);
+
+  // without a prompt (a registry with no corpus at hand) only the model list is compared, as before
+  const listOnly = await checkNodeLocation(card(['198.51.100.30']), opts(api({}), { identityPrompt: undefined }));
+  assert.equal(listOnly.origin.verdict, 'match');
+  assert.equal(listOnly.origin.identity, 'not compared');
+});

@@ -1,5 +1,25 @@
 # ONP specification changes
 
+## Draft 0.1, revision 13 — 2026-11-23: a declared origin must reply as the API does
+
+The security review by Mark Lindley, Two Minds (twomindsworks.com) suggested a cheap strengthening of the way back in for CDN-fronted providers (revision 12, S10): besides the model list, send one identity prompt from the private corpus to each declared origin and compare its reply with the API's through the CDN. A decoy server can copy a model list; it cannot reply as the model without running it.
+
+| # | Where | Change |
+|---|---|---|
+| O1 | ONP-3 §6.4 | Declared origin addresses: the registry SHOULD ask one identity prompt from its private corpus, as a chat completion at temperature 0 with the model id of one of the card's offerings that the API lists, through the CDN and at each address; the address MUST reply with the same text. A mismatch is asked once more on both sides; still different, or no reply, fails the address. No reply through the CDN fails the whole check. Only whether the replies matched is published, never the prompt or the replies |
+| O2 | ONP-2 §4 | `origin_addresses`: each must also answer a chat completion with the same reply as the API through the CDN |
+
+### Reference implementation changes
+
+- `@opennodes/registry` 0.1.55:
+  - `location.js`: `checkOrigins` takes `identityPrompt`; `probeOrigin` takes a JSON `body` (a POST) and returns the reply's `text`; `chatText()`; `ORIGIN_IDENTITY_MAX_TOKENS` (64, as Stage B). The result adds `identity` (`compared` / `not compared`) and, per address, `identity: { same, retried }`.
+  - The location check passes one random identity prompt from the corpus (`corpus.identityPrompts(1)`).
+  - Tests: `location.test.js` (same reply, a decoy that copies the model list, a one-off difference asked again, no reply through the CDN, an origin that does not reply, nothing of the prompt or replies stored, model list only without a prompt).
+
+### Release order
+
+npm `@opennodes/registry` 0.1.55 (the other packages are unchanged), then the registry deploy. No change for nodes or clients.
+
 ## Draft 0.1, revision 12 — 2026-11-19: the EU filter is a declaration, a gateway closed to web pages, blind probes that check identity
 
 This revision answers the follow-up of 19 November to the security review by Mark Lindley, Two Minds (twomindsworks.com): the EU filter (follow-up point 2), the supply chain (3), the gateway (4), card-only listings (5), the 409 excuse (6) and the gap between Stage B runs (8), plus a Stage B gap found on the way, and the reviewer's request of 20 November that the way back in for CDN-fronted providers need its own evidence (S10). Point 1 is this release; point 7 (reference identity) is a deploy decision, below. It ships in the versions of revision 11: core 0.1.25, cli 0.1.34, registry 0.1.54, ollama-router 0.1.28, onp-node 0.1.10.
