@@ -122,6 +122,8 @@ test('DNS TXT challenge verifies without an HTTP challenge endpoint', async (t) 
     body: JSON.stringify({ card_url: `${node.origin}/.well-known/open-node.json` }),
   })).json();
   issuedToken = reg.challenge.token;
+  // The printed instruction names the record the check resolves: every label of the id, not the first two.
+  assert.equal(reg.challenge.methods.dns, `_onp-challenge.fixture.opennodes.org TXT "${issuedToken}"`);
   // Deliberately do NOT serve the HTTP challenge — DNS must carry it.
   const verify = await (await fetch(`${registry.origin}${reg.challenge.verify}`, { method: 'POST' })).json();
   assert.equal(verify.state, 'community');

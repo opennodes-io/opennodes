@@ -371,7 +371,7 @@ export async function startRegistry({
         challenge: {
           methods: {
             http: `${origin}/.well-known/onp-challenge/${token}`,
-            dns: `_onp-challenge.${nodeId.split('.').slice(0, 2).reverse().join('.')} TXT "${token}"`,
+            dns: `_onp-challenge.${domainForNodeId(nodeId)} TXT "${token}"`,   // the whole id, as the check resolves it
           },
           token,
           verify: `/v0/nodes/${nodeId}/verify`,

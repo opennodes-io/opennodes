@@ -37,7 +37,9 @@ The review found that "verified" could not yet carry personal data: the admissio
 | 5.5 Retention and training declarations are unverifiable but gate the trusted pool | **Partly fixed** (rev. 12): labelled as declared everywhere, optional dated link to the published policy; not yet required for the trusted pool | ONP-2 §5 |
 | 4.7 GeoLite country (operator-influenced via geofeeds), first IPv4 only, fixed CDN list, `same_region` accepts any EEA server | **Open** | ONP-3 §6.4 |
 | 4.7 Behind a CDN the registry cannot see whether the CDN forwards only to the declared origins, and a server that copies the API's model list passes the origin check | **Open**: the signed declaration makes a decoy a false statement; evidence of where requests are processed needs attested residency, planned for Draft 0.2 | ONP-3 §6.4 |
-| 4.5, 4.8–4.10, 5.3–5.4 (load ramp and rank weighting, triangulation, receipts, registry trust root, operator identity and attested residency) | **Open**: outside revisions 10 to 12; operator identity and attested residency are planned for Draft 0.2 | — |
+| 4.5 The capacity ramp is a 3-second burst against a 15-minute specification, and the 7-day Stage C rank weighting is not applied | **Marked** (rev. 12): ONP-3 §4a says both are not yet implemented in the reference registry; a sustained ramp is planned for Draft 0.2 | ONP-3 §4a.6, Stage C |
+| 4.1 The DNS instruction printed to a registrant used only the first two labels of the id (the check itself was right) | **Fixed** (rev. 12, registry 0.1.54): the instruction names the whole domain, as the check resolves it | ONP-3 §4 |
+| 4.8–4.10, 5.3–5.4 (triangulation, receipts, registry trust root, operator identity and attested residency) | **Open**: outside revisions 10 to 12; operator identity and attested residency are planned for Draft 0.2 | — |
 
 ## Fixed in the errata (2026-10-23)
 
