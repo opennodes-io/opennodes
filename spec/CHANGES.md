@@ -1,5 +1,21 @@
 # ONP specification changes
 
+## Reference implementation, 2026-11-24: AI Horde import, no auto-routing to logged retention (no protocol change)
+
+No normative text changes; Draft 0.1 stays at revision 14. Released as core 0.1.26, cli 0.1.35, registry 0.1.57 and ollama-router 0.1.29 (PR #29).
+
+- `@opennodes/registry` 0.1.57:
+  - AI Horde importer (`horde` re-import source, opt-in in `ONP_REIMPORT_SOURCES`, hourly by default via `ONP_REIMPORT_HORDE_MS`; or `POST /v0/import/horde`, admin): one imported node, `import.aihorde.text`, with no operator country, so it never matches a jurisdiction filter or the trusted pool. It reads only the public status (`/api/v2/status/models?type=text&chat=true`, with `Client-Agent`) and Haidra's text model reference (names and Hugging Face URLs only); no prompt is sent. Offerings only for models with online chat workers and a Hugging Face record; free; `data_policy.retention: "logged"` with the Horde FAQ as source; lineage only for from-scratch releases. Reported worker count, queue and ETA appear as `observed.upstream` (`basis: "reported"`). An empty snapshot delists the node until workers return.
+  - `PUT /v0/nodes/{id}/ping` on an imported listing answers `409 imported-listing`: imports are never probed.
+  - Web app: a Horde notice in place of the claim box, the reported worker line, a Horde key hint; no "inferred country" wording for imports without a country.
+- `@opennodes/core` 0.1.26: `autoRoutable` / `declaresLogged`.
+- `@opennodes/cli` 0.1.35 (gateway) and `@opennodes/ollama-router` 0.1.29: automatic routing (`onp/auto*`, virtual models, their fallbacks and failover) leaves out offerings that declare `retention: logged` or an unknown retention, unless `--allow-logged`; a model the user names still works. Advice reports `left_out_logged`. The router depends on cli 0.1.35.
+- Not in the spec yet (a later revision): the ping `409 imported-listing` in the ONP-3 route table; `observed.upstream` as an output field; fields for "the people running the hardware can read prompts" (proposed `data_policy.statement`) and for a non-monetary queue priority with a free allowance (proposed `free_tier`).
+
+### Release order
+
+npm core 0.1.26, cli 0.1.35, registry 0.1.57 and ollama-router 0.1.29 in one run; re-pin (the plugin, the root Dockerfile, the Cursor link and the install lines); the registry deploy. The Horde listing stays off until `horde` is added to `ONP_REIMPORT_SOURCES`, after Haidra has been told.
+
 ## Draft 0.1, revision 14 — 2026-11-24: Stage B the operator cannot time, blind probes no card fetch announces
 
 A re-check of the security review by Mark Lindley, Two Minds (twomindsworks.com) and its follow-up against registry 0.1.55 found two ways round fixes that were in place, and one contradiction in the text:

@@ -17,10 +17,10 @@ The OpenNodes Protocol (ONP) client: discover verified AI inference nodes, pre-p
   - `/gateway/advice` reports `left_out_logged` when some were left out.
 
 ```bash
-npx @opennodes/cli@0.1.34 mcp --print-config      # paste into your MCP host's config
-npx @opennodes/cli@0.1.34 gateway --port 4141     # then set OPENAI_BASE_URL=http://127.0.0.1:4141/v1
-npx @opennodes/cli@0.1.34 gateway --sensitive     # every request stays in the trusted pool
-npx @opennodes/cli@0.1.34 search --modality text --tier verified --sort tps
+npx @opennodes/cli@0.1.35 mcp --print-config      # paste into your MCP host's config
+npx @opennodes/cli@0.1.35 gateway --port 4141     # then set OPENAI_BASE_URL=http://127.0.0.1:4141/v1
+npx @opennodes/cli@0.1.35 gateway --sensitive     # every request stays in the trusted pool
+npx @opennodes/cli@0.1.35 search --modality text --tier verified --sort tps
 ```
 
 Registry: `ONP_REGISTRY` — defaults to the hosted registry at `https://registry.opennodes.io` (9,000+ offerings); set it to `http://127.0.0.1:4300` to use your own (`npx @opennodes/registry@0.1.56`).
