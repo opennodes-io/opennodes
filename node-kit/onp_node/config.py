@@ -59,6 +59,10 @@ keep = 50000
 # `artifact` names the public record of the weights, which registries check the model's identity
 # against: the kit writes ollama:<name> for Ollama models and hf:<org>/<repo> for Hugging Face ids.
 # Set it for a model you created under a local name, e.g. artifact = "hf:speakleash/Bielik-1.5B-v3.0-Instruct".
+# `lineage_origins` is the country of every developer in the model's derivation chain (base models,
+# merge sources, distillation teachers), as ISO codes: a fine-tune of a Chinese base model lists CN
+# wherever the fine-tune was made (ONP-2 §5). Undeclared lineage is unknown, and keeps an offering
+# out of trusted pools.
 # [model."Qwen/Qwen3-235B-A22B-FP8"]
 # params_b = 235
 # context_window = 32768
@@ -67,6 +71,7 @@ keep = 50000
 # languages = ["en", "de", {{ lang = "pl", grade = "native" }}]   # plain codes mean "strong"
 # expected_tps = 60                                 # tokens/s you expect per request
 # expected_ttft_ms = 400
+# lineage_origins = ["CN"]                          # Qwen: developed by Alibaba
 
 # Disclose the silicon behind this node — same model, different hardware, different
 # product. Claimed until attested; the registry's measured TTFT/TPS always wins.
@@ -129,6 +134,19 @@ ARTIFACT = re.compile(r"^(hf:[^/\s]+/[^/\s]+|ollama:[A-Za-z0-9][A-Za-z0-9._-]*(/
                       r"|urn:proprietary:[a-z0-9-]+:[A-Za-z0-9._-]+)$")
 
 
+def lineage_for(model_id: str, info: dict) -> dict:
+    """`model.lineage_origins` from the operator's [model."<id>"] table: upper-case ISO 3166-1 alpha-2
+    codes, in order, without repeats; {} when none is declared (ONP-2 §5: unknown, not clean)."""
+    declared = info.get("lineage_origins")
+    if declared is None:
+        return {}
+    codes = [str(c).strip().upper() for c in declared] if isinstance(declared, list) else None
+    if not codes or not all(re.fullmatch(r"[A-Z]{2}", c) for c in codes):
+        raise SystemExit(f'[model."{model_id}"] lineage_origins must be a non-empty list of two-letter '
+                         f'country codes, e.g. ["US"] or ["PL", "CN"]')
+    return {"lineage_origins": list(dict.fromkeys(codes))}
+
+
 def artifact_for(node_id: str, model_id: str, info: dict) -> str:
     """The public record of a model's weights, which registries test its identity against.
 
@@ -182,6 +200,7 @@ def build_card(cfg: dict, model_ids: list[str], details: dict | None = None) -> 
             "artifact": artifact_for(node["id"], model_id, info),
             **{k: info[k] for k in ("family", "quantization") if info.get(k)},
             **({"params_b": float(info["params_b"])} if info.get("params_b") else {}),
+            **lineage_for(model_id, info),
         }
         model_serving = {
             "context_window": int(info.get("context_window", serving.get("context_window", 8192))),
