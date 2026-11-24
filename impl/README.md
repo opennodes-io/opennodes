@@ -17,9 +17,9 @@ Requires Node ≥ 22.5 (uses `node:sqlite`, built-in Ed25519). Zero runtime depe
 ## Install (published)
 
 ```
-npx @opennodes/registry@0.1.56                  # registry: web app + API + MCP on :4300
-npx @opennodes/cli@0.1.34 mcp --print-config    # stdio MCP server config for Cursor / VS Code / Claude Desktop
-npx @opennodes/cli@0.1.34 gateway --port 4141   # OpenAI-compatible gateway with onp/auto routing
+npx @opennodes/registry@0.1.57                  # registry: web app + API + MCP on :4300
+npx @opennodes/cli@0.1.35 mcp --print-config    # stdio MCP server config for Cursor / VS Code / Claude Desktop
+npx @opennodes/cli@0.1.35 gateway --port 4141   # OpenAI-compatible gateway with onp/auto routing
 ```
 
 ## Develop
@@ -48,12 +48,12 @@ node packages/cli/bin.js invoke --offering org.opennodes.fixture/echo-1 --prompt
 `onp mcp` is a stdio MCP server exposing `recommend` (the advisor — features are extracted
 locally, the prompt never leaves the machine) / `search_offerings` / `get_offering` / `get_node` / `estimate`
 across everything the registry knows — registered nodes plus the imported OpenRouter,
-Hugging Face, models.dev, and Ollama catalogs. Editor config (`npx @opennodes/cli@0.1.34 mcp --print-config`):
+Hugging Face, models.dev, and Ollama catalogs. Editor config (`npx @opennodes/cli@0.1.35 mcp --print-config`):
 
 ```json
 { "mcpServers": { "opennodes": {
     "command": "npx",
-    "args": ["-y", "@opennodes/cli@0.1.34", "mcp"],
+    "args": ["-y", "@opennodes/cli@0.1.35", "mcp"],
     "env": { "ONP_REGISTRY": "http://127.0.0.1:4300" } } } }
 ```
 
@@ -62,7 +62,7 @@ Hugging Face, models.dev, and Ollama catalogs. Editor config (`npx @opennodes/cl
 ### Gateway: use discovered nodes from Cursor / VS Code / any OpenAI client
 
 ```
-npx @opennodes/cli@0.1.34 gateway --port 4141 --token dev-secret --virtual "eu-cheap=modality=text&sort=price"
+npx @opennodes/cli@0.1.35 gateway --port 4141 --token dev-secret --virtual "eu-cheap=modality=text&sort=price"
 ```
 
 Then in the third-party client set the OpenAI-compatible base URL to `http://127.0.0.1:4141/v1`

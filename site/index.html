@@ -149,7 +149,7 @@
     <a class="btn primary" href="https://registry.opennodes.io/">Open the registry</a>
     <a class="btn secondary" href="#ollama">Run it with Ollama</a>
   </div>
-  <p class="quick">Or start now: <code>npx @opennodes/ollama-router@0.1.28</code> · Building in Europe? <a href="/eu">OpenNodes for Europe</a></p>
+  <p class="quick">Or start now: <code>npx @opennodes/ollama-router@0.1.29</code> · Building in Europe? <a href="/eu">OpenNodes for Europe</a></p>
 
   <figure class="proof" aria-labelledby="proof-cap">
     <div class="proof-head">
@@ -185,7 +185,7 @@
 <section id="ollama"><div class="wrap">
   <h2>One Ollama endpoint for your laptop, your network, and verified cloud</h2>
   <p class="small">Run one command and every Ollama app — Open WebUI, Continue, Zed, Msty, the <code>ollama</code> CLI — sees one model list: your local models, your other machines on the network (found automatically), and verified public nodes. <code>auto</code> picks a model per prompt; <code>auto-private</code> never leaves your network. No account, no API key; needs Node.js 22.5 or later.</p>
-  <pre><code>npx @opennodes/ollama-router@0.1.28
+  <pre><code>npx @opennodes/ollama-router@0.1.29
 # in another terminal, point Ollama apps at the router:
 export OLLAMA_HOST=127.0.0.1:11435      # PowerShell: $env:OLLAMA_HOST="127.0.0.1:11435"
 ollama run auto-private "summarize this confidential note"   # local / LAN models only</code></pre>
@@ -201,11 +201,11 @@ ollama run auto-private "summarize this confidential note"   # local / LAN model
   <h2>Ask for the right model from where you work</h2>
   <h3>MCP — Cursor, Claude Desktop, Claude Code, VS Code, Kiro, any agent</h3>
   <p class="small muted">Seven read-only tools: <code>recommend</code> picks the best node and model for a task, priced and explained (the prompt is analysed on your machine; only its features are sent), plus <code>search_offerings</code>, <code>get_offering</code>, <code>get_node</code>, <code>estimate</code>, <code>find_locations</code> (where models run) and <code>find_residency</code> (what providers promise about where data stays).</p>
-  <pre><code>npx @opennodes/cli@0.1.34 mcp --print-config        # paste into your MCP host's config
+  <pre><code>npx @opennodes/cli@0.1.35 mcp --print-config        # paste into your MCP host's config
 # no install: point a remote-MCP host at https://registry.opennodes.io/mcp</code></pre>
   <h3>Any OpenAI-compatible app</h3>
   <p class="small muted">A local gateway whose <code>onp/auto</code> models route each request to a node you can call: free registered nodes, plus catalogs you hold a key for. Prices are pinned, receipts verified, and it fails over to the next node.</p>
-  <pre><code>npx @opennodes/cli@0.1.34 gateway --port 4141       # OpenAI base URL: http://127.0.0.1:4141/v1</code></pre>
+  <pre><code>npx @opennodes/cli@0.1.35 gateway --port 4141       # OpenAI base URL: http://127.0.0.1:4141/v1</code></pre>
   <p class="small muted">Step-by-step setup for Cursor, Claude, VS Code, Windsurf, Kiro, Open WebUI, Continue, Zed, the OpenAI SDK, LangChain and LiteLLM: <a href="/integrations">Integrations</a>.</p>
 </div></section>
 
@@ -233,7 +233,7 @@ onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.ai --public-ur
   <ul class="points small">
     <li><strong>Anyone can list; no one is trusted blindly.</strong> Claiming a model you don't serve gets the node marked <code>disputed</code> and dropped from search.</li>
     <li><strong>Ranking by published rule.</strong> Every result carries its rank explanation; claimed, measured and attested values are never blended, and there is no paid placement.</li>
-    <li><strong>Federated.</strong> The registry is an OpenAPI anyone can implement plus a signed, mirrorable export feed. Run your own with <code>npx @opennodes/registry@0.1.56</code>.</li>
+    <li><strong>Federated.</strong> The registry is an OpenAPI anyone can implement plus a signed, mirrorable export feed. Run your own with <code>npx @opennodes/registry@0.1.57</code>.</li>
   </ul>
   <p class="small">Read the spec: <a href="https://github.com/opennodes-io/opennodes/tree/main/spec">six short documents, ONP-1 to ONP-6</a>, and the <a href="https://github.com/opennodes-io/opennodes/blob/main/spec/KNOWN-ISSUES.md">known issues for Draft 0.2</a>.</p>
 </div></section>
