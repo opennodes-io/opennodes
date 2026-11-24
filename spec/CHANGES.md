@@ -16,9 +16,11 @@ The security review by Mark Lindley, Two Minds (twomindsworks.com) suggested a c
   - `corpus.js`: `originPrompt()` and `ORIGIN_PROMPT_TEMPLATES`: a short public template with a random six-digit number, never corpus text. The location check passes one (`corpus.originPrompt()`).
   - Tests: `location.test.js` (same reply, a decoy that copies the model list, a one-off difference asked again, no reply through the CDN, an origin that does not reply, empty replies on both sides and a blank origin reply, a fresh prompt each time that is never corpus text, nothing of the prompt or replies stored, model list only without a prompt).
 
+- `onp-node` 0.1.11 (Node Kit): `lineage_origins` in an operator's `[model."<id>"]` table passes into the card as `model.lineage_origins` (ONP-2 §5), upper-cased, without repeats, and refused unless every entry is a two-letter country code. Undeclared lineage stays out of the card, as unknown. Found by the second review of 24 November: neither reference node declared lineage, so the trusted pool, which requires it, was empty.
+
 ### Release order
 
-npm `@opennodes/registry` 0.1.55 (the other packages are unchanged), then the registry deploy. No change for nodes or clients.
+npm `@opennodes/registry` 0.1.55 (the other npm packages are unchanged), then the registry deploy, then `onp-node` 0.1.11 on PyPI. No change for clients; node operators may add `lineage_origins` to their model tables.
 
 ## Draft 0.1, revision 12 — 2026-11-19: the EU filter is a declaration, a gateway closed to web pages, blind probes that check identity
 

@@ -101,3 +101,17 @@ def _find_artifact_pattern(node):
             if found:
                 return found
     return None
+
+
+# ---- model.lineage_origins: every developer in the derivation chain (ONP-2 §5)
+def test_lineage_origins_land_in_card_and_are_checked():
+    import pytest
+    base = DEFAULT_CONFIG.format(**FILL)
+    plain = build_card(tomllib.loads(base), ["m"])
+    assert "lineage_origins" not in plain["offerings"][0]["model"], "undeclared stays unknown"
+    text = base + '\n[model."bielik"]\nlineage_origins = ["pl", "CN", "PL"]\n'
+    card = build_card(tomllib.loads(text), ["bielik"])
+    assert card["offerings"][0]["model"]["lineage_origins"] == ["PL", "CN"]
+    for bad in ('[]', '"US"', '["USA"]'):
+        with pytest.raises(SystemExit):
+            build_card(tomllib.loads(base + f'\n[model."m"]\nlineage_origins = {bad}\n'), ["m"])

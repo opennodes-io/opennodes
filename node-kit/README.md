@@ -43,7 +43,7 @@ python -m venv .venv
 ## Real deployment (e.g. Ollama on this machine)
 
 ```
-pipx install onp-node==0.1.10    # from PyPI; from a checkout: pipx install ./node-kit
+pipx install onp-node==0.1.11    # from PyPI; from a checkout: pipx install ./node-kit
 onp-node init --engine http://127.0.0.1:11434/v1 --id org.example.ai --public-url https://ai.example.org
 # The node id must be the reverse of the host that serves it (ai.example.org -> org.example.ai, or a
 # name below it such as org.example.ai.box): registries accept a card only from a host that controls the id.
@@ -88,7 +88,7 @@ request, and needs a signed card (the kit signs it) and identity references the 
 If you operate a production API and won't put a proxy in its path, list it with a static card instead. The kit signs the card once; you host two JSON files on your domain; the registry probes your real API with a key you provide.
 
 ```
-pipx install onp-node==0.1.10
+pipx install onp-node==0.1.11
 onp-node init --engine https://api.example.com/v1 --id com.example.ai --public-url https://ai.example.com   # ONP_ENGINE_KEY=<key> if /models needs one
 # edit onp-node.toml: pricing (per MTok), schemes = ["prepaid"], data_policy, optional [hardware]
 onp-node card --signup https://console.example.com/keys --out well-known
