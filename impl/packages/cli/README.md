@@ -19,6 +19,6 @@ npx @opennodes/cli@0.1.34 gateway --sensitive     # every request stays in the t
 npx @opennodes/cli@0.1.34 search --modality text --tier verified --sort tps
 ```
 
-Registry: `ONP_REGISTRY` — defaults to the hosted registry at `https://registry.opennodes.io` (9,000+ offerings); set it to `http://127.0.0.1:4300` to use your own (`npx @opennodes/registry@0.1.55`).
+Registry: `ONP_REGISTRY` — defaults to the hosted registry at `https://registry.opennodes.io` (9,000+ offerings); set it to `http://127.0.0.1:4300` to use your own (`npx @opennodes/registry@0.1.56`).
 
 Part of [OpenNodes](https://opennodes.io) · [specification](https://github.com/opennodes-io/opennodes/tree/main/spec) · Apache-2.0.
