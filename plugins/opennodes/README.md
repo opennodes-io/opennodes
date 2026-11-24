@@ -19,7 +19,7 @@ In a Claude Code terminal session:
 
 In the Claude desktop app: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `opennodes-io/opennodes`, then add **opennodes**.
 
-Needs Node.js 20 or later (the plugin starts `npx -y @opennodes/cli@0.1.34 mcp`).
+Needs Node.js 20 or later (the plugin starts `npx -y @opennodes/cli@0.1.35 mcp`).
 
 ## What's in it
 
