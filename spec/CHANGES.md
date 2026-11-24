@@ -1,5 +1,25 @@
 # ONP specification changes
 
+## Draft 0.1, revision 13 — 2026-11-23: a declared origin must reply as the API does
+
+The security review by Mark Lindley, Two Minds (twomindsworks.com) suggested a cheap strengthening of the way back in for CDN-fronted providers (revision 12, S10): besides the model list, send one prompt to each declared origin and compare its reply with the API's through the CDN. A decoy server can copy a model list; it cannot reply as the model without running it. A second review of the standard (24 November) found that taking that prompt from the identity references would let an operator collect them through the check, which is labelled and which they can set off at will, so the prompt is never corpus text; it also found that an empty reply matched an empty reply, and that ONP-2 §4 still described the origin test that revision 12 replaced.
+
+| # | Where | Change |
+|---|---|---|
+| O1 | ONP-3 §6.4 | Declared origin addresses: the registry SHOULD send one chat completion at temperature 0, with the model id of one of the card's offerings that the API lists, through the CDN and at each address; the address MUST reply with the same text. The prompt MUST NOT be an identity reference or other probe text, and SHOULD carry a random part. An empty reply counts as none. A mismatch is asked once more on both sides; still different, or no reply, fails the address. No reply through the CDN fails the whole check. Only whether the replies matched is published |
+| O2 | ONP-2 §4 | `origin_addresses`: each must also answer a chat completion with the same reply as the API through the CDN. The second paragraph no longer passes an origin on any status below 500 for `health` or `/models`: it states the test of revision 12 (the same model list) plus this one |
+
+### Reference implementation changes
+
+- `@opennodes/registry` 0.1.55:
+  - `location.js`: `checkOrigins` takes `comparisonPrompt`; `probeOrigin` takes a JSON `body` (a POST) and returns the reply's `text`; `chatText()`, which treats an empty or whitespace-only reply as none; `ORIGIN_IDENTITY_MAX_TOKENS` (64, as Stage B). The result adds `identity` (`compared` / `not compared`) and, per address, `identity: { same, retried }`.
+  - `corpus.js`: `originPrompt()` and `ORIGIN_PROMPT_TEMPLATES`: a short public template with a random six-digit number, never corpus text. The location check passes one (`corpus.originPrompt()`).
+  - Tests: `location.test.js` (same reply, a decoy that copies the model list, a one-off difference asked again, no reply through the CDN, an origin that does not reply, empty replies on both sides and a blank origin reply, a fresh prompt each time that is never corpus text, nothing of the prompt or replies stored, model list only without a prompt).
+
+### Release order
+
+npm `@opennodes/registry` 0.1.55 (the other packages are unchanged), then the registry deploy. No change for nodes or clients.
+
 ## Draft 0.1, revision 12 — 2026-11-19: the EU filter is a declaration, a gateway closed to web pages, blind probes that check identity
 
 This revision answers the follow-up of 19 November to the security review by Mark Lindley, Two Minds (twomindsworks.com): the EU filter (follow-up point 2), the supply chain (3), the gateway (4), card-only listings (5), the 409 excuse (6) and the gap between Stage B runs (8), plus a Stage B gap found on the way, and the reviewer's request of 20 November that the way back in for CDN-fronted providers need its own evidence (S10). Point 1 is this release; point 7 (reference identity) is a deploy decision, below. It ships in the versions of revision 11: core 0.1.25, cli 0.1.34, registry 0.1.54, ollama-router 0.1.28, onp-node 0.1.10.
