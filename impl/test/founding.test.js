@@ -265,7 +265,8 @@ test('the qualification page states the probe load the code uses', () => {
   const { stageAIntervalMs, stageBIntervalMs, stageBFirstMs, stageBChangeMs, stageBRetryMs } = SCHEDULE_DEFAULTS;
   has(`at least every ${stageAIntervalMs / 3_600_000}&nbsp;hours`);
   has(`between ${stageBFirstMs[0] / 3_600_000} and ${stageBFirstMs[1] / 3_600_000}&nbsp;hours after your node reaches`);
-  has(`within ${stageBChangeMs[1] / 3_600_000}&nbsp;hour of a change`);
+  has(`within ${stageBChangeMs[1] / 3_600_000}&nbsp;hours of a change`);
+  has('a run that a change brings does not move it');
   has(`again after ${stageBRetryMs / 86_400_000}&nbsp;days`);
   has(`at most every ${stageBIntervalMs / 86_400_000}&nbsp;days`);
   has(`${BLIND_FAIL_THRESHOLD} blind calls in a row`);

@@ -1,6 +1,30 @@
 # ONP specification changes
 
-## Draft 0.1, revision 13 — 2026-11-23: a declared origin must reply as the API does
+## Draft 0.1, revision 14 — 2026-11-24: Stage B the operator cannot time, blind probes no card fetch announces
+
+A re-check of the security review by Mark Lindley, Two Minds (twomindsworks.com) and its follow-up against registry 0.1.55 found two ways round fixes that were in place, and one contradiction in the text:
+
+| # | Where | Change |
+|---|---|---|
+| T1 | ONP-3 §4a re-verification | A Stage B run set off by a change MUST NOT postpone the registry's random run. The triggers now also name a tested offering's `binding` and a new tested offering. The reference registry runs a change-triggered Stage B at a random time within 72 h (was within 1 h), and keeps the 1–91 day timer drawn after a pass apart: only a run it set off draws it again. Before, an operator who changed the card at least daily got a run within the hour each time, and each pass redrew the timer, so the operator could time every run (review 4.3a). The cost: a tested offering keeps its tier for up to 72 h after a change, where it was at most an hour, until the run checks the changed claims |
+| T2 | ONP-3 §4a.9 | Blind invocations go out on the card the registry already holds; registries SHOULD re-fetch cards on a timer of their own, not just before a blind invocation. Before, every blind probe followed a card fetch seconds earlier, which marked it in the card origin's log (follow-up point 5). The reference registry's scheduled Stage A and Stage B runs also go out on the held card now. A failure on an offering that a card re-fetched after the reply no longer lists is excused like a stale `409`, within the same bound. What remains: a failed reply is still followed by a card fetch, so a node can spend one failure, which alone costs it nothing, to learn that a request was a probe |
+| T4 | ONP-3 §4a.4 | In Stage B, any failed reply to an identity prompt (not only a `409`), and a failed capacity ramp, gets the `409` rule: the card is re-fetched after the reply, and only a revision that really moved excuses it, within the same bound. Since T2 scheduled runs use the held card, so without this a node that had just dropped a model would answer `404` and be disputed |
+| T3 | ONP-3 §6.3 | Only a confirmed Stage B failure disputes `model.artifact`; a confirmed light-check mismatch makes Stage B due (§4a.9), as §4a.9 already said |
+
+### Reference implementation changes
+
+- `@opennodes/registry` 0.1.56:
+  - `schedule.js`: `stageBChangeMs` is 0–72 h; the random timer is its own private schedule row (`TIMER`, `B:timer`), drawn only after a pass when it is due or missing; row `B` stays the soonest of everything due. The qualification page states the new window.
+  - `server.js`: scheduled Stage A and Stage B no longer re-fetch the card first when Stage C runs (its card sweep keeps cards current); an admin's Stage B request still does, and a `409` still re-fetches.
+  - `stageb.js`: `probeIdentity` passes any non-200 reply to the `409` rule (`makeOn409(…)(offering, status)`, whose record names the status); a failed capacity ramp too.
+  - `stagec.js`: `cardSweep` re-fetches the cards of observed nodes in random order on its own jittered timer (`CARD_REFRESH_INTERVAL_MS`, 1 h mean); `blindSweep` no longer fetches the card first. After a failed reply that is not a `409`, the card is re-fetched; if the offering is gone from a new revision, the failure is recorded as an excused `blind-409` with a follow-up owed. A card the node moved to with nothing to call is skipped, not failed.
+  - Tests: `admission.test.js` (a month of daily changes never moves the timer; no card fetch before a blind probe; the card sweep picks up a revision; a dropped offering is excused), a scheduled Stage B on the held card after the node dropped its model: excused, re-run within the hour, not disputed; `founding.test.js` (the page states the 72 h window), `untested-profiles.test.js`. The fixture node counts card fetches.
+
+### Release order
+
+npm `@opennodes/registry` 0.1.56, then the registry deploy. No change for clients. Operators: a card change is re-checked within 3 days, not within the hour; a new revision is picked up within about an hour, or at once on `PUT /v0/nodes/{id}/ping`, and a probe that reaches the old revision first spends one of the 3 daily `409` excuses, as before.
+
+## Draft 0.1, revision 13 — 2026-11-24: a declared origin must reply as the API does
 
 The security review by Mark Lindley, Two Minds (twomindsworks.com) suggested a cheap strengthening of the way back in for CDN-fronted providers (revision 12, S10): besides the model list, send one prompt to each declared origin and compare its reply with the API's through the CDN. A decoy server can copy a model list; it cannot reply as the model without running it. A second review of the standard (24 November) found that taking that prompt from the identity references would let an operator collect them through the check, which is labelled and which they can set off at will, so the prompt is never corpus text; it also found that an empty reply matched an empty reply, and that ONP-2 §4 still described the origin test that revision 12 replaced.
 

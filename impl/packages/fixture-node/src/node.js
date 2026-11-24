@@ -109,6 +109,7 @@ export async function startFixtureNode({
 
   const app = createApp([
     ['GET', '/.well-known/open-node.json', (req, res) => {
+      state.cardFetches = (state.cardFetches ?? 0) + 1;
       res.writeHead(200, { 'content-type': 'application/open-node+json', 'cache-control': 'max-age=60' });
       res.end(JSON.stringify(state.card));
     }],
@@ -241,6 +242,8 @@ export async function startFixtureNode({
     keys,
     get card() { return state.card; },
     get requestCount() { return state.requests; },
+    /** How many times the card was fetched. */
+    get cardFetches() { return state.cardFetches ?? 0; },
     get lastAuth() { return state.lastAuth ?? null; },
     /** Every chat prompt received, in order (the registry's probes included). */
     get prompts() { return state.prompts; },

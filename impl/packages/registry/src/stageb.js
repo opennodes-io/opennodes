@@ -89,7 +89,10 @@ export const STAGE_B_409 = 'identity-409';
  *   (the card the run holds is stale now, so even an honest node refuses what follows).
  */
 function makeOn409(store, nodeId, card, { revisionMoved, maxExcused409 }) {
-  return async (offering) => {
+  // `status`: the reply that sent the registry to the card. Since rev. 14 scheduled runs go out on
+  // the card already held, so a 404 for a model the node has just dropped gets the same rule as a
+  // 409: re-fetched after the reply, excused only if the revision really moved, within the bound.
+  return async (offering, status = 409) => {
     const fresh = revisionMoved ? await revisionMoved() : null;
     if (!fresh) return { kind: 'refused' };
     const since = (await store.getSchedule(nodeId, 'B'))?.last_at ?? '';
@@ -98,7 +101,7 @@ function makeOn409(store, nodeId, card, { revisionMoved, maxExcused409 }) {
       return { kind: 'moved', reason: `the card revision moved again during Stage B, after ${excused} such 409s since the last judged run (at most ${maxExcused409} are excused)` };
     }
     await store.recordProbe(nodeId, offering.offering_id, 'B', STAGE_B_409, false,
-      `409 with revision ${card.revision} pinned; card re-indexed at ${fresh}; Stage B runs again later`);
+      `${status} with revision ${card.revision} pinned; card re-indexed at ${fresh}; Stage B runs again later`);
     return { kind: 'stale' };
   };
 }
@@ -113,9 +116,11 @@ async function probeIdentity(safeFetch, card, offering, refs, on409) {
   let matches = 0, retried = 0, refused = 0, stop = null;
   const ask = async (prompt) => {
     const { status, text } = await chatOnce(safeFetch, card, offering, prompt);
-    if (status === 409) {
-      const what = await on409(offering);
-      if (what.kind === 'refused') refused++; else stop = what;
+    if (status !== 200) {
+      // A 409, or another failure (a 404 for a model dropped since the card was fetched): only a
+      // revision that really moved excuses it; with the current revision pinned it does not match.
+      const what = await on409(offering, status);
+      if (what.kind === 'refused') { if (status === 409) refused++; } else stop = what;
       return null;
     }
     return status === 200 && text !== null ? sha256(text) : null;
@@ -293,6 +298,13 @@ export async function runStageB(store, nodeId, card, {
     await store.setObservation(nodeId, offering.offering_id, 'context_cap', verdict.context.verified_cap);
 
     verdict.capacity = await probeCapacity(safeFetch, card, offering, corpus, capacity);
+    if (!verdict.capacity.ok) {
+      // A failed ramp on a card that has since moved (the model dropped or changed during the run)
+      // is not judged, by the same rule and bound as a 409.
+      const what = await on409(offering, 'capacity failure');
+      if (what.kind === 'stale') return { ok: false, identityFailed: false, stale: true, verdicts: [...verdicts, verdict], untested };
+      if (what.kind === 'moved') return { ok: false, identityFailed: false, reason: `${offering.offering_id}: ${what.reason}`, verdicts: [...verdicts, verdict], untested };
+    }
     await store.recordProbe(nodeId, offering.offering_id, 'B', 'capacity', verdict.capacity.ok, null, verdict.capacity);
     if (verdict.capacity.ttft_ms.p50 != null) {
       await store.setObservation(nodeId, offering.offering_id, 'ttft_ms', verdict.capacity.ttft_ms);
