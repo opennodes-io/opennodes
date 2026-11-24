@@ -9,12 +9,12 @@
     "source": "github",
     "subfolder": "impl/packages/cli"
   },
-  "version": "0.1.34",
+  "version": "0.1.35",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@opennodes/cli",
-      "version": "0.1.34",
+      "version": "0.1.35",
       "transport": {
         "type": "stdio"
       },
