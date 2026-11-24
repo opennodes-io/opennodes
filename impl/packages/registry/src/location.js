@@ -178,15 +178,19 @@ export function modelIds(body) {
   } catch { return null; }
 }
 
-/** The reply text of an OpenAI-style chat completion, or null. */
+/**
+ * The reply text of an OpenAI-style chat completion, or null. An empty or whitespace-only reply is no
+ * reply: one empty answer matches any other, so a decoy that always answers "" would otherwise pass
+ * for models that spend their whole token budget on reasoning.
+ */
 export function chatText(body) {
   try {
     const text = JSON.parse(body)?.choices?.[0]?.message?.content;
-    return typeof text === 'string' ? text : null;
+    return typeof text === 'string' && text.trim() ? text : null;
   } catch { return null; }
 }
 
-/** Identity comparisons through the CDN and at each origin are asked like Stage B's: temperature 0, this many tokens. */
+/** The origin comparison asks through the CDN and at each origin like Stage B does: temperature 0, this many tokens. */
 export const ORIGIN_IDENTITY_MAX_TOKENS = 64;
 
 /**
@@ -292,20 +296,24 @@ export async function checkOrigins(card, host, declared, opts = {}) {
     return fail(`the API gives the registry no model list through the CDN (${why}), so no origin can be compared with it`,
       { front: { status: front.status ?? null, models: 0 } });
   }
-  // With a private identity prompt (opts.identityPrompt, from the registry's corpus), each origin must
-  // also answer it as the API does through the CDN: a decoy can copy a model list, not a model's replies.
-  // Asked at temperature 0 like Stage B; two servers can still differ now and then, so a mismatch is
-  // asked once more on both sides. Neither the prompt nor the replies are kept with the result.
+  // With a comparison prompt (opts.comparisonPrompt: never corpus text, see corpus.js originPrompt),
+  // each origin must also answer it as the API does through the CDN: a decoy can copy a model list, not
+  // a model's replies. Asked at temperature 0 like Stage B; two servers can still differ now and then,
+  // so a mismatch is asked once more on both sides. An empty reply counts as none (chatText). Neither
+  // the prompt nor the replies are kept with the result.
   let compare = null;
-  if (opts.identityPrompt) {
+  if (opts.comparisonPrompt) {
     const chat = {
       path: originChatPath(card), headers: target.headers,
       body: {
         model: comparisonModel(card, front.models), stream: false, temperature: 0, max_tokens: ORIGIN_IDENTITY_MAX_TOKENS,
-        messages: [{ role: 'user', content: String(opts.identityPrompt) }],
+        messages: [{ role: 'user', content: String(opts.comparisonPrompt) }],
       },
     };
-    const ask = async (ip) => (await probe(ip, host, chat).catch(() => ({})))?.text ?? null;
+    const ask = async (ip) => {
+      const text = (await probe(ip, host, chat).catch(() => ({})))?.text;
+      return typeof text === 'string' && text.trim() ? text : null;   // empty is no reply (chatText)
+    };
     const frontTexts = [await ask(opts.frontIp)].filter((t) => t !== null);
     if (!frontTexts.length) {
       return fail('the API gives the registry no reply through the CDN to compare the origins with',
@@ -335,7 +343,7 @@ export async function checkOrigins(card, host, declared, opts = {}) {
       identity = await compare(ip);
       if (!identity.same) {
         const reason = identity.no_reply ? 'does not reply to a chat request like the API through the CDN'
-          : 'replies to a private identity prompt differently from the API through the CDN';
+          : 'replies to a chat request differently from the API through the CDN';
         addresses.push({ address, ip, verdict: 'unknown', reason, identity: { same: false, retried: true } });
         continue;
       }

@@ -854,10 +854,11 @@ export async function startRegistry({
     // (authFetch), and counts declared origins only in a signed card.
     const key = (await store.getCustomerKey(nodeId)) ?? (await store.getProbeKey(nodeId));
     const signed = Boolean((await store.latestRevision(nodeId))?.sig_ok);
-    // Declared origins must also reply to one identity prompt from the corpus as the API does through
-    // the CDN (location.js checkOrigins); only same/different is kept, never the prompt or the replies.
-    const [identityPrompt] = corpus.identityPrompts(1);
-    const result = await checkNodeLocation(card, { ...location, asHolders, key, signed, identityPrompt });
+    // Declared origins must also reply to one prompt as the API does through the CDN (location.js
+    // checkOrigins). Never corpus text: the check is labelled and the operator can set it off at will,
+    // so a corpus prompt here would show them the identity references (corpus.js originPrompt).
+    const comparisonPrompt = corpus.originPrompt();
+    const result = await checkNodeLocation(card, { ...location, asHolders, key, signed, comparisonPrompt });
     await store.setObservation(nodeId, '_node', 'location', result);
     return result;
   }

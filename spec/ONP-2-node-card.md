@@ -148,7 +148,7 @@ The Node Card is the self-description document of an AI Node. It is the unit reg
 }
 ```
 
-A registry cannot locate a CDN edge, so it checks these addresses instead (ONP-3 §6.4): each must be a public address, accept a TLS connection for the `openai` host with a certificate valid for that name under the public CA roots, and answer a request for the `health` endpoint (or `{openai}/models` when `health` is on another host) with any HTTP status below 500 when connected to directly. List every address that serves the endpoint: the check passes only when all of them pass. An origin reachable only through a tunnel (no public address) cannot be checked. Declaring an address is the operator's signed statement that the CDN forwards to it; registries cannot see the forwarding itself.
+A registry cannot locate a CDN edge, so it checks these addresses instead (ONP-3 §6.4): each must be a public address, accept a TLS connection for the `openai` host with a certificate valid for that name under the public CA roots, and, when connected to directly, answer `{openai}/models` with `200` and the same set of model ids as the API gives through the CDN, and a chat completion with the same reply. List every address that serves the endpoint: the check passes only when all of them pass. An origin reachable only through a tunnel (no public address) cannot be checked. Declaring an address is the operator's signed statement that the CDN forwards to it; registries cannot see the forwarding itself.
 
 ## 5. `offerings` — Model Offerings
 

@@ -13,7 +13,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { assessLatency, countryVerdict, haversineKm, checkNodeLocation, parseSite, probeOrigin, modelIds } from '../packages/registry/src/location.js';
+import { assessLatency, countryVerdict, haversineKm, checkNodeLocation, parseSite, probeOrigin, modelIds, chatText } from '../packages/registry/src/location.js';
+import { loadCorpus, ORIGIN_PROMPT_TEMPLATES } from '../packages/registry/src/corpus.js';
 
 const NUREMBERG = { site: 'DE-Nuremberg', lat: 49.4527, lon: 11.0783 };
 const HELSINKI = { site: 'FI-Helsinki', lat: 60.1719, lon: 24.9347 };
@@ -354,11 +355,11 @@ test('card schema: endpoints.origin_addresses and the dated data-policy link are
   assert.notDeepEqual(validateCard(card({}, { checked: 'last week' })), [], 'checked is a date');
 });
 
-test('declared origins must also reply to a private identity prompt as the API does through the CDN', async () => {
+test('declared origins must also reply to a chat request as the API does through the CDN', async () => {
   const CF = { country: 'US', lat: 37.75, lon: -97.82, asn: 13335 };
   const table = { '198.51.100.8': CF, '198.51.100.30': { country: 'FR', lat: 48.86, lon: 2.35, asn: 64510 } };
   const LIST = ['bielik-1.5b', 'llama3.2:1b'];
-  const PROMPT = 'Which metal is liquid at room temperature?';
+  const PROMPT = 'Write one sentence about the number 418207.';
   const card = (origins) => ({
     node: { operator: { country: 'FR' } },
     endpoints: { openai: 'https://api.lab.example/v1', health: 'https://api.lab.example/onp/health', origin_addresses: origins },
@@ -373,7 +374,7 @@ test('declared origins must also reply to a private identity prompt as the API d
   };
   const opts = (probeOrigin, extra = {}) => ({
     resolve: async (h) => ({ 'api.lab.example': ['198.51.100.8'] }[h] ?? []),
-    fetchImpl: fakeRipestat(table), selfSite: NUREMBERG, rtt: async () => 12, probeOrigin, identityPrompt: PROMPT, ...extra,
+    fetchImpl: fakeRipestat(table), selfSite: NUREMBERG, rtt: async () => 12, probeOrigin, comparisonPrompt: PROMPT, ...extra,
   });
 
   // the same reply through the CDN and at the origin: passes, each asked once, like Stage B
@@ -393,7 +394,7 @@ test('declared origins must also reply to a private identity prompt as the API d
   // a decoy that copies the model list but runs another model fails, and is not located
   const decoy = await checkNodeLocation(card(['198.51.100.30']), opts(api({ '198.51.100.8': 'Mercury.', '198.51.100.30': 'The metal is mercury.' })));
   assert.equal(decoy.origin.verdict, 'unknown');
-  assert.match(decoy.origin.addresses[0].reason, /replies to a private identity prompt differently from the API through the CDN/);
+  assert.match(decoy.origin.addresses[0].reason, /replies to a chat request differently from the API through the CDN/);
   assert.deepEqual(decoy.origin.addresses[0].identity, { same: false, retried: true });
   assert.equal(decoy.origin.addresses[0].server, undefined);
 
@@ -414,8 +415,33 @@ test('declared origins must also reply to a private identity prompt as the API d
   const silent = await checkNodeLocation(card(['198.51.100.30']), opts(api({ '198.51.100.8': 'Mercury.', '198.51.100.30': null })));
   assert.match(silent.origin.addresses[0].reason, /does not reply to a chat request like the API through the CDN/);
 
+  // an empty reply is no reply: a decoy that always answers "" must not match an API whose model spent
+  // its tokens on reasoning; both where the reply is read (chatText) and where it is compared
+  const chatBody = (content) => JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] });
+  assert.equal(chatText(chatBody('')), null);
+  assert.equal(chatText(chatBody(' \n\t ')), null);
+  assert.equal(chatText(chatBody('Mercury.')), 'Mercury.');
+  calls.length = 0;
+  const emptyBoth = await checkNodeLocation(card(['198.51.100.30']), opts(api({ '198.51.100.8': '', '198.51.100.30': '' })));
+  assert.equal(emptyBoth.origin.verdict, 'unknown', 'empty through the CDN: nothing to compare with');
+  assert.match(emptyBoth.origin.reason, /no reply through the CDN/);
+  assert.equal(calls.some((c) => c.ip === '198.51.100.30'), false);
+  const blankOrigin = await checkNodeLocation(card(['198.51.100.30']), opts(api({ '198.51.100.8': 'Mercury.', '198.51.100.30': '  ' })));
+  assert.equal(blankOrigin.origin.verdict, 'unknown');
+  assert.match(blankOrigin.origin.addresses[0].reason, /does not reply to a chat request/);
+
+  // the prompt is never corpus text: it has a random number, and differs from one check to the next
+  const corpus = loadCorpus({ chat: ['a?', 'b?', 'c?', 'd?', 'e?'], identity: ['i?'], filler: ['f.'], needles: [{ fact: '{n}', question: 'q?' }] });
+  const drawn = new Set(Array.from({ length: 50 }, () => corpus.originPrompt()));
+  assert.ok(drawn.size > 40, 'a fresh prompt each time');
+  for (const p of drawn) {
+    assert.match(p, /\b\d{6}\b/);
+    assert.equal([...corpus.chat, ...corpus.identity].includes(p), false);
+  }
+  assert.ok(ORIGIN_PROMPT_TEMPLATES.every((t) => t.includes('{n}')));
+
   // without a prompt (a registry with no corpus at hand) only the model list is compared, as before
-  const listOnly = await checkNodeLocation(card(['198.51.100.30']), opts(api({}), { identityPrompt: undefined }));
+  const listOnly = await checkNodeLocation(card(['198.51.100.30']), opts(api({}), { comparisonPrompt: undefined }));
   assert.equal(listOnly.origin.verdict, 'match');
   assert.equal(listOnly.origin.identity, 'not compared');
 });

@@ -11,6 +11,8 @@
 //     "filler":   ["long passages of plain prose"],     // the context probes' haystack
 //     "needles":  [{"fact": "… {n} …", "question": "…"}] // the fact hidden in the haystack ({n}: an 8-digit number)
 //   }
+// One request is not a probe and takes no corpus text: the origin comparison behind a CDN
+// (location.js checkOrigins, ONP-3 §6.4) announces itself, so it asks originPrompt() below instead.
 // Identity prompts must read like the chat prompts (same kind of request, length and tone), or be
 // left out so that references are captured from chat prompts: Stage C asks some of them in blind
 // probes (stagec.js), which only work if a node cannot pick them out from the ordinary ones.
@@ -29,6 +31,26 @@ export const LEGACY_IDENTITY_PROMPTS = Object.freeze([
 /** How many identity references a capture stores, and how many of them one Stage B run asks. */
 export const IDENTITY_CAPTURE = 8;
 export const IDENTITY_SAMPLE = 3;
+
+/**
+ * Prompts for the origin comparison behind a CDN (ONP-3 §6.4). It is labelled and an operator can set
+ * it off at will (a card that changes its origin addresses is checked at once), so it must never ask
+ * corpus text: that would show the operator the identity references or the blind probes. These are
+ * public on purpose, and each carries a random number, so that no reply can be prepared in advance.
+ */
+export const ORIGIN_PROMPT_TEMPLATES = Object.freeze([
+  'Write one sentence about the number {n}.',
+  'Invent a short name for a shop at number {n} on a high street.',
+  'Describe the number {n} in a few words.',
+  'Write a short line of a poem that mentions the number {n}.',
+  'Say something interesting about the number {n}, in one sentence.',
+]);
+
+/** One origin-comparison prompt: a template with a random six-digit number. */
+export function originPrompt(random = Math.random) {
+  const template = ORIGIN_PROMPT_TEMPLATES[Math.floor(random() * ORIGIN_PROMPT_TEMPLATES.length)];
+  return template.replace('{n}', String(100_000 + Math.floor(random() * 900_000)));
+}
 
 const DEFAULT_NEEDLE = Object.freeze({
   fact: 'The magic number is {n}.',
@@ -144,6 +166,8 @@ export function loadCorpus(source = null, { random = Math.random } = {}) {
     /** Prompts for a reference capture. */
     identityPrompts: (k = IDENTITY_CAPTURE) => sample(identity, k, random),
     needle: () => pickFrom(needles, random),
+    /** A prompt for the origin comparison: never corpus text (originPrompt above). */
+    originPrompt: () => originPrompt(random),
     /** `chars` characters of haystack, from the filler passages in random order. */
     haystack(chars) {
       const n = Math.max(0, Math.floor(chars));
