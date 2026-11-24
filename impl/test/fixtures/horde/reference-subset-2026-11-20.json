@@ -1,0 +1,63 @@
+{
+ "koboldcpp/Artemis-31B-v1.2": {
+  "name": "koboldcpp/Artemis-31B-v1.2",
+  "model_name": "Artemis-31B-v1.2",
+  "display_name": "Artemis 31B v1.2",
+  "baseline": "google/gemma-4-31B",
+  "url": "https://huggingface.co/TheDrummer/Artemis-31B-v1.2"
+ },
+ "koboldcpp/G4-MeroMero-26B-A4B-it-uncensored-heretic": {
+  "name": "koboldcpp/G4-MeroMero-26B-A4B-it-uncensored-heretic",
+  "model_name": "G4-MeroMero-26B-A4B-it-uncensored-heretic",
+  "display_name": "G4 MeroMero 26B A4B it uncensored heretic",
+  "baseline": "google/gemma-4-26B-A4B",
+  "url": "https://huggingface.co/llmfan46/G4-MeroMero-26B-A4B-it-uncensored-heretic"
+ },
+ "koboldcpp/L3-8B-Stheno-v3.2": {
+  "name": "koboldcpp/L3-8B-Stheno-v3.2",
+  "model_name": "L3-8B-Stheno-v3.2",
+  "display_name": "L3 8B Stheno v3.2",
+  "baseline": "",
+  "url": "https://huggingface.co/Sao10K/L3-8B-Stheno-v3.2"
+ },
+ "koboldcpp/Llama-3.2-1B-Instruct": {
+  "name": "koboldcpp/Llama-3.2-1B-Instruct",
+  "model_name": "Llama-3.2-1B-Instruct",
+  "display_name": "Llama 3.2 1B Instruct",
+  "baseline": ""
+ },
+ "koboldcpp/Llama-3.2-3B-Instruct": {
+  "name": "koboldcpp/Llama-3.2-3B-Instruct",
+  "model_name": "Llama-3.2-3B-Instruct",
+  "display_name": "Llama 3.2 3B Instruct",
+  "baseline": ""
+ },
+ "koboldcpp/Qwen3-0.6B": {
+  "name": "koboldcpp/Qwen3-0.6B",
+  "model_name": "Qwen3-0.6B",
+  "display_name": "Qwen3 0.6B",
+  "baseline": "",
+  "url": "https://huggingface.co/Qwen/Qwen3-0.6B"
+ },
+ "koboldcpp/Qwen3-14B": {
+  "name": "koboldcpp/Qwen3-14B",
+  "model_name": "Qwen3-14B",
+  "display_name": "Qwen3 14B",
+  "baseline": "",
+  "url": "https://huggingface.co/Qwen/Qwen3-14B"
+ },
+ "koboldcpp/Qwen3-1.7B": {
+  "name": "koboldcpp/Qwen3-1.7B",
+  "model_name": "Qwen3-1.7B",
+  "display_name": "Qwen3 1.7B",
+  "baseline": "",
+  "url": "https://huggingface.co/Qwen/Qwen3-1.7B"
+ },
+ "Qwen/Qwen3.8-Flash-Next": {
+  "name": "Qwen/Qwen3.8-Flash-Next",
+  "model_name": "Qwen3.8-Flash-Next",
+  "display_name": "Qwen3.8 Flash Next",
+  "baseline": "",
+  "url": "https://huggingface.co/Qwen/Qwen3.8-Flash-Next"
+ }
+}

@@ -1,8 +1,11 @@
 // DS-IMP-01: seed importers so search is useful before any real registration.
 // Imported records enter as unverified, unsigned, source='import', and are
 // excluded from verified tiers until claimed by their operator.
+import { readFileSync } from 'node:fs';
 import { validateCard } from '@opennodes/core';
 import { ARTIFACT } from './vendors.js';
+
+const { version: REGISTRY_VERSION } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^[^a-z0-9]+/, '').slice(0, 100);
 const vendorSlug = (s) => slug(s).replace(/[._]/g, '-');
@@ -407,6 +410,154 @@ export async function importOpenRouter(store, catalog) {
   const err = await saveImportedCard(store, nodeId, 'https://openrouter.ai', 'import:openrouter', card);
   if (err) return { providers: 0, offerings: 0, skipped: [err] };
   return { providers: 1, offerings: offeringList.length, skipped: [] };
+}
+
+/* ------------------------------------------------------------------ AI Horde */
+
+// The AI Horde (aihorde.net, run by the non-profit Haidra) is a free network of volunteer GPUs: workers
+// poll a coordinator and run whole models on their own machines, and queue priority follows kudos, a
+// non-monetary credit earned by contributing compute. The registry only reads the public model status
+// and Haidra's model reference; it never sends a prompt there (imports are never probed).
+
+/** Text models with at least one online chat worker: the ones the OpenAI-compatible front can serve. */
+export const HORDE_STATUS_URL = 'https://aihorde.net/api/v2/status/models?type=text&chat=true';
+/** Haidra's text model reference (AGPL-3.0): Horde model name -> display name and Hugging Face record (`url`). */
+export const HORDE_TEXT_REFERENCE_URL = 'https://raw.githubusercontent.com/Haidra-Org/AI-Horde-text-model-reference/main/db.json';
+/** Haidra's own OpenAI-compatible front for the Horde (documented in the AI-Horde server README). */
+export const HORDE_OPENAI_BASE = 'https://oai.aihorde.net/v1';
+/** Horde asks every client for `Client-Agent: name:version:contact`. The contact is the project, never a person. */
+export const HORDE_CLIENT_AGENT = `opennodes-registry:${REGISTRY_VERSION}:https://opennodes.io`;
+/** The Horde FAQ (who can read prompts) and the date it and the privacy policy were read for this data policy. */
+export const HORDE_POLICY_SOURCE = 'https://aihorde.net/faq';
+export const HORDE_POLICY_CHECKED = '2026-11-20';
+const HORDE_NODE_ID = 'import.aihorde.text';
+const HORDE_EMPTY = 'AI Horde import: no text model with online chat workers and a public model record';
+
+/**
+ * Lineage for Horde models, only where it is certain: a Hugging Face repo that is the developer's own
+ * from-scratch release (the developer trained the base itself, and any distillation teacher is its own
+ * model). A fine-tune, merge, quantization or re-upload under another account matches none of these and
+ * stays unknown: a list naming only the base developer would read as clean (ONP-2 §5). Distilled
+ * releases (`*-Distill-*`) are excluded even under a listed account.
+ */
+export const HORDE_FROM_SCRATCH = Object.freeze([
+  [/^Qwen\/Qwen\d/, 'CN'],                        // Qwen/Qwen3-14B, Qwen/Qwen3.8-Flash-Next
+  [/^zai-org\/GLM-/, 'CN'],
+  [/^google\/gemma-/, 'US'],
+  [/^meta-llama\/(Meta-)?Llama-/, 'US'],
+  [/^mistralai\/(Mistral|Ministral|Magistral)-/, 'FR'],
+]);
+
+/** `org/repo` of a Hugging Face model URL, or null. */
+const hfRepo = (url) => {
+  const m = /^https:\/\/huggingface\.co\/([A-Za-z0-9][\w.-]*)\/([\w.-]+)\/?$/.exec(String(url ?? '').trim());
+  return m ? `${m[1]}/${m[2]}` : null;
+};
+
+/** The developer country for a from-scratch release, else null (unknown). */
+export function hordeLineage(repo) {
+  if (!repo || /distill/i.test(repo)) return null;
+  return HORDE_FROM_SCRATCH.find(([re]) => re.test(repo))?.[1] ?? null;
+}
+
+/** Horde chat feature declarations -> ONP `serving.supports` (each declared by at least one worker). */
+const HORDE_FEATURES = {
+  tools: 'tool_calls', json_object: 'json_mode', json_schema: 'structured_outputs',
+  vision: 'vision', reasoning_effort: 'reasoning',
+};
+
+/**
+ * Import the AI Horde's text models as one synthetic node (`import.aihorde.text`).
+ * `status` is GET /v2/status/models?type=text&chat=true; `reference` is Haidra's text model reference
+ * (db.json). An offering is made only for a model with online chat workers and a Hugging Face record in
+ * the reference: model names are declared by the workers, and an open-weight model is named by its public
+ * record (ONP-2 §5), so a name with no record is skipped, never given a made-up artifact. Worker count and
+ * queue go into the store as the `upstream` observation (reported by the Horde, not measured here).
+ * With nothing to list, the node is delisted rather than left showing workers that have gone.
+ */
+export async function importHorde(store, status, reference = {}) {
+  if (!Array.isArray(status)) return { providers: 0, offerings: 0, skipped: ['status is not a list'] };
+  const reportedAt = new Date().toISOString();
+  const offeringList = [];
+  const upstream = new Map();
+  const skipped = [];
+  for (const m of status) {
+    const name = typeof m?.name === 'string' ? m.name : null;
+    const workers = Number(m?.chat?.workers ?? 0);
+    if (!name || m.type !== 'text' || !(workers >= 1)) continue;
+    const ref = reference?.[name];
+    const repo = hfRepo(ref?.url);
+    if (!repo || !ARTIFACT.test(`hf:${repo}`)) { skipped.push(`${name}: no public model record`); continue; }
+    const features = Array.isArray(m.chat.features) ? m.chat.features : [];
+    const vision = features.includes('vision');
+    const supports = ['streaming', ...new Set(features.map((f) => HORDE_FEATURES[f]).filter(Boolean))];
+    const lineage = hordeLineage(repo);
+    let offeringId = slug(name.replace(/\//g, '-')) || 'model';
+    if (offeringList.some((o) => o.offering_id === offeringId)) offeringId = slug(`${offeringId}-${offeringList.length}`);
+    offeringList.push({
+      offering_id: offeringId,
+      modality: vision ? 'multimodal' : 'text',
+      modalities: { input: vision ? ['text', 'image'] : ['text'], output: ['text'] },
+      model: {
+        name: ref.display_name || ref.model_name || name,
+        family: vendorSlug(repo.split('/')[0]),
+        artifact: `hf:${repo}`,
+        ...(lineage ? { lineage_origins: [lineage] } : {}),
+        // No `description`: the reference is AGPL-3.0, so only its facts (names, record URL) are used.
+      },
+      serving: {
+        supports,
+        ...(Number.isInteger(m.chat.max_context_length) && m.chat.max_context_length > 0 ? { context_window: m.chat.max_context_length } : {}),
+        ...(Number.isInteger(m.chat.max_length) && m.chat.max_length > 0 ? { max_output_tokens: m.chat.max_length } : {}),
+      },
+      binding: { profile: 'onp.openai.chat/v1', model_id: name },
+      // Free; queue order by kudos and the free output allowance have no ONP field yet (see the README).
+      pricing: { currency: 'USD', input_per_mtok: 0, output_per_mtok: 0, schemes: ['free'] },
+      // Volunteers run the models on their own machines and can read and keep prompts and outputs.
+      // Nobody can promise anything about training for them, so training_on_inputs stays unstated.
+      data_policy: { retention: 'logged', source: HORDE_POLICY_SOURCE, checked: HORDE_POLICY_CHECKED },
+    });
+    upstream.set(offeringId, {
+      source: 'aihorde', basis: 'reported', reported_at: reportedAt, workers,
+      queued_tokens: Number(m.queued ?? 0), jobs: Number(m.jobs ?? 0), eta_s: Number(m.eta ?? 0),
+    });
+  }
+
+  const node = await store.getNode(HORDE_NODE_ID);
+  if (!offeringList.length) {
+    if (node?.state === 'indexed') await store.setState(HORDE_NODE_ID, 'delisted', HORDE_EMPTY);
+    return { providers: 0, offerings: 0, skipped: [...skipped, 'nothing to list'] };
+  }
+  const card = {
+    onp: '0.1',
+    revision: reportedAt,
+    node: {
+      id: HORDE_NODE_ID,
+      name: 'AI Horde (volunteer GPUs)',
+      description: 'Imported from the AI Horde public model status (aihorde.net), run by the non-profit Haidra. '
+        + 'Free: volunteers run the models on their own machines, and the queue is ordered by kudos, so requests '
+        + 'with the anonymous key 0000000000 wait longest; a free registered key gets better priority. '
+        + 'Volunteer workers can technically read and keep prompts and outputs: never send personal data. '
+        + 'Worker counts and queues are a snapshot reported by the Horde. Call it with your own AI Horde key '
+        + 'at the OpenAI-compatible front. Terms: https://aihorde.net/terms. Privacy: https://aihorde.net/privacy. '
+        + 'FAQ: https://aihorde.net/faq. Metadata only, unclaimed by the operator.',
+      operator: { name: 'AI Horde (Haidra, volunteer workers)', url: 'https://aihorde.net' },
+    },
+    endpoints: { openai: HORDE_OPENAI_BASE, health: 'https://aihorde.net/api/v2/status/heartbeat', docs: 'https://oai.aihorde.net/docs' },
+    offerings: offeringList,
+    payment: { schemes: [{ scheme: 'free' }] },
+  };
+  const err = await saveImportedCard(store, HORDE_NODE_ID, 'https://aihorde.net', 'import:aihorde', card);
+  if (err) return { providers: 0, offerings: 0, skipped: [...skipped, err] };
+  // Back after an empty snapshot; a delisting by anyone else stays.
+  if (node?.state === 'delisted' && (await store.transitionsFor(HORDE_NODE_ID)).at(-1)?.reason === HORDE_EMPTY) {
+    await store.setState(HORDE_NODE_ID, 'indexed', 'AI Horde import: chat workers back online');
+  }
+  for (const [offeringId, value] of upstream) await store.setObservation(HORDE_NODE_ID, offeringId, 'upstream', value);
+  return {
+    providers: 1, offerings: offeringList.length, skipped,
+    workers: [...upstream.values()].reduce((n, u) => n + u.workers, 0),
+  };
 }
 
 /* ------------------------------------------------------------------ locations (ONP-2 §3a) */

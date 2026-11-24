@@ -29,7 +29,7 @@ const EXTRA_OFFERINGS = {
   },
 };
 
-function buildCard(origin, revision, claimContextTokens = 8192, lineage = null, kinds = ['chat'], artifact = 'urn:proprietary:opennodes:echo-1') {
+function buildCard(origin, revision, claimContextTokens = 8192, lineage = null, kinds = ['chat'], artifact = 'urn:proprietary:opennodes:echo-1', retention = 'none') {
   return {
     onp: '0.1',
     revision,
@@ -60,7 +60,7 @@ function buildCard(origin, revision, claimContextTokens = 8192, lineage = null, 
       binding: { profile: 'onp.openai.chat/v1', model_id: MODEL_ID },
       pricing: { currency: 'USD', input_per_mtok: 0.10, output_per_mtok: 0.40, schemes: ['free', 'prepaid'] },
       availability: { sla: 0.99, interruptible: false },
-      data_policy: { retention: 'none', training_on_inputs: false, region_pinning: ['eu'] },
+      data_policy: { retention, training_on_inputs: false, region_pinning: ['eu'] },
     } : {
       ...EXTRA_OFFERINGS[kind],
       model: { ...EXTRA_OFFERINGS[kind].model, ...(lineage ? { lineage_origins: lineage } : {}) },
@@ -86,12 +86,13 @@ export async function startFixtureNode({
   offerings = ['chat'],              // offerings on the card, in order: 'chat', 'embeddings', 'speech'
   artifact = undefined,              // the chat offering's model.artifact (default urn:proprietary:opennodes:echo-1)
   badSignature = false,              // sign the card with a key the JWKS does not publish
+  retention = 'none',                // the chat offering's data_policy.retention ('logged': content may be kept)
 } = {}) {
   const keys = generateKeypair();
   const strangerKey = generateKeypair().privateKey;
   const state = { challenges: new Map(), card: null, origin: null, requests: 0, prompts: [], calls: [], conflicts: 0, dodges: 0, dodgedAt: null, answerWithinMs: 300, perturb: 0, badSignature };
   const sign = (card) => signCard(card, state.badSignature ? strangerKey : keys.privateKey);
-  const build = (revision, kinds = offerings) => buildCard(state.origin, revision, claimContextTokens ?? realContextTokens, lineage, kinds, artifact);
+  const build = (revision, kinds = offerings) => buildCard(state.origin, revision, claimContextTokens ?? realContextTokens, lineage, kinds, artifact, retention);
   const streamedReceipts = new Map();   // receipt_id -> JWS, for streams (receipt by URL)
 
   // request_hash = sha256 over the raw request body bytes as received (ONP-5 §5).

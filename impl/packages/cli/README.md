@@ -11,6 +11,10 @@ The OpenNodes Protocol (ONP) client: discover verified AI inference nodes, pre-p
   - **How to mark requests:** `--sensitive` or `ONP_SENSITIVE=1` marks every request of `onp gateway`, `onp mcp` and `onp invoke`. In the gateway, the header `onp-sensitive: 1` marks one request, and the model `onp/auto-sensitive` routes for it. MCP agents pass `policy.sensitive: true` to `recommend` or `trust: "trusted"` to `search_offerings`.
   - **What happens:** each candidate is checked again just before sending. An open-pool offering is refused (403 `policy-refused`, with the reason), and an auto model with nothing trusted answers 404 `no-trusted-offerings`. The request is never sent to the open pool instead. The MCP server also refuses recommendations from a registry that does not apply the trusted view (before registry 0.1.52).
   - **Today:** few models declare a lineage, so the trusted pool is often empty. Your own Ollama models qualify only if their lineage is known.
+- **Kept content: `--allow-logged`.** Some offerings declare `retention: logged`, meaning their content may be kept: the AI Horde's volunteer workers, for one, can read and keep prompts.
+  - **Default:** automatic routing (`onp/auto*`, query-defined virtual models, and so the fallbacks and failover they produce) never picks them, even with a key for their host. Failover sends the whole prompt to every candidate it tries, and PII masking only covers what its detector finds.
+  - **To use them:** name one as the model (`<node_id>/<offering_id>`, an alias, or an entry in a `models: [...]` list), or start the gateway with `--allow-logged` to let automatic routing choose them.
+  - `/gateway/advice` reports `left_out_logged` when some were left out.
 
 ```bash
 npx @opennodes/cli@0.1.34 mcp --print-config      # paste into your MCP host's config

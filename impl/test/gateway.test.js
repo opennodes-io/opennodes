@@ -4,9 +4,10 @@ import assert from 'node:assert/strict';
 import { startFixtureNode } from '@opennodes/fixture-node';
 import { startRegistry } from '@opennodes/registry';
 import { startGateway, callable, credentialsFrom } from '@opennodes/cli/src/gateway.js';
+import { autoRoutable, declaresLogged } from '@opennodes/core';
 
-async function setupNetwork(t) {
-  const node = await startFixtureNode();
+async function setupNetwork(t, nodeOptions = {}) {
+  const node = await startFixtureNode(nodeOptions);
   const registry = await startRegistry({ allowPrivateTargets: true });
   t.after(async () => { await node.close(); await registry.close(); });
   const reg = await (await fetch(`${registry.origin}/v0/nodes`, {
@@ -186,4 +187,43 @@ test('models: [...] fallback list (OpenRouter-compatible) tries the next model',
   });
   assert.equal(res.status, 200);
   assert.match((await res.json()).choices[0].message.content, /^echo: fallback/);
+});
+
+test('automatic routing: which declared retentions it may pick', () => {
+  const o = (retention, extra = {}) => ({ data_policy: retention === undefined ? undefined : { retention }, ...extra });
+  assert.equal(declaresLogged(o('logged')), true);
+  assert.equal(declaresLogged(o('forever')), true, 'an unknown value counts as logged (ONP-2 §5)');
+  assert.equal(declaresLogged(o('none')), false);
+  assert.equal(declaresLogged(o('ephemeral')), false);
+  assert.equal(declaresLogged(o(undefined)), false, 'undeclared is not "logged": the retention filters treat it as unmet');
+  assert.equal(autoRoutable(o('logged')), false);
+  assert.equal(autoRoutable(o('logged'), { allow_logged: true }), true, '--allow-logged opts in');
+  assert.equal(autoRoutable(o('logged', { local: { run: 'ollama run x' } })), true, 'the user\'s own machine');
+  assert.equal(autoRoutable(o('none')), true);
+});
+
+test('logged retention: auto and virtual models leave it out, a named model or --allow-logged reaches it', async (t) => {
+  const { node, registry } = await setupNetwork(t, { retention: 'logged' });
+  const chat = (gw, body) => fetch(`${gw.origin}/v1/chat/completions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ messages: [{ role: 'user', content: 'kept' }], ...body }),
+  });
+  const gw = await startGateway({ port: 0, registry: registry.origin, env: {}, apiToken: 'advice', virtuals: { 'any-text': 'modality=text' } });
+  const optedIn = await startGateway({ port: 0, registry: registry.origin, env: {}, policy: { allow_logged: true } });
+  t.after(async () => { await gw.close(); await optedIn.close(); });
+
+  const before = node.prompts.length;
+  const auto = await chat(gw, { model: 'onp/auto' });
+  assert.equal(auto.status, 404);
+  assert.match((await auto.json()).detail, /retention "logged"[\s\S]*--allow-logged/);
+  assert.equal((await chat(gw, { model: 'any-text' })).status, 404, 'a query-defined virtual model is automatic too');
+  assert.equal(node.prompts.length, before, 'nothing was sent to the node');
+  const advice = await (await fetch(`${gw.origin}/gateway/advice`, { headers: { authorization: 'Bearer advice' } })).json();
+  assert.equal(advice.left_out_logged, 1);
+
+  // The user's own choice: a named model, alone or in a models: [...] fallback list.
+  assert.equal((await chat(gw, { model: 'org.opennodes.fixture/echo-1' })).status, 200);
+  assert.equal((await chat(gw, { model: 'onp/auto', models: ['org.opennodes.fixture/echo-1'] })).status, 200);
+  // Opted in: automatic routing may pick it.
+  assert.equal((await chat(optedIn, { model: 'onp/auto' })).status, 200);
 });

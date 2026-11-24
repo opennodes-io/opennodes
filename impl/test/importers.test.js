@@ -4,8 +4,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { startRegistry } from '@opennodes/registry';
-import { mapModalities } from '@opennodes/registry/src/importers.js';
+import {
+  mapModalities, hordeLineage, HORDE_STATUS_URL, HORDE_TEXT_REFERENCE_URL, HORDE_OPENAI_BASE,
+} from '@opennodes/registry/src/importers.js';
+import { startReimport, dueSources } from '@opennodes/registry/src/reimport.js';
+import { createSqliteStore } from '@opennodes/registry/src/store.js';
+import { callable } from '@opennodes/cli/src/gateway.js';
+import { autoRoutable } from '@opennodes/core';
 
 const HF_ROUTER_FIXTURE = {
   object: 'list',
@@ -367,4 +374,184 @@ test('stdio MCP server: real child process serves search + estimate over importe
   const est = responses[2].result.structuredContent;
   assert.ok(est.steps[0].card_revision);
   assert.equal(est.total.min, 0); // cheapest text offering in fixture is the free model
+});
+
+// ---- AI Horde (recorded from the live public API on 2026-11-20) ----
+// status: GET https://aihorde.net/api/v2/status/models?type=text&chat=true, verbatim (16 models).
+// reference: the entries of Haidra's text model reference (db.json) for those names, verbatim (9 known).
+const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/horde/${name}`, import.meta.url), 'utf8'));
+const HORDE_STATUS = fixture('status-text-chat-2026-11-20.json');
+const HORDE_REFERENCE = fixture('reference-subset-2026-11-20.json');
+const HORDE = 'import.aihorde.text';
+
+test('AI Horde importer: models with chat workers and a public record, free, logged, lineage only when certain', async (t) => {
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  t.after(() => registry.close());
+  const post = (body) => fetch(`${registry.origin}/v0/import/horde`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  }).then((r) => r.json());
+
+  const result = await post({ status: HORDE_STATUS, reference: HORDE_REFERENCE });
+  assert.equal(result.providers, 1);
+  assert.equal(result.offerings, 7, 'only models whose reference entry names a Hugging Face record');
+  assert.equal(result.workers, 9);
+  assert.equal(result.skipped.length, 9);
+  assert.ok(result.skipped.includes('koboldcpp/Llama-3.2-1B-Instruct: no public model record'), 'known to the reference, but no url');
+  assert.ok(result.skipped.includes('koboldcpp/Cydonia-24B-v4zg-Q4_K_M: no public model record'), 'a worker-declared name');
+
+  const horde = (await (await fetch(`${registry.origin}/v0/offerings?limit=100`)).json()).offerings.filter((o) => o.node_id === HORDE);
+  assert.equal(horde.length, 7);
+  const byModel = Object.fromEntries(horde.map((o) => [o.binding.model_id, o]));
+
+  const stheno = byModel['koboldcpp/L3-8B-Stheno-v3.2'];
+  assert.equal(stheno.model.artifact, 'hf:Sao10K/L3-8B-Stheno-v3.2');
+  assert.equal(stheno.model.lineage_origins, undefined, 'a fine-tune: lineage unknown, never clean');
+  assert.equal(stheno.binding.profile, 'onp.openai.chat/v1');
+  assert.equal(stheno.endpoints.openai, HORDE_OPENAI_BASE);
+  assert.equal(stheno.serving.context_window, 4352);
+  assert.equal(stheno.serving.max_output_tokens, 512);
+  assert.deepEqual(stheno.serving.supports, ['streaming', 'json_mode', 'structured_outputs', 'reasoning', 'tool_calls']);
+  assert.deepEqual(stheno.pricing, { currency: 'USD', input_per_mtok: 0, output_per_mtok: 0, schemes: ['free'] });
+  assert.deepEqual(stheno.data_policy, { retention: 'logged', source: 'https://aihorde.net/faq', checked: '2026-11-20' });
+  // chat workers (2), not every text worker (count 6); queue as the Horde reports it
+  const { reported_at, ...upstream } = stheno.observed.upstream;
+  assert.deepEqual(upstream, { source: 'aihorde', basis: 'reported', workers: 2, queued_tokens: 2048, jobs: 4, eta_s: 15 });
+  assert.ok(!Number.isNaN(Date.parse(reported_at)));
+  assert.equal(stheno.tier, 'unverified');
+  assert.equal(stheno.tested, false);
+  assert.equal(stheno.observed.probes, 0);
+  assert.equal(stheno.jurisdiction.country, null, 'no operator country: volunteers run anywhere');
+
+  // Qwen's own releases are from scratch: CN. Artemis's reference baseline is Gemma 4, but a
+  // fine-tuner is in the chain too, so it stays unknown.
+  assert.deepEqual(byModel['koboldcpp/Qwen3-14B'].model.lineage_origins, ['CN']);
+  assert.deepEqual(byModel['Qwen/Qwen3.8-Flash-Next'].model.lineage_origins, ['CN']);
+  assert.equal(byModel['koboldcpp/Artemis-31B-v1.2'].model.lineage_origins, undefined);
+  assert.equal(byModel['Qwen/Qwen3.8-Flash-Next'].modality, 'multimodal');
+  assert.ok(byModel['Qwen/Qwen3.8-Flash-Next'].serving.supports.includes('vision'));
+  assert.equal(horde.filter((o) => o.model.lineage_origins).length, 4);
+
+  // The node says who can read prompts and links the Horde's own documents.
+  const { card } = await (await fetch(`${registry.origin}/v0/nodes/${HORDE}`)).json();
+  assert.equal(card.node.operator.country, undefined);
+  for (const s of ['can technically read and keep prompts', 'https://aihorde.net/terms', 'https://aihorde.net/privacy', 'https://aihorde.net/faq', '0000000000']) {
+    assert.ok(card.node.description.includes(s), `node description mentions ${s}`);
+  }
+});
+
+test('AI Horde listings stay in the open pool: trusted view, sensitive requests and the gateway exclude them', async (t) => {
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  t.after(() => registry.close());
+  const post = (path, body) => fetch(`${registry.origin}${path}`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  });
+  await post('/v0/import/horde', { status: HORDE_STATUS, reference: HORDE_REFERENCE });
+  const get = async (q) => (await (await fetch(`${registry.origin}/v0/offerings?limit=100&${q}`)).json()).offerings.filter((o) => o.node_id === HORDE);
+
+  const all = await get('');
+  assert.equal(all.length, 7);
+  assert.ok(all.every((o) => o.pool === 'open'));
+  assert.deepEqual(await get('trust=trusted'), [], 'the trusted view never lists them');
+  assert.deepEqual(await get('retention=none'), [], 'declared retention is logged');
+  assert.deepEqual(await get('jurisdiction=eu'), [], 'no operator country, so no jurisdiction matches');
+
+  const advise = async (policy) => (await (await post('/v0/recommend', { task: 'Write a short story about a lighthouse', policy })).json()).recommendations;
+  assert.ok((await advise({})).some((r) => r.node_id === HORDE), 'an ordinary request can be pointed at the Horde');
+  assert.ok((await advise({ sensitive: true })).every((r) => r.node_id !== HORDE), 'a sensitive request never is');
+  assert.ok((await advise({ trust: 'trusted' })).every((r) => r.node_id !== HORDE));
+
+  // The local gateway routes an imported listing only with the user's own key for its host.
+  assert.equal(callable(all[0], {}), false);
+  assert.equal(callable(all[0], { 'oai.aihorde.net': 'a-user-key' }), true);
+  // Even with a key, automatic routing (onp/auto, fallback, failover) never picks it unless the user opts in.
+  assert.ok(all.every((o) => !autoRoutable(o)));
+  assert.ok(all.every((o) => autoRoutable(o, { allow_logged: true })));
+});
+
+test('AI Horde: a ping is refused, an empty snapshot delists and a bad read changes nothing', async (t) => {
+  const registry = await startRegistry({ allowPrivateTargets: true });
+  t.after(() => registry.close());
+  const post = (body) => fetch(`${registry.origin}/v0/import/horde`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  }).then((r) => r.json());
+  const listed = async () => (await (await fetch(`${registry.origin}/v0/offerings?limit=100`)).json()).offerings.filter((o) => o.node_id === HORDE).length;
+  await post({ status: HORDE_STATUS, reference: HORDE_REFERENCE });
+
+  // A ping would run Stage A, which calls the endpoint, and the Horde answers without a key.
+  const ping = await fetch(`${registry.origin}/v0/nodes/${HORDE}/ping`, { method: 'PUT' });
+  assert.equal(ping.status, 409);
+  assert.equal((await ping.json()).title, 'imported-listing');
+
+  // A response that is not a model list (an error body, a rate limit) leaves the listing alone.
+  assert.deepEqual((await post({ status: { message: 'Too many requests' }, reference: HORDE_REFERENCE })).skipped, ['status is not a list']);
+  assert.equal(await listed(), 7);
+
+  // No model with chat workers: delisted, not left showing workers that have gone.
+  const empty = await post({ status: [], reference: HORDE_REFERENCE });
+  assert.equal(empty.offerings, 0);
+  assert.equal(await listed(), 0);
+
+  // Workers back: listed again.
+  await post({ status: HORDE_STATUS, reference: HORDE_REFERENCE });
+  assert.equal(await listed(), 7);
+});
+
+test('AI Horde lineage: from-scratch releases only', () => {
+  assert.equal(hordeLineage('Qwen/Qwen3-14B'), 'CN');
+  assert.equal(hordeLineage('Qwen/Qwen2.5-7B-Instruct'), 'CN');
+  assert.equal(hordeLineage('zai-org/GLM-4.5-Air'), 'CN');
+  assert.equal(hordeLineage('google/gemma-4-31B-it'), 'US');
+  assert.equal(hordeLineage('meta-llama/Llama-3.2-1B-Instruct'), 'US');
+  assert.equal(hordeLineage('mistralai/Mistral-Small-3.1-24B-Instruct-2503'), 'FR');
+  assert.equal(hordeLineage('TheDrummer/Artemis-31B-v1.2'), null, 'a fine-tune');
+  assert.equal(hordeLineage('unsloth/Qwen3-14B'), null, 'a re-upload under another account');
+  assert.equal(hordeLineage('deepseek-ai/DeepSeek-R1-Distill-Qwen-7B'), null, 'a distillation');
+  assert.equal(hordeLineage('Qwen/Qwen2.5-Distill-Test'), null, 'distilled, even under a listed account');
+  assert.equal(hordeLineage('mistralai/Devstral-Small-2505'), null, 'co-developed: not on the list');
+  // An org's own release can start from someone else's weights: Bielik 1.5B v3 is initialised from
+  // Qwen2.5 1.5B (honest lineage PL+CN), Bielik 11B v3 from Mistral 7B (PL+FR). Not from scratch: unknown.
+  assert.equal(hordeLineage('speakleash/Bielik-1.5B-v3.0-Instruct'), null);
+  assert.equal(hordeLineage('speakleash/Bielik-11B-v3.0-Instruct'), null);
+  assert.equal(hordeLineage(null), null);
+});
+
+test('AI Horde re-import: reads only the public status (with Client-Agent) and the reference, hourly', async () => {
+  const store = await createSqliteStore(':memory:');
+  const calls = [];
+  let referenceOk = true;
+  const fakeFetch = async (url, opts = {}) => {
+    calls.push({ url, agent: opts.headers?.['client-agent'] ?? null });
+    if (url === HORDE_STATUS_URL) return { ok: true, status: 200, json: async () => HORDE_STATUS };
+    if (url === HORDE_TEXT_REFERENCE_URL) return referenceOk
+      ? { ok: true, status: 200, json: async () => HORDE_REFERENCE }
+      : { ok: false, status: 429, json: async () => ({ message: 'rate limited' }) };
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  const handle = startReimport(store, { safeFetch: fakeFetch, sources: ['horde'] });
+  const r1 = await handle.cycle();
+  assert.equal(r1.horde.offerings, 7);
+  assert.deepEqual(calls.map((c) => c.url), [HORDE_STATUS_URL, HORDE_TEXT_REFERENCE_URL], 'nothing else: no request to a worker or the front');
+  assert.match(calls[0].agent, /^opennodes-registry:\d+\.\d+\.\d+:https:\/\/opennodes\.io$/);
+
+  // A failed reference read keeps the last snapshot (it would otherwise look like nothing to list).
+  referenceOk = false;
+  const r2 = await handle.cycle();
+  assert.match(r2.horde.error, /answered 429/);
+  assert.equal((await store.latestCard(HORDE)).offerings.length, 7);
+  assert.equal((await store.getNode(HORDE)).state, 'indexed');
+  handle.stop();
+  await store.close();
+
+  // Horde refreshes hourly while the catalogs keep their six-hour interval.
+  const six = 6 * 3600_000, hour = 3600_000;
+  const last = new Map([['openrouter', 0], ['horde', 0]]);
+  assert.deepEqual(dueSources(['openrouter', 'horde'], last, hour, six), ['horde']);
+  assert.deepEqual(dueSources(['openrouter', 'horde'], last, hour - 1, six), []);
+  assert.deepEqual(dueSources(['openrouter', 'horde'], last, six, six), ['openrouter', 'horde']);
+  assert.deepEqual(dueSources(['openrouter', 'horde'], new Map(), 0, six), ['openrouter', 'horde'], 'first run: all');
+  assert.deepEqual(dueSources(['horde'], last, hour, 1800_000), ['horde'], 'a shorter catalog interval wins');
+  // A broken or tiny per-source interval never polls the Horde in a loop: the catalog interval applies.
+  for (const bad of [0, NaN, 5_000]) {
+    assert.deepEqual(dueSources(['horde'], last, hour, six, { horde: bad }), [], `interval ${bad} is ignored`);
+  }
 });

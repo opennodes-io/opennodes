@@ -529,6 +529,20 @@ export function meetsDataPolicy(offering, { retention = null, no_training = fals
   return true;
 }
 
+/** The offering declares its content may be kept: `retention: logged`, or an unknown value (counted as logged). */
+export const declaresLogged = (o) => typeof o?.data_policy?.retention === 'string' && retentionRank(o.data_policy.retention) >= retentionRank('logged');
+
+/**
+ * May automatic routing pick this offering? A client choosing for the user (`auto` models, virtual models, the
+ * fallbacks and failover they produce) leaves out offerings that declare `logged` retention, such as the AI
+ * Horde's volunteer workers: failover sends the whole prompt to every candidate it tries, and PII masking only
+ * covers what its detector finds. The user opts in with `allow_logged` (`--allow-logged`); a model the user names
+ * is their choice and is never filtered here. The user's own machine and pinned LAN peers always pass. An
+ * offering without a declared retention is unchanged: `retention=` filters and the trusted pool already treat
+ * it as unmet.
+ */
+export const autoRoutable = (o, policy = {}) => policy.allow_logged === true || onOwnNetwork(o) || !declaresLogged(o);
+
 /**
  * Lineage policy on `model.lineage_origins`: drop offerings whose lineage includes an `exclude`d
  * country; with `declared`, drop offerings that declare no lineage too (unknown is not clean).
