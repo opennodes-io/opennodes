@@ -27,8 +27,9 @@ import { checkNodeLocation, declaredOrigins } from './location.js';
 import {
   importModelsDev, importHuggingFace, importOpenRouter,
   importOllamaLibrary, parseOllamaLibrary,
-  importOpenRouterProviders, fetchOpenRouterEndpoints, importLocationSeed,
+  importOpenRouterProviders, fetchOpenRouterEndpoints, importLocationSeed, importHorde,
   HF_ROUTER_URL, HF_HUB_URL, OPENROUTER_URL, OPENROUTER_PROVIDERS_URL, OLLAMA_LIBRARY_URL,
+  HORDE_STATUS_URL, HORDE_TEXT_REFERENCE_URL, HORDE_CLIENT_AGENT,
 } from './importers.js';
 import { locationRoutes, loadLocationSeeds, seedPlacements, seedNodeSites, nodeServes } from './locations.js';
 import { makeRequestCounter, nodeIdsIn } from './counts.js';
@@ -423,6 +424,9 @@ export async function startRegistry({
       if (!registerLimiter(clientOf(req))) return problem(res, 429, 'rate-limited', 'too many refresh requests from this address; try again later');
       const node = await store.getNode(params.id);
       if (!node) return problem(res, 404, 'unknown-node', params.id);
+      // A ping runs Stage A, which calls the endpoint. Imports are never probed: some upstreams (the AI
+      // Horde) answer requests without a key, so a public ping must not become traffic to them.
+      if (node.source === 'import') return problem(res, 409, 'imported-listing', `${node.id} is an imported catalog listing; the registry does not probe it`);
       try {
         const { card } = await indexCard(params.id, node.card_url);
         if (location) relocateIfStale(params.id, card).catch(() => {});   // background: a new API host is checked again now
@@ -778,6 +782,21 @@ export async function startRegistry({
       const body = await readJson(req, 100_000_000);
       const catalog = body.catalog ?? await (await safeFetch(OPENROUTER_URL, {}, 60_000)).json();
       sendJson(res, 200, await importOpenRouter(store, catalog));
+    }],
+
+    // AI Horde importer (admin): inline {status, reference}, or read the live public status (with the
+    // Client-Agent the Horde asks for) and Haidra's text model reference. Nothing is sent to a worker.
+    ['POST', '/v0/import/horde', async (req, res) => {
+      if (!adminOk(req, res)) return;
+      const body = await readJson(req, 20_000_000);
+      const read = async (url, opts) => {
+        const r = await safeFetch(url, opts, 60_000);
+        if (!r.ok) throw new Error(`${new URL(url).host} answered ${r.status}`);
+        return r.json();
+      };
+      const status = body.status ?? await read(HORDE_STATUS_URL, { headers: { 'client-agent': HORDE_CLIENT_AGENT } });
+      const reference = body.reference ?? await read(HORDE_TEXT_REFERENCE_URL, {});
+      sendJson(res, 200, await importHorde(store, status, reference));
     }],
 
     // OpenRouter per-provider importer with declared locations (admin): inline

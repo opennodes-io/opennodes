@@ -30,8 +30,8 @@ async function startFakeOllama({ models = ['tiny:latest'] } = {}) {
   return { origin: `http://127.0.0.1:${port}`, close: () => closeApp(app) };
 }
 
-async function publicTier(t) {
-  const node = await startFixtureNode();
+async function publicTier(t, nodeOptions = {}) {
+  const node = await startFixtureNode(nodeOptions);
   const registry = await startRegistry({ allowPrivateTargets: true });
   t.after(async () => { await node.close(); await registry.close(); });
   const reg = await (await fetch(`${registry.origin}/v0/nodes`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ card_url: `${node.origin}/.well-known/open-node.json` }) })).json();
@@ -137,4 +137,25 @@ test('router: models: [...] fallback list on the OpenAI surface', async (t) => {
   });
   assert.equal(res.status, 200);
   assert.equal((await res.json()).choices[0].message.content, 'v1:fb');
+});
+
+test('router: auto models leave out public offerings that declare logged retention, unless --allow-logged', async (t) => {
+  const local = await startFakeOllama({ models: [] });   // nothing local, so auto can only go public
+  const { node, registry } = await publicTier(t, { retention: 'logged' });
+  const router = await startOllamaRouter({ port: 0, ollama: local.origin, registry: registry.origin, mdns: false, log: () => {} });
+  const optedIn = await startOllamaRouter({ port: 0, ollama: local.origin, registry: registry.origin, mdns: false, policy: { allow_logged: true }, log: () => {} });
+  t.after(async () => { await router.close(); await optedIn.close(); await local.close(); });
+  const chat = (r, model) => fetch(`${r.origin}/v1/chat/completions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model, messages: [{ role: 'user', content: 'kept' }] }),
+  });
+
+  const before = node.prompts.length;
+  assert.notEqual((await chat(router, 'auto')).status, 200);
+  assert.equal(node.prompts.length, before, 'nothing was sent to the node');
+  const advice = await (await fetch(`${router.origin}/router/advice`, { headers: { authorization: `Bearer ${router.token}` } })).json();
+  assert.equal(advice.left_out_logged, 1);
+
+  assert.equal((await chat(router, 'onp/org.opennodes.fixture/echo-1')).status, 200, 'a named model is the user\'s choice');
+  assert.equal((await chat(optedIn, 'auto')).status, 200, 'opted in');
 });

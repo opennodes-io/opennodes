@@ -12,7 +12,7 @@ import { Readable } from 'node:stream';
 import {
   createApp, listen, closeApp, sendJson, problem, readJson,
   verifyJws, keyFromJwk, costForUsage, estimateBounds, round6, extractFeatures, recommend, parseAutoModel, AUTO_MODEL_NAMES,
-  responseBudgetMs, fetchWithin, trustedView, trustedJurisdictionsFrom, trustGaps, sensitiveHeader, onOwnNetwork,
+  responseBudgetMs, fetchWithin, trustedView, trustedJurisdictionsFrom, trustGaps, sensitiveHeader, onOwnNetwork, autoRoutable,
 } from '@opennodes/core';
 import {
   parseMaskMode, maskModeOf, piiDetectorFrom, maskChatRequest, maskedRequestFor, oncePerRequest,
@@ -236,7 +236,10 @@ export async function startOllamaRouter({
       const text = prompt ?? lastUserText(messages);
       const features = extractFeatures(text, { messages: prompt ? [] : messages.slice(0, -1), est_output_tokens: maxTokens, request });
       // auto-private: this machine and LAN peers pinned by card key; a peer added by address alone is not enough
-      const pool = preset === 'private' ? (await localEntries()).filter((e) => onOwnNetwork(e.offering)) : await catalog();
+      const candidates = preset === 'private' ? (await localEntries()).filter((e) => onOwnNetwork(e.offering)) : await catalog();
+      // Automatic routing leaves out offerings that declare `logged` retention unless --allow-logged (core autoRoutable).
+      const pool = candidates.filter((e) => autoRoutable(e.offering, pol));
+      const leftOut = candidates.length - pool.length;
       const result = recommend(reputation.apply(pool.map((e) => e.offering)), features, {
         preset, limit: 5, prefer_local: true, max_total_usd: pol.max_request_usd, region: pol.region,
         jurisdiction: auto.jurisdiction ?? pol.jurisdiction,
@@ -244,7 +247,7 @@ export async function startOllamaRouter({
       });
       const byKey = new Map(pool.map((e) => [`${e.offering.node_id}/${e.offering.offering_id}`, e]));
       const chosen = result.recommendations.map((r) => byKey.get(r.offering)).filter(Boolean);
-      lastAdvice = { model: name, features, ...(sensitive ? { sensitive: true, trusted_view: trusted } : {}), recommendations: result.recommendations.map((r) => { const seen = reputation.describe(r.offering); return { offering: r.offering, tier: r.tier, score: r.score, reasons: seen ? [...r.reasons, seen] : r.reasons }; }) };
+      lastAdvice = { model: name, features, ...(sensitive ? { sensitive: true, trusted_view: trusted } : {}), ...(leftOut ? { left_out_logged: leftOut } : {}), recommendations: result.recommendations.map((r) => { const seen = reputation.describe(r.offering); return { offering: r.offering, tier: r.tier, score: r.score, reasons: seen ? [...r.reasons, seen] : r.reasons }; }) };
       return chosen;
     }
     const all = await catalog();

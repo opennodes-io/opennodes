@@ -20,7 +20,7 @@ if (has('help') || args[0] === '-h') {
 
   onp-ollama [--port 11435] [--ollama http://127.0.0.1:11434] [--peer <origin>]... [--pin <key>]... [--mdns]
              [--registry <url>] [--min-tier community] [--max-request-usd 0.05] [--region eu]
-             [--key host=token]... [--ledger receipts.jsonl] [--no-reputation] [--sensitive]
+             [--key host=token]... [--ledger receipts.jsonl] [--no-reputation] [--sensitive] [--allow-logged]
              [--token <token>] [--public-bind] [--allow-origin <origin>]... [--allow-host <name>]...
              [--mask-pii off|open|all] [--pii-service <url>] [--pii-llm <model>[@<url>]]
   onp-ollama --show-pin <origin>     print the card key of the ONP node at <origin> (run it on that machine)
@@ -48,6 +48,9 @@ PII masking: --mask-pii open (default, ONP_MASK_PII) replaces personal data with
          and puts it back in the answer; all: before every public model; off: never. Local and LAN models are never masked.
          Names and addresses need a local detector: --pii-service <url> (Presidio, ONP_PII_SERVICE) or --pii-llm <model>[@<url>] (ONP_PII_LLM).
          Masking does not make a request trusted: sensitive requests still use the trusted pool only.
+Kept content: auto models never pick a public offering that declares retention "logged" (its content may be kept, as with the
+         AI Horde's volunteer workers), not even as a fallback. Name it as the model (onp/<node>/<offering>) to use it, or start
+         with --allow-logged to let auto models choose such offerings.
 Env:     ONP_REGISTRY (public tier; default https://registry.opennodes.io; --registry none for LAN-only), OLLAMA_UPSTREAM (local Ollama)
 Publish this machine as a node:    pipx install onp-node==0.1.11 && onp-node init --engine ${flag('ollama', process.env.OLLAMA_UPSTREAM ?? 'http://127.0.0.1:11434')}/v1 ...`);
   process.exit(0);
@@ -113,6 +116,7 @@ async function serve() {
         max_request_usd: Number(flag('max-request-usd', 0.05)),
         ...(flag('region') ? { region: flag('region') } : {}),
         sensitive: has('sensitive') || ['1', 'true', 'yes'].includes(String(process.env.ONP_SENSITIVE ?? '').toLowerCase()),
+        ...(has('allow-logged') ? { allow_logged: true } : {}),
       },
       keys,
       ledgerPath: flag('ledger', null),

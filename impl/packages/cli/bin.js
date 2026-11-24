@@ -147,7 +147,8 @@ try {
         aliases,
         virtuals,
         keys,
-        policy: { ...(minTier ? { min_tier: minTier } : {}), sensitive },
+        // --allow-logged: let onp/auto (and its fallbacks) pick offerings that declare retention "logged".
+        policy: { ...(minTier ? { min_tier: minTier } : {}), sensitive, ...(args.includes('--allow-logged') ? { allow_logged: true } : {}) },
         reputationPath: args.includes('--no-reputation') ? null : flag('reputation', DEFAULT_REPUTATION_PATH),
         // embeddings go to the local Ollama's embedding models first (not OLLAMA_HOST: that may be the router)
         ollama: args.includes('--no-ollama') ? null : flag('ollama', 'http://127.0.0.1:11434'),
@@ -171,6 +172,9 @@ try {
       console.log(sensitive
         ? `sensitive: every request stays in the trusted pool (${gw.trusted.jurisdictions}-declared operators with a passing server check, declared lineage without CN, verified+, declared no retention and no training)`
         : 'sensitive requests: send header "onp-sensitive: 1" or use model onp/auto-sensitive (trusted pool only); --sensitive marks every request');
+      console.log(args.includes('--allow-logged')
+        ? 'kept content: onp/auto may pick offerings that declare retention "logged" (--allow-logged), such as the AI Horde\'s volunteer workers'
+        : 'kept content: onp/auto never picks an offering that declares retention "logged", not even as a fallback; name one as the model to use it, or pass --allow-logged');
       console.log({
         open: `PII masking (${gw.pii.detector}): personal data is replaced by placeholders before an open-pool offering, and put back in the answer`,
         all: `PII masking (${gw.pii.detector}): personal data is replaced by placeholders before every hosted offering, and put back in the answer`,
@@ -227,6 +231,8 @@ usage:
   onp card <node-origin-url>
   onp gateway [--port 4141] [--token secret] [--alias fast=node.id/offering] [--virtual auto-cheap=modality=text&sort=price] [--key openrouter.ai=sk-or-...] [--env-keys] [--allow-origin http://app.example:3000]... [--allow-host proxy.internal]... [--min-tier unverified|community|verified] [--no-reputation] [--ollama http://127.0.0.1:11434 | --no-ollama] [--ledger receipts.jsonl] [--mask-pii off|open|all] [--pii-service <url>] [--pii-llm <model>[@<url>]]
      --env-keys: also use the provider keys set in the environment (OPENROUTER_API_KEY, HF_TOKEN, OPENAI_API_KEY, ...); off by default.
+     --allow-logged: let onp/auto, virtual models and their fallbacks pick offerings that declare retention "logged" (content may be
+       kept, e.g. the AI Horde's volunteer workers). Off by default; naming such an offering as the model always works.
      Without --token: apps on this machine, by a local Host (127.0.0.1, localhost); browser pages only from localhost or an --allow-origin.
      The gateway API (/gateway/receipts, /advice, /reputation) needs the token kept in ~/.opennodes/gateway-token (or your --token).
      POST bodies must be "content-type: application/json".

@@ -47,6 +47,9 @@ const registry = await startRegistry({
   reimport: process.env.ONP_REIMPORT === '1' ? {
     intervalMs: Number(process.env.ONP_REIMPORT_MS ?? 6 * 3600 * 1000),
     sources: (process.env.ONP_REIMPORT_SOURCES ?? 'openrouter,huggingface').split(','),
+    // `horde` (opt-in: add it to ONP_REIMPORT_SOURCES) refreshes hourly by default; workers come and go fast.
+    // Anything unset, unreadable or under a minute falls back to the hour: the Horde is never polled in a loop.
+    sourceIntervals: { horde: ((ms) => (Number.isFinite(ms) && ms >= 60_000 ? ms : 3600 * 1000))(Number(process.env.ONP_REIMPORT_HORDE_MS || NaN)) },
   } : null,
 });
 if (process.env.ONP_ALLOW_PRIVATE === '1') console.log('WARNING: SSRF guard disabled (ONP_ALLOW_PRIVATE=1) — dev only');

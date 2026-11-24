@@ -12,7 +12,7 @@
 import { appendFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
-import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend, recommendEmbedders, isEmbedder, parseAutoModel, AUTO_MODEL_NAMES, responseBudgetMs, fetchWithin, sensitiveHeader } from '@opennodes/core';
+import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend, recommendEmbedders, isEmbedder, parseAutoModel, AUTO_MODEL_NAMES, responseBudgetMs, fetchWithin, sensitiveHeader, autoRoutable } from '@opennodes/core';
 import { parseMaskMode, maskModeOf, piiDetectorFrom, maskChatRequest, maskEmbeddingRequest, maskedRequestFor, oncePerRequest, unmaskCompletion, unmaskSse, piiMaskedHeader, describeMaskCounts } from '@opennodes/core';
 import { localAccess, bearerCheck, isLoopbackBind, isLoopbackAddress, isJsonContentType, newToken } from '@opennodes/core';
 import { OnpClient } from './client.js';
@@ -158,6 +158,16 @@ export async function startGateway({
     });
   }
 
+  /**
+   * What automatic routing may pick from (auto and virtual models, and so their fallbacks and failover):
+   * offerings declaring `logged` retention only with --allow-logged. `leftOut` counts the rest, for the advice.
+   */
+  const autoPool = (offerings) => {
+    const pool = offerings.filter((o) => autoRoutable(o, policy));
+    return { pool, leftOut: offerings.length - pool.length };
+  };
+  const loggedNote = (n) => (n ? { left_out_logged: n, left_out_logged_why: 'they declare retention "logged" (the content may be kept, e.g. volunteer workers); name one as the model, or start the gateway with --allow-logged' } : {});
+
   /** An explicitly named offering outside the routing pool: look it up directly. */
   async function lookup(id) {
     const [nodeId, offeringId] = id.split('/');
@@ -184,7 +194,8 @@ export async function startGateway({
         request: body ? { tools: body.tools, json: ['json_object', 'json_schema'].includes(body.response_format?.type) } : null,
       });
       const { preset } = auto;
-      const result = recommend(reputation.apply(withLocalChecks([...cache.byId.values()])), features, {
+      const { pool, leftOut } = autoPool([...cache.byId.values()]);
+      const result = recommend(reputation.apply(withLocalChecks(pool)), features, {
         preset, limit: 5,
         min_tier: preset === 'private' ? atLeast(minTier, 'community') : policy.min_tier,   // private never goes below community
         max_input_per_mtok: policy.max_input_per_mtok,
@@ -192,7 +203,7 @@ export async function startGateway({
         prefer_local: preset === 'private',
         sensitive, trusted: client.trusted,
       });
-      lastAdvice = { model: modelId, features, ...(sensitive ? { sensitive: true, trusted_view: client.trusted } : {}), recommendations: result.recommendations.map((r) => {
+      lastAdvice = { model: modelId, features, ...(sensitive ? { sensitive: true, trusted_view: client.trusted } : {}), ...loggedNote(leftOut), recommendations: result.recommendations.map((r) => {
         const mine = cache.byId.get(r.offering) && withLocalChecks([cache.byId.get(r.offering)])[0]?.checked_by_you;
         const seen = reputation.describe(r.offering);
         return { offering: r.offering, score: r.score, reasons: [...r.reasons, ...(mine ? [`checked by you: ${mine}`] : []), ...(seen ? [seen] : [])] };
@@ -201,7 +212,7 @@ export async function startGateway({
     }
     if (virtuals[modelId]) {
       const results = await client.search(Object.fromEntries(new URLSearchParams(virtuals[modelId])));
-      return results.filter((o) => callable(o, creds)).map((o) => (cache.byId.get(`${o.node_id}/${o.offering_id}`) ?? o));
+      return autoPool(results.filter((o) => callable(o, creds))).pool.map((o) => (cache.byId.get(`${o.node_id}/${o.offering_id}`) ?? o));
     }
     // A named offering is honoured even outside the pool: the caller chose it.
     const target = aliases[modelId] ?? modelId;
@@ -418,14 +429,14 @@ export async function startGateway({
     const auto = parseAutoModel(modelId, 'onp/');
     if (auto) {
       sensitive ||= Boolean(auto.sensitive);
-      const remote = [...cache.byId.values()].filter(isEmbedder);
+      const { pool: remote, leftOut } = autoPool([...cache.byId.values()].filter(isEmbedder));
       const pool = reputation.apply(auto.preset === 'private' ? local : [...local, ...remote]);
       const inputs = Array.isArray(body.input) ? body.input : [body.input];
       const sample = inputs.filter((x) => typeof x === 'string').slice(0, 5).join(' ').slice(0, 4000);
       // what gets embedded is the user's own material: treat it as private, so local models lead
       const features = { ...extractFeatures(sample, { request: {} }), corpus: { documents: inputs.length, private: true } };
       const ranked = recommendEmbedders(pool, features, { min_tier: policy.min_tier, jurisdiction: auto.jurisdiction ?? policy.jurisdiction, limit: 5, sensitive, trusted: client.trusted });
-      lastAdvice = { model: modelId, kind: 'embeddings', features, recommendations: ranked.map((r) => {
+      lastAdvice = { model: modelId, kind: 'embeddings', features, ...loggedNote(leftOut), recommendations: ranked.map((r) => {
         const seen = reputation.describe(r.offering);
         return { offering: r.offering, score: r.score, reasons: seen ? [...r.reasons, seen] : r.reasons };
       }) };
@@ -523,7 +534,8 @@ export async function startGateway({
       if (!candidates.length && (parseAutoModel(body.model, 'onp/') || virtuals[body.model])) {
         return problem(res, 404, 'no-callable-offerings',
           `nothing in the registry matches ${body.model} that this gateway can call: free registered nodes need no key; ` +
-          'for imported catalogs pass --key <host>=<key>, or start the gateway with --env-keys to use a provider variable you set, such as OPENROUTER_API_KEY or HF_TOKEN');
+          'for imported catalogs pass --key <host>=<key>, or start the gateway with --env-keys to use a provider variable you set, such as OPENROUTER_API_KEY or HF_TOKEN' +
+          (policy.allow_logged ? '' : '; offerings that declare retention "logged" are left out of automatic routing: name one as the model, or start the gateway with --allow-logged'));
       }
       if (!candidates.length) return problem(res, 404, 'model-not-found', String(body.model));
 

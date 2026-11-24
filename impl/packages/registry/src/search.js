@@ -195,6 +195,9 @@ async function buildOfferings(store) {
           probes: checks.length,
           ttft_ms: obs.ttft_ms ?? null,
           tps: obs.tps ?? null,
+          // What an imported network reports about itself (AI Horde: workers, queue), basis `reported`:
+          // the upstream's own figures at `reported_at`, never measured by this registry.
+          ...(obs.upstream ? { upstream: obs.upstream } : {}),
           availability,
         },
         endpoints: card.endpoints,
