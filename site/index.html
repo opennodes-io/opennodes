@@ -159,14 +159,14 @@
     <table>
       <thead><tr><th scope="col"><span class="sr">Check</span></th><th scope="col">Claimed in its Node Card</th><th scope="col">Measured by the registry</th></tr></thead>
       <tbody>
-        <tr><th scope="row">Model</th><td class="claim" data-label="Claimed">bielik-1.5b-v3.0-instruct</td><td data-label="Measured"><span class="ok" aria-hidden="true">✓</span> serves that model (identity check)</td></tr>
+        <tr><th scope="row">Model</th><td class="claim" data-label="Claimed">bielik-1.5b-v3.0-instruct</td><td data-label="Measured" data-k="identity">reference being recaptured from the public weights</td></tr>
         <tr><th scope="row">Context window</th><td class="claim" data-label="Claimed">8,192 tokens</td><td data-label="Measured"><span class="ok" aria-hidden="true">✓</span> <span data-k="ctx">8,192 tokens held in a real test</span></td></tr>
         <tr><th scope="row">Server</th><td class="claim" data-label="Claimed">Finland (declared)</td><td data-label="Measured"><span class="ok" aria-hidden="true">✓</span> <span data-k="loc">server front located in Finland, Hetzner network</span></td></tr>
         <tr><th scope="row">Speed</th><td class="claim" data-label="Claimed">not claimed</td><td data-label="Measured"><span data-k="speed">2.2 s to first token · 35 tokens/s</span></td></tr>
         <tr><th scope="row">Reliability</th><td class="claim" data-label="Claimed">not claimed</td><td data-label="Measured"><span data-k="probes">100 of the last 100 blind checks passed</span></td></tr>
       </tbody>
     </table>
-    <figcaption id="proof-cap"><span data-k="stamp">Registry snapshot, 4 Nov 2026.</span> Where things stand: the verified tier holds the project's reference nodes so far; the 10,000+ imported listings show only their claims until their operators register.</figcaption>
+    <figcaption id="proof-cap"><span data-k="stamp">Registry snapshot, 4 Nov 2026.</span> Where things stand: the project's reference nodes are being re-checked against identity references captured independently from the public weights, and drop to <code>community</code> at their next scheduled check until then; the 10,000+ imported listings show only their claims until their operators register.</figcaption>
   </figure>
 </div></header>
 
@@ -309,6 +309,11 @@ if (navigator.clipboard) document.querySelectorAll('pre').forEach((pre) => {
     const obs = o.observed || {}, s = o.serving || {}, loc = o.jurisdiction?.location;
     const n = (v) => Number(v).toLocaleString('en-US');
     set('tier', o.tier);
+    // An identity check only counts once the reference was captured from the public weights (rev. 12).
+    if (['verified', 'attested'].includes(o.tier) && o.model?.artifact && !o.model.artifact.startsWith('urn:proprietary:')) {
+      const el = document.querySelector('[data-k="identity"]');
+      if (el) el.innerHTML = '<span class="ok" aria-hidden="true">✓</span> serves that model (identity check)';
+    }
     if (s.context_window) set('ctx', s.context_capped_from
       ? `capped to ${n(s.context_window)} tokens: the claimed ${n(s.context_capped_from)} failed the test`
       : `${n(s.context_window)} tokens held in a real test`);
