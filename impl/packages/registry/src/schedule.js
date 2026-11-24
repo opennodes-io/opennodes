@@ -1,8 +1,11 @@
 // Re-verification on the registry's own timetable (ONP-3 §4a):
 // - Stage A at least every 6 h and on every new card revision, for registered nodes from `indexed` up;
-// - Stage B for a node that reaches `community`, at a random time within a day; again soon after any
-//   change to a tested offering's model, serving or hardware block, or after a confirmed mismatch in
-//   a blind identity check (stagec.js); and quarterly otherwise.
+// - Stage B for a node that reaches `community`, at a random time within a day; again at a random time
+//   within 3 days of any change to a tested offering's model, serving, hardware or binding block (or a
+//   new tested offering), within the hour after a confirmed mismatch in a blind identity check
+//   (stagec.js), and on a random timer, 1 to 91 days after a pass, otherwise. That timer is its own
+//   row (TIMER) and only a run it set off draws it again: a run set off by a change does not, so an
+//   operator who changes the card every day cannot keep pushing the random run away.
 // The operator does not choose when Stage B runs, and no API says when it will: the next run time
 // lives only in the private `schedule` table. The server supplies the stage runs (and their effect
 // on the tier); this module only decides when they are due.
@@ -21,7 +24,9 @@ export const SCHEDULE_DEFAULTS = Object.freeze({
   stageBIntervalMs: 91 * DAY,
   stageBRetryMs: 7 * DAY,                // after a Stage B that did not pass (and was not a dispute); 85-100% of it
   stageBFirstMs: [HOUR, DAY],            // a node that reaches community: first Stage B in this window
-  stageBChangeMs: [0, HOUR],             // after a change to a tested offering's model, serving or hardware
+  // After a change to a tested offering (or a new one): anywhere in three days, so that an operator who
+  // changes the card cannot know the hour of the run that follows (ONP-3 §4a, re-verification).
+  stageBChangeMs: [0, 72 * HOUR],
   // After a confirmed mismatch in a blind identity check (stagec.js). The upper end leaves room for
   // the tick (at most 1.5 x tickMs late), so the run starts within the hour.
   stageBIdentityMs: [0, 50 * 60_000],
@@ -34,6 +39,12 @@ export const SCHEDULE_DEFAULTS = Object.freeze({
 /** States whose nodes get Stage A on schedule, and the subset that gets Stage B. */
 export const STAGE_A_STATES = ['indexed', 'community', 'verified', 'attested'];
 export const STAGE_B_STATES = ['community', 'verified', 'attested'];
+/**
+ * The private schedule row holding a node's random Stage B timer (drawn after a pass). Kept apart
+ * from row 'B', whose next_at is the soonest of everything due, so that runs set off by a change or
+ * a light-check mismatch never redraw it.
+ */
+export const TIMER = 'B:timer';
 
 const iso = (ms) => new Date(ms).toISOString();
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
@@ -105,8 +116,17 @@ export function makePlanner(store, options = {}) {
         await store.setSchedule(nodeId, 'B', { ...prev, next_at: iso(now + between(o.staleRetryMs, random)), failures: (prev.failures ?? 0) + 1 });
         return;
       }
+      // The random timer is drawn again only when it is due or missing: a run that a change or a
+      // light-check mismatch set off leaves it where it was, so it still fires (ONP-3 §4a).
+      let timer = await store.getSchedule(nodeId, TIMER);
+      const timerAt = timer?.next_at ? Date.parse(timer.next_at) : null;
+      if (result.ok && !result.identityFailed && (timerAt === null || timerAt <= now)) {
+        timer = { last_at: iso(now), next_at: iso(now + between([o.stageBMinGapMs, o.stageBIntervalMs], random)) };
+        await store.setSchedule(nodeId, TIMER, timer);
+      }
+      const pending = timer?.next_at && Date.parse(timer.next_at) > now ? Date.parse(timer.next_at) : Infinity;
       const next = result.identityFailed ? null
-        : iso(now + (result.ok ? between([o.stageBMinGapMs, o.stageBIntervalMs], random) : o.stageBRetryMs * between([0.85, 1], random)));
+        : iso(Math.min(pending, result.ok ? Infinity : now + o.stageBRetryMs * between([0.85, 1], random)));
       await store.setSchedule(nodeId, 'B', {
         last_at: iso(now), next_at: next, ok: result.ok, revision: card?.revision ?? null,
         digest: servingDigest(card), pending_digest: null, failures: result.ok ? 0 : (prev.failures ?? 0) + 1,
@@ -157,7 +177,8 @@ export function startScheduler(store, planner, { stageA, stageB, random = Math.r
       }
       const digest = servingDigest(fresh);
       if (b.digest && digest !== b.digest && digest !== b.pending_digest) {
-        // A tested offering's model, serving or hardware changed since the last Stage B: run it soon.
+        // A tested offering's model, serving, hardware or binding changed since the last Stage B, or a
+        // tested offering is new: run it at a random time in the change window.
         nextAt = Math.min(nextAt, now + between(o.stageBChangeMs, random));
         b = { ...b, pending_digest: digest, next_at: iso(nextAt) };
         await store.setSchedule(node.id, 'B', b);

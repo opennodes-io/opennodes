@@ -294,11 +294,13 @@ export async function startRegistry({
    * card, capacity) keeps `community` or demotes `verified` to `community`. Returns null when a
    * run is already in progress for the node.
    */
-  async function stageBFor(nodeId) {
+  async function stageBFor(nodeId, { refresh = false } = {}) {
     if (stageBRunning.has(nodeId)) return null;
     stageBRunning.add(nodeId);
     try {
-      await refreshCard(nodeId);
+      // Scheduled runs go out on the card already held: a card fetch just before the battery would
+      // tell the operator that Stage B is starting (ONP-3 §4a.9). A 409 still re-fetches (below).
+      if (refresh) await refreshCard(nodeId);
       const card = await store.latestCard(nodeId);
       const revision = await store.latestRevision(nodeId);
       // Decided before anything is sent: what counts is the key this run's probes carry.
@@ -442,7 +444,7 @@ export async function startRegistry({
       if (!LISTED.includes(node.state)) {
         return problem(res, 409, 'wrong-state', `Stage B requires community tier, node is ${node.state}`);
       }
-      const stageB = await stageBFor(params.id);
+      const stageB = await stageBFor(params.id, { refresh: true });   // the admin's request: the latest card
       if (!stageB) return problem(res, 409, 'stage-b-running', `Stage B is already running for ${params.id}`);
       if (stageB.stale) {
         return problem(res, 409, 'stale-card', 'the node changed its card revision during the battery; retry');
@@ -896,7 +898,9 @@ export async function startRegistry({
   // without one (ONP_SCHEDULE=0) Stage B runs only on admin request, so the mismatch is only recorded.
   const requestStageB = schedule ? (nodeId, card) => planner.stageBSoon(nodeId, card) : null;
   const stageCHandle = stageC ? startStageC(store, { safeFetch, fetchFor: authFetch, refreshCard, requestStageB, corpus, ...stageC }) : null;
-  const scheduleHandle = schedule ? startScheduler(store, planner, { stageA: (id) => stageAFor(id, { refresh: true }), stageB: (id) => stageBFor(id) }) : null;
+  // Scheduled runs use the card already held when Stage C re-fetches cards on its own timer
+  // (stagec.js cardSweep), so no card fetch announces them; without Stage C, Stage A re-fetches.
+  const scheduleHandle = schedule ? startScheduler(store, planner, { stageA: (id) => stageAFor(id, { refresh: !stageCHandle }), stageB: (id) => stageBFor(id) }) : null;
   const reimportHandle = reimport ? startReimport(store, { safeFetch, ...reimport }) : null;
   const locationHandle = location ? startLocationSweep() : null;
   const actualPort = await listen(app, port, host);
@@ -909,6 +913,7 @@ export async function startRegistry({
     scheduleTick: scheduleHandle ? () => scheduleHandle.tick() : null,
     /** Run one Stage C blind sweep, or one look for due follow-ups, now (tests); null when Stage C is off. */
     blindSweep: stageCHandle ? () => stageCHandle.blindSweep() : null,
+    cardSweep: stageCHandle ? () => stageCHandle.cardSweep() : null,
     followUpTick: stageCHandle ? () => stageCHandle.followUpTick() : null,
     close: async () => {
       stageCHandle?.stop();

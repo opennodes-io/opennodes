@@ -16,7 +16,7 @@ import { createPgStore } from '@opennodes/registry/src/store-pg.js';
 import { loadCorpus, BUILTIN_CORPUS, LEGACY_IDENTITY_PROMPTS, IDENTITY_CAPTURE } from '@opennodes/registry/src/corpus.js';
 import { vendorClaim, vendorTable, artifactClaimProblems, ownLabel, nodeDomain } from '@opennodes/registry/src/vendors.js';
 import { UNSIGNED_CARD, NO_REFERENCE, IDENTITY_MAX_TOKENS, MAX_EXCUSED_409, STAGE_B_409, CUSTOMER_ACCESS_NEEDED } from '@opennodes/registry/src/stageb.js';
-import { SCHEDULE_DEFAULTS, servingDigest } from '@opennodes/registry/src/schedule.js';
+import { SCHEDULE_DEFAULTS, servingDigest, makePlanner, TIMER } from '@opennodes/registry/src/schedule.js';
 import { FOLLOW_UP, LIGHT_CHECK, FOLLOW_UP_MS, FOLLOW_UP_TICK_MS, JITTER, IDENTITY_SHARE, IDENTITY_STAGE_B_GAP_MS } from '@opennodes/registry/src/stagec.js';
 
 const FIXTURE = 'org.opennodes.fixture';
@@ -747,6 +747,99 @@ test('scheduler: Stage B within the first-run window after community, after a ch
     const text = await (await fetch(`${registry.origin}${path}`)).text();
     assert.ok(!text.includes('next_at') && !text.includes(b1.next_at), path);
   }
+});
+
+test('scheduler: runs a change sets off never move the random Stage B timer (4.3a: the operator cannot time Stage B)', async () => {
+  const rows = new Map();
+  const store = {
+    getSchedule: async (n, stage) => rows.get(`${n}|${stage}`) ?? null,
+    setSchedule: async (n, stage, row) => { rows.set(`${n}|${stage}`, { ...row }); },
+  };
+  const planner = makePlanner(store, { random: () => 0.5 });
+  const card = { revision: 'r1', offerings: [] };
+  const DAY = 86_400_000;
+  const nextB = () => Date.parse(rows.get('n|B').next_at);
+  const timer = () => rows.get(`n|${TIMER}`)?.next_at;
+
+  // A pass draws the random timer, 1 to 91 days on, and Stage B is next due then.
+  await planner.afterStageB('n', card, { ok: true });
+  const first = timer();
+  const gap = Date.parse(first) - Date.now();
+  assert.ok(gap > DAY && gap <= 91 * DAY, `timer ${gap} ms on`);
+  assert.equal(rows.get('n|B').next_at, first);
+
+  // An operator changes the card every day for a month; each change sets off a run that passes.
+  for (let day = 0; day < 30; day++) {
+    await store.setSchedule('n', 'B', { ...rows.get('n|B'), next_at: new Date(Date.now() - 1).toISOString() });
+    await planner.afterStageB('n', card, { ok: true });
+    assert.equal(timer(), first, 'a run set off by a change does not redraw the timer');
+    assert.equal(rows.get('n|B').next_at, first, 'so the random run still comes when it was drawn');
+  }
+
+  // A run that does not pass comes back after the retry gap or at the timer, whichever is sooner.
+  await planner.afterStageB('n', card, { ok: false });
+  assert.ok(nextB() <= Date.parse(first));
+  assert.equal(timer(), first);
+
+  // Only a run the timer set off (the timer is due) draws a new one.
+  await store.setSchedule('n', TIMER, { last_at: null, next_at: new Date(Date.now() - 1).toISOString() });
+  await planner.afterStageB('n', card, { ok: true });
+  assert.ok(Date.parse(timer()) > Date.now() + DAY);
+  assert.equal(rows.get('n|B').next_at, timer());
+
+  // A change brings a run at a random time within three days, not within the hour.
+  assert.deepEqual(SCHEDULE_DEFAULTS.stageBChangeMs, [0, 72 * 3_600_000]);
+});
+
+test('blind probes go out on the card the registry holds: no card fetch just before them (follow-up point 5)', async (t) => {
+  const { node, registry } = await verifiedWithStageC(t, {}, { blindIntervalMs: 1e9, followUpTickMs: 1e9, cardRefreshIntervalMs: 1e9 });
+  const fetches = node.cardFetches, calls = node.calls.length;
+  await registry.blindSweep();
+  assert.equal(node.calls.length, calls + 1, 'one blind call');
+  assert.equal(node.cardFetches, fetches, 'and no card fetch before it');
+  // The card sweep, on its own timer, picks up a new revision.
+  node.setContextWindow(4096);
+  await registry.cardSweep();
+  assert.ok(node.cardFetches > fetches, 'the card sweep fetched the card');
+  assert.equal((await registry.store.latestCard(FIXTURE)).revision, node.card.revision);
+  // A probe pinned to an old revision still gets the 409 path: re-fetch, then retry with the new pin.
+  node.setContextWindow(2048);
+  await registry.blindSweep();
+  assert.equal((await registry.store.latestCard(FIXTURE)).revision, node.card.revision);
+  const failedBlind = async () => (await detail(registry)).probes.filter((p) => p.stage === 'C' && p.kind === 'blind' && !p.ok);
+  assert.deepEqual(await failedBlind(), [], 'the retry with the new pin passed');
+  // An offering the node dropped since the card was fetched answers 404, not 409: the card is
+  // re-fetched after that reply, and the failure is excused like a 409, not counted against the node.
+  node.setOfferings(['speech']);
+  await registry.blindSweep();
+  assert.deepEqual(await failedBlind(), [], 'no failed blind probe recorded');
+  assert.ok((await detail(registry)).probes.some((p) => p.kind === 'blind-409' && /no longer offers/.test(p.detail)));
+});
+
+test('scheduled Stage B on the held card: a model dropped since the last card fetch is not a dispute', async (t) => {
+  const node = await startFixtureNode();
+  const registry = await startRegistry({
+    allowPrivateTargets: true, stageBCapacity: FAST,
+    stageC: { livenessIntervalMs: 1e9, blindIntervalMs: 1e9, followUpTickMs: 1e9, cardRefreshIntervalMs: 1e9 },
+    schedule: { tickMs: 3_600_000, stageAIntervalMs: 1e9, stageBFirstMs: [1e9, 1e9], stageBChangeMs: [0, 0] },
+  });
+  t.after(async () => { await node.close(); await registry.close(); });
+  await register(registry, node);
+  await capture(registry);
+  assert.equal((await admit(registry)).body.state, 'verified');
+
+  // The operator drops the chat model; the registry has not fetched the card since.
+  const fetches = node.cardFetches;
+  node.setOfferings(['speech']);
+  await registry.store.setSchedule(FIXTURE, 'B', { ...(await registry.store.getSchedule(FIXTURE, 'B')), next_at: new Date(Date.now() - 1000).toISOString() });
+  await registry.scheduleTick();
+
+  const d = await detail(registry);
+  assert.equal(d.state, 'verified', JSON.stringify(d.history.at(-1)));
+  assert.ok(d.probes.some((p) => p.kind === STAGE_B_409 && /^404 with revision/.test(p.detail)), 'excused after the 404, card re-fetched after the reply');
+  assert.ok(node.cardFetches > fetches);
+  const b = await registry.store.getSchedule(FIXTURE, 'B');
+  assert.ok(Date.parse(b.next_at) - Date.now() <= 3_600_000, 'runs again on the new card within the hour');
 });
 
 test('scheduler: a node verified before the schedule existed gets Stage B under the new rules in the legacy window', async (t) => {

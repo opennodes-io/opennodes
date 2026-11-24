@@ -4,6 +4,9 @@
 // - random blind invocations at unpredictable times (anti-"benchmark mode": a node cannot serve the
 //   real model only when it detects a test window), worded from the registry's probe corpus like
 //   any customer request; repeated failures cost the node its tier
+// - blind invocations use the card the registry already holds: cards are re-fetched on their own
+//   jittered timer (cardSweep), never just before a probe, so the card origin's log does not announce
+//   the "blind" request that follows (a 409 still re-fetches and retries, below)
 // - an excused 409 is followed by a fresh blind invocation within the hour (ONP-3 §4a.9), so
 //   publishing a new card revision to refuse a probe does not buy a quiet stretch
 // - on verified and attested nodes some blind invocations ask an identity prompt instead: a light
@@ -25,6 +28,11 @@ const MINUTE = 60_000, HOUR = 60 * MINUTE, DAY = 24 * HOUR;
 export const LIVENESS_INTERVAL_MS = 300_000;
 /** Mean gap between blind-invocation sweeps: one chat call per node per sweep, same jitter. */
 export const BLIND_INTERVAL_MS = 3_600_000;
+/**
+ * Mean gap between card re-fetch sweeps, same jitter. Its own timer, independent of the blind sweeps:
+ * a card fetch must not tell a node that a blind invocation is coming.
+ */
+export const CARD_REFRESH_INTERVAL_MS = 3_600_000;
 /** Each gap is the mean times a uniform random factor in this range. */
 export const JITTER = [0.5, 1.5];
 /** Consecutive failed blind invocations (since the node's last state change) that demote it one tier. */
@@ -70,6 +78,7 @@ export function startStageC(store, {
   corpus = loadCorpus(null),      // probe prompts (corpus.js)
   livenessIntervalMs = LIVENESS_INTERVAL_MS,   // tests shorten this
   blindIntervalMs = BLIND_INTERVAL_MS,
+  cardRefreshIntervalMs = CARD_REFRESH_INTERVAL_MS,
   followUpTickMs = FOLLOW_UP_TICK_MS,
   followUpMs = FOLLOW_UP_MS,
   failThreshold = 3,
@@ -139,7 +148,7 @@ export function startStageC(store, {
     for (const node of await store.allNodes()) {
       if (stopped) return;
       if (!OBSERVED_STATES.includes(node.state)) continue;
-      await refreshCard?.(node.id);
+      // The card the registry holds, never one fetched just now (cardSweep has its own timer).
       const card = await store.latestCard(node.id);
       if (!card) continue;
       // Blind probes call only offerings the tests can call. A node with none is reported in the
@@ -157,6 +166,23 @@ export function startStageC(store, {
       }
       if (skipped) await store.setObservation(node.id, '_node', 'blind_skipped', null);
       await probeNode(node, card, callable);
+    }
+  }
+
+  /**
+   * Re-fetch the cards of observed nodes, in random order, on a timer of its own. A revision the
+   * node moved to is picked up here (or on its ping, or by a 409's re-fetch), not just before a probe.
+   */
+  async function cardSweep() {
+    if (!refreshCard) return;
+    const nodes = (await store.allNodes()).filter((n) => OBSERVED_STATES.includes(n.state));
+    for (let i = nodes.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [nodes[i], nodes[j]] = [nodes[j], nodes[i]];
+    }
+    for (const node of nodes) {
+      if (stopped) return;
+      await refreshCard(node.id);
     }
   }
 
@@ -184,6 +210,7 @@ export function startStageC(store, {
     const offering = callable[Math.floor(random() * callable.length)];
     const ref = await identityReference(node, offering);
     const result = await blindProbe(node, card, offering, ref);
+    if (result.skipped) return;
     // The record says only whether the reply conformed: never that it carried an identity prompt,
     // nor how that comparison went (node detail publishes the last probe records).
     await store.recordProbe(node.id, result.offeringId, 'C', 'blind', result.ok, result.detail, result.measured);
@@ -200,6 +227,26 @@ export function startStageC(store, {
     if (random() >= identityShare) return null;
     const refs = (await store.getFingerprints(offering.model.artifact)).filter((r) => corpus.usableReference(r.prompt));
     return refs.length ? refs[Math.floor(random() * refs.length)] : null;
+  }
+
+  /**
+   * Blind probes go out on the card the registry holds, so one can reach an offering the node has
+   * since dropped from its card (it answers 404, say, not 409). After such a failure, and never
+   * before a probe, the card is re-fetched: when its revision moved and the offering is gone, the
+   * failure is not judged. It is excused like a 409, within the same daily bound and with a fresh
+   * probe owed within the hour. Null when it counts as a failure.
+   */
+  async function droppedOffering(node, card, offering, status) {
+    await refreshCard?.(node.id);
+    const fresh = await store.latestCard(node.id);
+    if (!fresh || fresh.revision === card.revision) return null;
+    if (fresh.offerings.some((o) => o.offering_id === offering.offering_id && testable(o))) return null;
+    const excused = await store.countProbes(node.id, 'blind-409', iso(Date.now() - DAY));
+    if (excused >= maxExcused409) return null;
+    await store.recordProbe(node.id, offering.offering_id, 'C', 'blind-409', false,
+      `status ${status} for ${offering.offering_id}, which revision ${fresh.revision} no longer offers; a fresh probe due within the hour`);
+    await oweFollowUp(node.id, fresh.revision);
+    return { skipped: true, offeringId: offering.offering_id };
   }
 
   /**
@@ -221,6 +268,7 @@ export function startStageC(store, {
       let reply = await ask(card, offering, ref ? ref.prompt : corpus.chatPrompt());
       if (reply.status !== 409) {
         const result = judge(reply, offering);
+        if (!result.ok) return (await droppedOffering(node, card, offering, reply.status)) ?? result;
         if (ref && result.ok) result.identity = await lightCheck(reply, () => ask(card, offering, ref.prompt), ref);
         return result;
       }
@@ -238,7 +286,9 @@ export function startStageC(store, {
       await oweFollowUp(node.id, fresh.revision);
       const retryOffering = fresh.offerings.find((o) => o.offering_id === offering.offering_id && testable(o))
         ?? fresh.offerings.find(testable);
-      if (!retryOffering) return { ok: false, offeringId: offering.offering_id, detail: `the new revision ${fresh.revision} has no tested offering`, measured: null };
+      // The node moved to a card with nothing to call (an excused 409, already recorded): nothing
+      // was judged, and the next sweep reports it as blind_skipped, as for any such card.
+      if (!retryOffering) return { skipped: true, offeringId: offering.offering_id };
       reply = await ask(fresh, retryOffering, corpus.chatPrompt());
       return judge(reply, retryOffering, reply.status === 409 ? 'on the retry with the re-indexed revision' : null);
     } catch (err) {
@@ -325,12 +375,14 @@ export function startStageC(store, {
   };
   loop(livenessSweep, livenessIntervalMs);
   loop(blindSweep, blindIntervalMs);
+  loop(cardSweep, cardRefreshIntervalMs);
   loop(followUpTick, followUpTickMs);
 
   return {
     stop: () => { stopped = true; },
     /** One blind sweep, or one look for due follow-ups, now (tests). */
     blindSweep,
+    cardSweep,
     followUpTick,
   };
 }

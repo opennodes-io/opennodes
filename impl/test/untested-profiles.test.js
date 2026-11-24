@@ -127,7 +127,8 @@ test('a listed node that drops its chat offering: Stage B fails with a reason, S
   const node = await startFixtureNode({ lineage: ['FR'] });
   const registry = await startRegistry({
     allowPrivateTargets: true, stageBCapacity: FAST_CAPACITY,
-    stageC: { livenessIntervalMs: 60, blindIntervalMs: 80, failThreshold: 3 },
+    // Cards are re-fetched on their own timer, not before each blind probe (stagec.js cardSweep).
+    stageC: { livenessIntervalMs: 60, blindIntervalMs: 80, cardRefreshIntervalMs: 80, failThreshold: 3 },
   });
   t.after(async () => { await registry.close(); await node.close(); });
   const r = api(registry);
