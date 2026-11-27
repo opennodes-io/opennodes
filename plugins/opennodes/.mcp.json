@@ -2,7 +2,7 @@
   "mcpServers": {
     "opennodes": {
       "command": "npx",
-      "args": ["-y", "@opennodes/cli@0.1.35", "mcp"]
+      "args": ["-y", "@opennodes/cli@0.1.36", "mcp"]
     }
   }
 }
