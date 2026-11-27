@@ -52,7 +52,7 @@ Kept content: auto models never pick a public offering that declares retention "
          AI Horde's volunteer workers), not even as a fallback. Name it as the model (onp/<node>/<offering>) to use it, or start
          with --allow-logged to let auto models choose such offerings.
 Env:     ONP_REGISTRY (public tier; default https://registry.opennodes.io; --registry none for LAN-only), OLLAMA_UPSTREAM (local Ollama)
-Publish this machine as a node:    pipx install onp-node==0.1.11 && onp-node init --engine ${flag('ollama', process.env.OLLAMA_UPSTREAM ?? 'http://127.0.0.1:11434')}/v1 ...`);
+Publish this machine as a node:    pipx install onp-node==0.1.12 && onp-node init --engine ${flag('ollama', process.env.OLLAMA_UPSTREAM ?? 'http://127.0.0.1:11434')}/v1 ...`);
   process.exit(0);
 }
 
