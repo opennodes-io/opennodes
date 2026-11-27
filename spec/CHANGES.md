@@ -1,8 +1,8 @@
 # ONP specification changes
 
-## Draft 0.1, revision 15 — not yet released: keys chosen by `kid`, one algorithm, receipts defined, no dispute dodge past the bound
+## Draft 0.1, revision 15 — 2026-11-27: keys chosen by `kid`, one algorithm, receipts defined, no dispute dodge past the bound
 
-A re-check against main 27d7083 and registry 0.1.57 of the security review by Mark Lindley, Two Minds (twomindsworks.com), and an internal review of 24 November, found these. Packages: to be released after this revision is merged.
+A re-check against main 27d7083 and registry 0.1.57 of the security review by Mark Lindley, Two Minds (twomindsworks.com), and an internal review of 24 November, found these. Released as core 0.1.27, cli 0.1.36, registry 0.1.58, ollama-router 0.1.30 and onp-node 0.1.12 (PR #33).
 
 | # | Where | Change |
 |---|---|---|
@@ -11,14 +11,17 @@ A re-check against main 27d7083 and registry 0.1.57 of the security review by Ma
 | H3 | ONP-1 §3a | A node's tier is carried by the offerings its battery could call, as ONP-3 §4a Coverage says; ONP-1 said all offerings carry it. |
 | M4 | ONP-3 §4a.4 | Beyond the bound on excused refusals, the run re-pins the re-fetched revision when it claims the same model and binding, asks again and goes on; a refusal with that revision pinned counts as a reply that does not match. Before, the run ended as not passed, never as a dispute, so a node that swapped its model could publish a new revision at every run and stay at `community` instead of `disputed`. A node that only re-prices answers with its current revision and passes; a card that now claims another model still ends the run as not passed. |
 
-Reference implementations (not yet released):
+Reference implementations:
 
-- `@opennodes/core`: `verifyJws` refuses any `alg` but `EdDSA` and any key but Ed25519; new `verifyJwsWithJwks`, `verifyCardWithJwks`, `jwksCandidates` and `jwksCache` (by `kid`, one re-fetch on a miss or failed verify, 1 h expiry). MCP: `mcpToolResult` puts an `untrusted_text` notice first in every tool result and cuts operator-written text (node, operator and model names to 120 characters, descriptions and other text to 500); `MCP_INSTRUCTIONS` says operator text is untrusted data (review 4.11).
-- `@opennodes/cli`: the client, the gateway and the stdio MCP server use the above; the gateway's JWKS cache no longer lasts for the process.
-- `@opennodes/ollama-router`: public nodes' receipts through the same cache; a pinned LAN node still only by its pinned key; LAN discovery by `kid` among several keys.
-- `@opennodes/registry`: card signatures checked with `verifyCardWithJwks`; the MCP endpoint marks operator text; Stage B re-pins beyond the bound and counts a refusal with the new revision pinned as a reply that does not match (M4); the web app's probe-load text no longer says a card fetch precedes each scheduled Stage A run and each blind call (stale since rev. 14).
-- Node Kit: the signing key is created `0600`; a wider mode is narrowed at start with a warning, and a key that cannot be narrowed still loads (POSIX; on Windows the file keeps the folder's permissions) (review 4.2). `verify_jws` refuses any `alg` but `EdDSA`. The cross-language e2e test searches for its own node only (it failed when the registry listed other catalogs, before reaching the receipt checks).
+- `@opennodes/core` 0.1.27: `verifyJws` refuses any `alg` but `EdDSA` and any key but Ed25519; new `verifyJwsWithJwks`, `verifyCardWithJwks`, `jwksCandidates` and `jwksCache` (by `kid`, one re-fetch on a miss or failed verify, 1 h expiry). MCP: `mcpToolResult` puts an `untrusted_text` notice first in every tool result and cuts operator-written text (node, operator and model names to 120 characters, descriptions and other text to 500); `MCP_INSTRUCTIONS` says operator text is untrusted data (review 4.11).
+- `@opennodes/cli` 0.1.36: the client, the gateway and the stdio MCP server use the above; the gateway's JWKS cache no longer lasts for the process.
+- `@opennodes/ollama-router` 0.1.30: public nodes' receipts through the same cache; a pinned LAN node still only by its pinned key; LAN discovery by `kid` among several keys.
+- `@opennodes/registry` 0.1.58: card signatures checked with `verifyCardWithJwks`; the MCP endpoint marks operator text; Stage B re-pins beyond the bound and counts a refusal with the new revision pinned as a reply that does not match (M4); the web app's probe-load text no longer says a card fetch precedes each scheduled Stage A run and each blind call (stale since rev. 14).
+- Node Kit (onp-node 0.1.12): the signing key is created `0600`; a wider mode is narrowed at start with a warning, and a key that cannot be narrowed still loads (POSIX; on Windows the file keeps the folder's permissions) (review 4.2). `verify_jws` refuses any `alg` but `EdDSA`. The cross-language e2e test searches for its own node only (it failed when the registry listed other catalogs, before reaching the receipt checks).
 - KNOWN-ISSUES: rows for the key handling, key revocation, the MCP operator text, the gateway's default minimum tier, a domain changing hands, and the contract layer.
+### Release order
+
+npm core 0.1.27, cli 0.1.36, registry 0.1.58 and ollama-router 0.1.30 in one run; onp-node 0.1.12 on PyPI in a run of its own; re-pin (the plugin, the root Dockerfile, the Cursor link and the install lines); the MCP Registry entry for cli 0.1.36; the registry deploy. Operators: a card may carry more than one signature during a key rotation (ONP-2 §8), and only EdDSA signatures verify. MCP clients: every tool result now opens with an `untrusted_text` field.
 
 ## Reference implementation, 2026-11-24: AI Horde import, no auto-routing to logged retention (no protocol change)
 
