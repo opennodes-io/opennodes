@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   createApp, listen, closeApp, sendJson, problem, readJson,
-  validateCard, verifyCardSignature, keyFromJwk, estimateBounds,
+  validateCard, verifyCardWithJwks, estimateBounds,
   extractFeatures, recommend, trustedView, DEFAULT_TRUSTED_JURISDICTIONS, serverCheckOf,
 } from '@opennodes/core';
 import { resolveTxt } from 'node:dns/promises';
@@ -132,10 +132,7 @@ export async function startRegistry({
       jwks = await res.json();
     } catch (err) { return { ok: false, definite: false, error: `jwks fetch failed: ${err.message}` }; }
     try {
-      const kid = card.signatures[0].kid;
-      const jwk = (jwks.keys ?? []).find((k) => !kid || k.kid === kid) ?? jwks.keys?.[0];
-      if (!jwk) return { ok: false, definite: true, error: 'no key in jwks' };
-      verifyCardSignature(card, keyFromJwk(jwk));
+      verifyCardWithJwks(card, jwks);   // any signature, by kid first, with a key the origin publishes
       return { ok: true };
     } catch (err) { return { ok: false, definite: true, error: String(err.message ?? err) }; }
   }

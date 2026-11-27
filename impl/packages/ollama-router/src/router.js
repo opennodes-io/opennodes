@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import {
   createApp, listen, closeApp, sendJson, problem, readJson,
-  verifyJws, keyFromJwk, costForUsage, estimateBounds, round6, extractFeatures, recommend, parseAutoModel, AUTO_MODEL_NAMES,
+  verifyJws, keyFromJwk, jwksCache as makeJwksCache, costForUsage, estimateBounds, round6, extractFeatures, recommend, parseAutoModel, AUTO_MODEL_NAMES,
   responseBudgetMs, fetchWithin, trustedView, trustedJurisdictionsFrom, trustGaps, sensitiveHeader, onOwnNetwork, autoRoutable,
 } from '@opennodes/core';
 import {
@@ -72,7 +72,8 @@ export async function startOllamaRouter({
   const trusted = trustedView(trustedJurisdictions);
   const sensitiveOf = (req, name) => Boolean(pol.sensitive) || sensitiveHeader(req.headers) || Boolean(parseAutoModel(name)?.sensitive);
   const client = registry ? new OnpClient({ registry }) : null;
-  const jwksCache = new Map();
+  // Receipt keys of public nodes, per origin: chosen by kid, re-fetched once when none verifies.
+  const jwksCache = makeJwksCache({ fetchJwks: async (origin) => (await fetch(`${origin}/.well-known/jwks.json`, { signal: AbortSignal.timeout(10_000) })).json() });
   const receipts = [];
   const peerMap = new Map();     // origin -> { kind, origin, name, card?, key, jwk?, pinned, source: 'added' | 'mdns' }
   const discovered = new Map();  // origin -> found by mDNS but not pinned: listed in /router/catalog, never used
@@ -277,8 +278,8 @@ export async function startOllamaRouter({
       }
     }
     const origin = entry.origin;
-    if (!entry.jwk && !jwksCache.has(origin)) jwksCache.set(origin, await (await fetch(`${origin}/.well-known/jwks.json`)).json());
-    const receipt = verifyJws(receiptJws, keyFromJwk(entry.jwk ?? jwksCache.get(origin).keys[0]));   // a LAN node: the key that signed its card
+    // A pinned LAN node: only the key that signed its card. A public node: its JWKS, by kid.
+    const receipt = entry.jwk ? verifyJws(receiptJws, keyFromJwk(entry.jwk)) : await jwksCache.verify(origin, receiptJws);
     const pricing = entry.offering.lan_pricing ?? entry.offering.pricing;
     const expected = costForUsage(pricing, receipt.usage.prompt_tokens, receipt.usage.completion_tokens);
     if (round6(receipt.amount.value) !== round6(expected)) throw new Error('receipt amount mismatch');

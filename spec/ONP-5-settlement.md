@@ -83,7 +83,7 @@ Response header `ONP-Receipt` carries the receipt as an inline compact JWS signe
 ```
 
 - **`request_hash`** is `sha256:` followed by the lowercase hex SHA-256 of the **raw HTTP request body bytes exactly as received** — no parsing or re-serialization — so the client, which kept the bytes it sent, can prove which request a receipt belongs to.
-- The receipt is a JWS over the JCS-canonical (RFC 8785) JSON payload, like the card (ONP-2 §8).
+- **Format.** The receipt is a JWS (RFC 7515) in compact serialization, `header.payload.signature`, whose payload is the JCS (RFC 8785) serialization of the receipt object above. Unlike the card's, the payload is attached: the receipt is the whole compact JWS, inline in `ONP-Receipt` or as the `text/plain` body at its URL (ONP-4 §2). It is signed by a key in the JWKS at the node's origin, under the algorithm, `kid` and re-fetch rules of the card (ONP-2 §8). The payload's structure is normative in [`schemas/receipt.schema.json`](../schemas/receipt.schema.json): `receipt_id`, `node_id`, `offering_id`, `card_revision`, `request_hash`, `usage`, `amount` and `issued_at` are required; `scheme` and `payment_ref` are optional; unknown members follow ONP-1 §5.
 
 Receipts are the audit primitive: clients verify `amount = usage × pinned price`; settlement operators redeem against them; registries sample them during conformance probes (ONP-3 §6.2) to catch usage inflation. Receipts contain no prompt/response content — only the hash, so either side can prove what request a receipt refers to without the receipt leaking data.
 

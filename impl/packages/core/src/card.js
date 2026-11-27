@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
-import { signJson, verifyJws, stableStringify } from './jws.js';
+import { signJson, verifyJws, stableStringify, jwksCandidates, keyFromJwk } from './jws.js';
 
 // Package-local copy of the normative schema (repo: schemas/open-node.schema.json);
 // a test asserts the two never drift. Must live inside the package so `npm install` works.
@@ -43,4 +43,24 @@ export function verifyCardSignature(card, publicKey) {
     throw new Error('card signature payload does not match card content');
   }
   return true;
+}
+
+/**
+ * Verify a card against its origin's JWKS (ONP-2 §8): at least one of its signatures must verify with a
+ * key the origin publishes, tried by the signature's `kid` first. Returns the JWK that verified; throws
+ * otherwise.
+ */
+export function verifyCardWithJwks(card, jwks) {
+  const sigs = Array.isArray(card?.signatures) ? card.signatures : [];
+  if (!sigs.length) throw new Error('card has no signatures');
+  let last;
+  for (const sig of sigs.slice(0, 4)) {
+    const one = { ...card, signatures: [sig] };
+    const candidates = jwksCandidates(jwks, sig?.kid);
+    if (!candidates.length) { last = new Error('no key in jwks'); continue; }
+    for (const jwk of candidates) {
+      try { verifyCardSignature(one, keyFromJwk(jwk)); return jwk; } catch (err) { last = err; }
+    }
+  }
+  throw last ?? new Error('card signature invalid');
 }

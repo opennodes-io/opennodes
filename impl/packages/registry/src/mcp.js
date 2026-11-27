@@ -3,7 +3,7 @@
 // MCP host gets ONP discovery (recommend, search_offerings, get_offering, get_node, estimate,
 // find_locations, find_residency) for free.
 import { readFileSync } from 'node:fs';
-import { readJson, sendJson, problem, estimateBounds, round6, extractFeatures, recommend, MCP_TOOLS, MCP_INSTRUCTIONS, summarizeNode, serverCheckOf } from '@opennodes/core';
+import { readJson, sendJson, problem, estimateBounds, round6, extractFeatures, recommend, MCP_TOOLS, MCP_INSTRUCTIONS, summarizeNode, serverCheckOf, mcpToolResult } from '@opennodes/core';
 import { searchOfferingsPaged, searchOfferings, collectOfferings, pricePublished, locationSummary } from './search.js';
 import { buildLocations, buildResidency } from './locations.js';
 import { nodeIdsIn } from './counts.js';
@@ -139,11 +139,7 @@ async function handleRpc(store, seeds, msg, onResult, trusted) {
       try {
         const result = await runTool(store, seeds, params?.name, params?.arguments, trusted);
         onResult?.(nodesReturned(params.name, result));
-        return reply({
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-          structuredContent: result,
-          isError: false,
-        });
+        return reply(mcpToolResult(result));   // operator text cut and marked untrusted (review 4.11)
       } catch (err) {
         return reply({ content: [{ type: 'text', text: String(err.message) }], isError: true });
       }

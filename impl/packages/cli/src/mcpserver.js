@@ -4,7 +4,7 @@
 import readline from 'node:readline';
 import { readFileSync } from 'node:fs';
 import { totalmem } from 'node:os';
-import { extractFeatures, MCP_TOOLS, MCP_INSTRUCTIONS, summarizeNode, trustedView, trustedJurisdictionsFrom, inTrustedPool } from '@opennodes/core';
+import { extractFeatures, MCP_TOOLS, MCP_INSTRUCTIONS, summarizeNode, mcpToolResult, trustedView, trustedJurisdictionsFrom, inTrustedPool } from '@opennodes/core';
 
 export { summarizeNode };
 
@@ -118,11 +118,7 @@ export function createStdioMcp({ registry, input = process.stdin, output = proce
       case 'tools/call':
         try {
           const result = await runTool(params?.name, params?.arguments);
-          return reply({
-            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-            structuredContent: result,
-            isError: false,
-          });
+          return reply(mcpToolResult(result));   // operator text cut and marked untrusted (review 4.11)
         } catch (err) {
           return reply({ content: [{ type: 'text', text: String(err.message) }], isError: true });
         }

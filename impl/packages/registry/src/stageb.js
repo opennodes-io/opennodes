@@ -85,10 +85,16 @@ export const STAGE_B_409 = 'identity-409';
  * revision, or null when the pinned one is still current.
  * - `stale`: a new revision, within the bound: recorded, the run stops unjudged, the caller retries;
  * - `refused`: the current revision was pinned: a reply that does not match;
- * - `moved`: a new revision again, beyond the bound: the run ends as not passed, never as a dispute
- *   (the card the run holds is stale now, so even an honest node refuses what follows).
+ * - `repin`, beyond the bound, when the re-fetched card claims the same model for the offering: the run
+ *   goes on with the re-fetched card pinned (`pin.card`) and asks again; a refusal with that revision
+ *   pinned then counts as a reply that does not match. Before, the run ended as not passed, never as a
+ *   dispute, so a node that swapped its model could publish a new revision at every run, reach the
+ *   bound each time and stay at `community` instead of `disputed` (review M4, 24 Nov). An honest node
+ *   that re-prices often loses nothing: it answers with the current revision pinned.
+ * - `moved`, beyond the bound, when the offering's claimed model or binding changed or is gone: the
+ *   run ends as not passed (no reply was compared for the new claim; that change brings its own run).
  */
-function makeOn409(store, nodeId, card, { revisionMoved, maxExcused409 }) {
+function makeOn409(store, nodeId, pin, { revisionMoved, maxExcused409 }) {
   // `status`: the reply that sent the registry to the card. Since rev. 14 scheduled runs go out on
   // the card already held, so a 404 for a model the node has just dropped gets the same rule as a
   // 409: re-fetched after the reply, excused only if the revision really moved, within the bound.
@@ -98,13 +104,24 @@ function makeOn409(store, nodeId, card, { revisionMoved, maxExcused409 }) {
     const since = (await store.getSchedule(nodeId, 'B'))?.last_at ?? '';
     const excused = await store.countProbes(nodeId, STAGE_B_409, since);
     if (excused >= maxExcused409) {
-      return { kind: 'moved', reason: `the card revision moved again during Stage B, after ${excused} such 409s since the last judged run (at most ${maxExcused409} are excused)` };
+      const bound = `after ${excused} excused card changes since the last judged run (at most ${maxExcused409} are excused)`;
+      const latest = await store.latestCard(nodeId);
+      const now = latest?.revision === fresh ? latest.offerings?.find((o) => o.offering_id === offering.offering_id) : null;
+      if (now && testable(now) && sameModelClaim(offering, now)) {
+        pin.card = latest;
+        return { kind: 'repin', offering: now, beyond: `re-pinned to revision ${fresh} ${bound}` };
+      }
+      return { kind: 'moved', reason: `the card revision moved again during Stage B ${bound}, and the offering's claimed model or binding changed or is gone` };
     }
     await store.recordProbe(nodeId, offering.offering_id, 'B', STAGE_B_409, false,
-      `${status} with revision ${card.revision} pinned; card re-indexed at ${fresh}; Stage B runs again later`);
+      `${status} with revision ${pin.card.revision} pinned; card re-indexed at ${fresh}; Stage B runs again later`);
     return { kind: 'stale' };
   };
 }
+
+/** Whether two versions of an offering claim the same model behind the same binding. */
+const sameModelClaim = (a, b) => a.model?.artifact === b.model?.artifact
+  && a.binding?.profile === b.binding?.profile && a.binding?.model_id === b.binding?.model_id;
 
 /**
  * DS-ADM-02: identity check against stored references. A reply that does not match is asked once
@@ -112,18 +129,28 @@ function makeOn409(store, nodeId, card, { revisionMoved, maxExcused409 }) {
  * parallel slots can change a temperature-0 reply now and then). A 409 counts as a reply that does
  * not match unless `on409` excuses it (makeOn409).
  */
-async function probeIdentity(safeFetch, card, offering, refs, on409) {
-  let matches = 0, retried = 0, refused = 0, stop = null;
-  const ask = async (prompt) => {
-    const { status, text } = await chatOnce(safeFetch, card, offering, prompt);
+async function probeIdentity(safeFetch, pin, offering, refs, on409) {
+  let matches = 0, retried = 0, refused = 0, refusedRepinned = 0, repinned = null, stop = null;
+  let current = offering;
+  const ask = async (prompt, again = true) => {
+    const { status, text } = await chatOnce(safeFetch, pin.card, current, prompt);
     if (status !== 200) {
       // A 409, or another failure (a 404 for a model dropped since the card was fetched): only a
       // revision that really moved excuses it; with the current revision pinned it does not match.
-      const what = await on409(offering, status);
-      if (what.kind === 'refused') { if (status === 409) refused++; } else stop = what;
+      const what = await on409(current, status);
+      if (what.kind === 'repin') {
+        // Beyond the bound: ask again with the revision just fetched pinned; a refusal then counts.
+        current = what.offering;
+        repinned = what.beyond;
+        if (again) return ask(prompt, false);
+        refusedRepinned++;
+        return null;
+      }
+      if (what.kind !== 'refused') stop = what;
+      else if (status === 409) refused++;
       return null;
     }
-    return status === 200 && text !== null ? sha256(text) : null;
+    return text !== null ? sha256(text) : null;
   };
   for (const ref of refs) {
     let hash = await ask(ref.prompt);
@@ -131,7 +158,8 @@ async function probeIdentity(safeFetch, card, offering, refs, on409) {
     if (hash === ref.expected_hash) matches++;
     if (stop) break;
   }
-  const extra = { ...(retried ? { retried } : {}), ...(refused ? { refused } : {}) };
+  const extra = { ...(retried ? { retried } : {}), ...(refused ? { refused } : {}),
+    ...(repinned ? { repinned, refused_repinned: refusedRepinned } : {}) };
   if (stop?.kind === 'stale') return { ok: false, matches, total: refs.length, ...extra, stale: true };
   if (stop?.kind === 'moved') return { ok: false, matches, total: refs.length, ...extra, moved: true, reason: stop.reason };
   // Deterministic battery: require all prompts to match the reference distribution.
@@ -237,14 +265,14 @@ async function probeCapacity(safeFetch, card, offering, corpus, { steps = CAPACI
  *   offering cannot be verified: no usable reference for the artefact, or a proprietary artefact
  *   claimed outside the vendor's namespace.
  */
-async function identityOf(store, nodeId, safeFetch, card, offering, { corpus, vendors, identitySample, on409 }) {
+async function identityOf(store, nodeId, safeFetch, pin, offering, { corpus, vendors, identitySample, on409 }) {
   const artifact = offering.model?.artifact;
   const claim = vendorClaim(artifact, nodeId, vendors);
   if (!claim.ok) return { ok: false, unverified: true, reason: `${artifact} is not this node's to claim (vendor namespace)` };
   // References captured with public prompts prove nothing: a node could have recognised them.
   const refs = (await store.getFingerprints(artifact)).filter((r) => corpus.usableReference(r.prompt));
   if (!refs.length) return { ok: false, unverified: true, reason: NO_REFERENCE };
-  return probeIdentity(safeFetch, card, offering, sample(refs, identitySample), on409);
+  return probeIdentity(safeFetch, pin, offering, sample(refs, identitySample), on409);
 }
 
 /**
@@ -260,7 +288,9 @@ export async function runStageB(store, nodeId, card, {
   safeFetch, capacity = {}, corpus = DEV_CORPUS, vendors = vendorTable(), signed = true, identitySample = IDENTITY_SAMPLE,
   revisionMoved = null, maxExcused409 = MAX_EXCUSED_409,
 } = {}) {
-  const on409 = makeOn409(store, nodeId, card, { revisionMoved, maxExcused409 });
+  // The card the run pins: the one held, until a refusal beyond the bound re-pins the fetched one.
+  const pin = { card };
+  const on409 = makeOn409(store, nodeId, pin, { revisionMoved, maxExcused409 });
   const untested = untestedOfferings(card);
   if (!signed) {
     await store.recordProbe(nodeId, null, 'B', 'signature', false, UNSIGNED_CARD);
@@ -270,26 +300,31 @@ export async function runStageB(store, nodeId, card, {
     return { ok: false, identityFailed: false, reason: NO_TESTED_OFFERINGS, verdicts: [], untested };
   }
   const verdicts = [];
-  for (const offering of card.offerings) {
-    if (!testable(offering)) continue;
+  // The offering as the pinned card lists it now (a re-pin replaces the card mid-run).
+  const pinned = (o) => pin.card.offerings.find((p) => p.offering_id === o.offering_id) ?? o;
+  for (const listed of card.offerings) {
+    if (!testable(listed)) continue;
+    let offering = pinned(listed);
     const verdict = { offering_id: offering.offering_id, identity: null, context: null, capacity: null };
 
-    verdict.identity = await identityOf(store, nodeId, safeFetch, card, offering, { corpus, vendors, identitySample, on409 });
+    verdict.identity = await identityOf(store, nodeId, safeFetch, pin, offering, { corpus, vendors, identitySample, on409 });
     if (verdict.identity.stale) {
       // The card's revision really moved (an excused 409, recorded). Abort without judging: the caller retries.
       return { ok: false, identityFailed: false, stale: true, verdicts: [...verdicts, verdict], untested };
     }
-    const { matches, total, refused } = verdict.identity;
+    const { matches, total, refused, repinned, refused_repinned: refusedRepinned } = verdict.identity;
     await store.recordProbe(nodeId, offering.offering_id, 'B', 'identity', verdict.identity.ok,
       verdict.identity.unverified ? `identity unverified: ${verdict.identity.reason}`
         : verdict.identity.moved ? `not judged: ${verdict.identity.reason}`
-          : `${matches}/${total} reference matches${refused ? `; ${refused} replies refused with 409, the current card revision pinned` : ''}`);
+          : `${matches}/${total} reference matches${refused ? `; ${refused} replies refused with 409, the current card revision pinned` : ''}`
+            + (repinned ? `; ${repinned}${refusedRepinned ? `, then ${refusedRepinned} refusals with it pinned, counted as replies that do not match` : ''}` : ''));
     if (verdict.identity.moved) {
-      // Beyond the bound: not passed, and nothing more is sent on a card that is no longer current.
+      // Beyond the bound, and the claimed model changed: not passed, and nothing more is sent.
       return { ok: false, identityFailed: false, reason: `${offering.offering_id}: ${verdict.identity.reason}`, verdicts: [...verdicts, verdict], untested };
     }
+    offering = pinned(offering);
 
-    verdict.context = await probeContext(safeFetch, card, offering, corpus);
+    verdict.context = await probeContext(safeFetch, pin.card, offering, corpus);
     await store.recordProbe(nodeId, offering.offering_id, 'B', 'context', verdict.context.ok,
       `claimed ${verdict.context.claimed}, verified ${verdict.context.verified_cap}`,
       verdict.context);
@@ -297,13 +332,15 @@ export async function runStageB(store, nodeId, card, {
     // earlier cap; 0 = nothing verified, shown as unverified rather than trusting the claim.
     await store.setObservation(nodeId, offering.offering_id, 'context_cap', verdict.context.verified_cap);
 
-    verdict.capacity = await probeCapacity(safeFetch, card, offering, corpus, capacity);
+    verdict.capacity = await probeCapacity(safeFetch, pin.card, offering, corpus, capacity);
     if (!verdict.capacity.ok) {
       // A failed ramp on a card that has since moved (the model dropped or changed during the run)
       // is not judged, by the same rule and bound as a 409.
       const what = await on409(offering, 'capacity failure');
       if (what.kind === 'stale') return { ok: false, identityFailed: false, stale: true, verdicts: [...verdicts, verdict], untested };
       if (what.kind === 'moved') return { ok: false, identityFailed: false, reason: `${offering.offering_id}: ${what.reason}`, verdicts: [...verdicts, verdict], untested };
+      // Beyond the bound, same model: the ramp once more with the fetched card pinned, and that one counts.
+      if (what.kind === 'repin') { offering = what.offering; verdict.capacity = await probeCapacity(safeFetch, pin.card, offering, corpus, capacity); }
     }
     await store.recordProbe(nodeId, offering.offering_id, 'B', 'capacity', verdict.capacity.ok, null, verdict.capacity);
     if (verdict.capacity.ttft_ms.p50 != null) {

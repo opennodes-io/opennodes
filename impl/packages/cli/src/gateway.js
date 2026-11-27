@@ -12,7 +12,7 @@
 import { appendFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
-import { createApp, listen, closeApp, sendJson, problem, readJson, verifyJws, keyFromJwk, costForUsage, round6, extractFeatures, recommend, recommendEmbedders, isEmbedder, parseAutoModel, AUTO_MODEL_NAMES, responseBudgetMs, fetchWithin, sensitiveHeader, autoRoutable } from '@opennodes/core';
+import { createApp, listen, closeApp, sendJson, problem, readJson, jwksCache as makeJwksCache, costForUsage, round6, extractFeatures, recommend, recommendEmbedders, isEmbedder, parseAutoModel, AUTO_MODEL_NAMES, responseBudgetMs, fetchWithin, sensitiveHeader, autoRoutable } from '@opennodes/core';
 import { parseMaskMode, maskModeOf, piiDetectorFrom, maskChatRequest, maskEmbeddingRequest, maskedRequestFor, oncePerRequest, unmaskCompletion, unmaskSse, piiMaskedHeader, describeMaskCounts } from '@opennodes/core';
 import { localAccess, bearerCheck, isLoopbackBind, isLoopbackAddress, isJsonContentType, newToken } from '@opennodes/core';
 import { OnpClient } from './client.js';
@@ -110,7 +110,8 @@ export async function startGateway({
   const detector = piiDetector ?? piiDetectorFrom({ service: piiService, llm: piiLlm, env });
   const creds = credentialsFrom(keys, envKeys ? env : {});
   const envKeysIgnored = envKeys ? [] : envKeyNames(env);   // set, but not used: the CLI says so
-  const jwksCache = new Map();
+  // Receipt keys per node origin: chosen by kid, re-fetched once when none verifies (a key rotation).
+  const jwksCache = makeJwksCache({ fetchJwks: async (origin) => (await fetch(`${origin}/.well-known/jwks.json`)).json() });
   const receipts = [];
   let cache = { at: 0, byId: new Map() };
   let lastAdvice = null;
@@ -224,10 +225,7 @@ export async function startGateway({
   async function verifyReceipt(offering, receiptJws, sent = null) {
     const origin = new URL(offering.endpoints.openai).origin;
     if (receiptJws.startsWith('http')) receiptJws = await fetchReceipt(receiptJws, origin);
-    if (!jwksCache.has(origin)) {
-      jwksCache.set(origin, await (await fetch(`${origin}/.well-known/jwks.json`)).json());
-    }
-    const receipt = verifyJws(receiptJws, keyFromJwk(jwksCache.get(origin).keys[0]));
+    const receipt = await jwksCache.verify(origin, receiptJws);
     const expected = costForUsage(offering.pricing, receipt.usage.prompt_tokens, receipt.usage.completion_tokens);
     if (round6(receipt.amount.value) !== round6(expected)) throw new Error('receipt amount mismatch');
     if (sent?.revision && receipt.card_revision !== sent.revision) throw new Error('receipt names another card revision');

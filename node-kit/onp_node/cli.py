@@ -18,7 +18,32 @@ from .server import NodeKitServer
 CONFIG = Path("onp-node.toml")
 KEYFILE = Path("onp-node-key.pem")
 CHALLENGE = Path("onp-node-challenge.txt")
+KEY_MODE = 0o600
 REVISION_STATE = Path("onp-node-revision.json")
+
+
+def write_private_key(path: Path, pem: str) -> None:
+    """Create the signing key readable by its owner only (0600 on POSIX). Never overwrites an existing file.
+
+    On Windows the mode bits are not an ACL: the file gets the directory's inherited permissions, as before."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), KEY_MODE)
+    with os.fdopen(fd, "wb") as f:
+        f.write(pem.encode("utf-8"))
+
+
+def read_private_key(path: Path):
+    """Load the signing key, first narrowing a group- or world-readable key file to 0600 (POSIX only)."""
+    if os.name != "nt":
+        mode = path.stat().st_mode & 0o777
+        if mode & 0o077:
+            try:
+                os.chmod(path, KEY_MODE)
+                done = f"set to {KEY_MODE:o}"
+            except OSError as err:   # a read-only mount, or a file owned by another user: warn, keep serving
+                done = f"could not narrow it ({err.strerror}); run: chmod {KEY_MODE:o} {path}"
+            print(f"warning: {path} was readable by others (mode {mode:o}); {done}. "
+                  f"If anyone else could read it, generate a new key and re-register.", file=sys.stderr)
+    return private_key_from_pem(path.read_text(encoding="utf-8"))
 
 
 async def interrogate_engine(base_url: str, key: str | None = None) -> list[str]:
@@ -107,7 +132,7 @@ def cmd_init(args):
         operator=args.operator or args.name or args.id, engine_base=args.engine,
     ), encoding="utf-8")
     if not KEYFILE.exists():
-        KEYFILE.write_text(private_key_to_pem(generate_private_key()), encoding="utf-8")
+        write_private_key(KEYFILE, private_key_to_pem(generate_private_key()))
     print(f"engine models: {', '.join(models)}")
     print(f"wrote {CONFIG} and {KEYFILE} — review pricing/data_policy, then: onp-node serve")
 
@@ -122,7 +147,7 @@ def warn_unverifiable(card: dict):
 
 def make_server() -> tuple[NodeKitServer, dict]:
     cfg = load_config(CONFIG)
-    key = private_key_from_pem(KEYFILE.read_text(encoding="utf-8"))
+    key = read_private_key(KEYFILE)
     models = asyncio.run(interrogate_engine(cfg["engine"]["base_url"]))
     include = cfg["engine"].get("models")  # optional allowlist: offer only these engine models
     if include:
@@ -261,7 +286,7 @@ def make_static_card(cfg: dict, models: list[str], api_base: str, health_url: st
 
 def cmd_card(args):
     cfg = load_config(CONFIG)
-    key = private_key_from_pem(KEYFILE.read_text(encoding="utf-8"))
+    key = read_private_key(KEYFILE)
     api_base = args.api_base or cfg["engine"]["base_url"]
     engine_key = os.environ.get(args.engine_key_env) if args.engine_key_env else None
     models = asyncio.run(interrogate_engine(api_base, engine_key))
