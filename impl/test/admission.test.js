@@ -584,7 +584,7 @@ test('Stage B: a 409 with the current revision pinned is a reply that does not m
   assert.ok(!d.probes.some((p) => p.kind === STAGE_B_409), 'nothing excused');
 });
 
-test('Stage B: a node that publishes a new revision to refuse the repeat is excused a bounded number of times, then the run counts as not passed', async (t) => {
+test('Stage B: a node that publishes a new revision to refuse the repeat is excused a bounded number of times, then its refusals count as replies that do not match', async (t) => {
   const { node, registry } = await verifiedWithLightCheck(t);
   node.swapModel();
   node.refuseRepeats(true, { newRevision: true });
@@ -598,10 +598,46 @@ test('Stage B: a node that publishes a new revision to refuse the repeat is excu
   }
   await runDueStageB(registry);
   const d = await detail(registry);
-  assert.equal(d.state, 'community', 'the next one is judged: not passed');
-  assert.match(d.history.at(-1).reason, /^Stage B failed: echo-1: the card revision moved again during Stage B, after 3 such 409s since the last judged run/);
-  assert.ok(!d.history.some((h) => h.to_state === 'disputed'), 'no dispute: no reply was compared on a current card');
-  assert.match(d.probes.find((p) => p.stage === 'B' && p.kind === 'identity').detail, /^not judged: /);
+  // Beyond the bound a refusal is a reply that does not match: the swapped model is disputed, it cannot
+  // sit at community by spending fresh revisions on every run (review M4).
+  assert.equal(d.state, 'disputed', 'the next one is judged on its replies');
+  assert.equal(d.history.at(-1).reason, 'Stage B identity fingerprint mismatch');
+  assert.match(d.probes.find((p) => p.stage === 'B' && p.kind === 'identity').detail,
+    /re-pinned to revision \S+ after 3 excused card changes since the last judged run \(at most 3 are excused\), then \d+ refusals with it pinned, counted as replies that do not match$/);
+});
+
+test('Stage B: an honest node that changes its card before every run is re-pinned beyond the bound and passes, never disputed', async (t) => {
+  const { node, registry } = await verifiedWithLightCheck(t);
+  const before = (await detail(registry)).history.length;
+  for (let i = 1; i <= MAX_EXCUSED_409 + 1; i++) {
+    node.answer409(1, { newRevision: true });   // a re-price lands just as the run starts: one stale 409
+    await runDueStageB(registry);
+    const d = await detail(registry);
+    assert.equal(d.state, 'verified', `run ${i}: no verdict against the node`);
+  }
+  const d = await detail(registry);
+  assert.equal(d.history.length, before, 'no state change at all');
+  assert.match(d.probes.find((p) => p.stage === 'B' && p.kind === 'identity').detail,
+    /^3\/3 reference matches; re-pinned to revision \S+ after 3 excused card changes/);
+});
+
+test('Stage B: beyond the bound, a card that now claims another model ends the run as not passed, without a dispute', async (t) => {
+  const { node, registry } = await verifiedWithLightCheck(t);
+  for (let i = 1; i <= MAX_EXCUSED_409; i++) { node.answer409(1, { newRevision: true }); await runDueStageB(registry); }
+  // the next change also swaps the claimed artefact: no reply was compared for the new claim
+  const card = node.card;
+  node.answer409(1, { newRevision: true });
+  const realRevisionMoved = registry.store.latestCard.bind(registry.store);
+  registry.store.latestCard = async (id) => {
+    const latest = await realRevisionMoved(id);
+    return latest && latest.revision !== card.revision
+      ? { ...latest, offerings: latest.offerings.map((o) => ({ ...o, model: { ...o.model, artifact: 'hf:other/model' } })) } : latest;
+  };
+  await runDueStageB(registry);
+  const d = await detail(registry);
+  assert.equal(d.state, 'community');
+  assert.match(d.history.at(-1).reason, /claimed model or binding changed or is gone/);
+  assert.ok(!d.history.some((h) => h.to_state === 'disputed'));
 });
 
 test('Stage B: an honest card change during the run is excused, and the next run passes', async (t) => {

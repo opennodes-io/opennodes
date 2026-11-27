@@ -1,5 +1,5 @@
 // OpenNodes client SDK (REQ-002 subset): discover, estimate, invoke with pinning + receipt verification.
-import { verifyJws, keyFromJwk, validateCard, verifyCardSignature, costForUsage, round6, trustedView, trustedJurisdictionsFrom, trustGaps } from '@opennodes/core';
+import { verifyJwsWithJwks, validateCard, verifyCardWithJwks, costForUsage, round6, trustedView, trustedJurisdictionsFrom, trustGaps } from '@opennodes/core';
 import { parseMaskMode, piiDetectorFrom, maskChatRequest, maskedRequestFor, unmaskCompletion } from '@opennodes/core';
 
 export class OnpClient {
@@ -51,7 +51,7 @@ export class OnpClient {
     const errors = validateCard(card);
     if (errors.length) throw new Error('card invalid: ' + errors.join('; '));
     const jwks = await (await fetch(`${origin}/.well-known/jwks.json`)).json();
-    verifyCardSignature(card, keyFromJwk(jwks.keys[0]));
+    verifyCardWithJwks(card, jwks);   // by the signature's kid, any key the origin publishes
     return { card, jwks };
   }
 
@@ -114,7 +114,7 @@ export class OnpClient {
     if (receiptJws) {
       const origin = new URL(offering.endpoints.openai).origin;
       const jwks = await (await fetch(`${origin}/.well-known/jwks.json`)).json();
-      receipt = verifyJws(receiptJws, keyFromJwk(jwks.keys[0]));
+      receipt = verifyJwsWithJwks(receiptJws, jwks).payload;   // fetched just now: by kid, no stale cache
       const expected = costForUsage(offering.pricing, receipt.usage.prompt_tokens, receipt.usage.completion_tokens);
       if (round6(receipt.amount.value) !== round6(expected)) {
         throw new Error(`receipt amount ${receipt.amount.value} != usage x pinned price ${expected}`);

@@ -60,7 +60,7 @@ Three independent conformance classes; any party can implement any subset:
 
 ## 3a. Trust tiers, verification, and client policy
 
-**What each tier means.** A registry assigns a tier to a **node**, and all of the node's offerings carry it:
+**What each tier means.** A registry assigns a tier to a **node**, and the offerings its verification battery could call carry it. An offering with no battery for its binding profile does not inherit the node's tier (ONP-3 §4a, Coverage): the reference registry caps it to `unverified` and marks it untested.
 
 | Tier | Earned by |
 |---|---|

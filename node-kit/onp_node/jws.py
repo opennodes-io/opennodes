@@ -69,8 +69,16 @@ def sign_json(payload, key: Ed25519PrivateKey, kid: str = "onp-1") -> str:
     return f"{header}.{body}.{b64u(sig)}"
 
 
+ALLOWED_JWS_ALGS = ("EdDSA",)   # ONP-2 §8: anything else, `none` and HMAC included, is refused
+
+
 def verify_jws(jws: str, jwk: dict):
     header, body, sig = jws.split(".")
+    alg = json.loads(from_b64u(header)).get("alg")
+    if alg not in ALLOWED_JWS_ALGS:
+        raise ValueError(f"JWS alg {alg!r} is not allowed")
+    if jwk.get("kty") != "OKP" or jwk.get("crv") != "Ed25519":
+        raise ValueError("JWS key is not an Ed25519 public key")
     pub = Ed25519PublicKey.from_public_bytes(from_b64u(jwk["x"]))
     pub.verify(from_b64u(sig), f"{header}.{body}".encode())  # raises on mismatch
     return json.loads(from_b64u(body))

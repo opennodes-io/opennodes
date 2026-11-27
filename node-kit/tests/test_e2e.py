@@ -141,8 +141,10 @@ class CrossLanguageE2E(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(verify["stage_a"]["ok"], verify["stage_a"])
 
         # Search finds the offering with real pricing
-        async with self.http.get(f"{self.registry}/v0/offerings?modality=text") as r:
+        async with self.http.get(f"{self.registry}/v0/offerings?modality=text&q=org.example.mockcluster") as r:
             offerings = (await r.json())["offerings"]
+        # the registry may list other catalogs too (imports, the local library): keep this node's
+        offerings = [o for o in offerings if o["node_id"] == "org.example.mockcluster"]
         self.assertEqual(len(offerings), 1)
         self.assertEqual(offerings[0]["pricing"]["input_per_mtok"], 0.2)
         self.assertEqual(offerings[0]["binding"]["model_id"], "mock/tiny-1")

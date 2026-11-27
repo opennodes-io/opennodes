@@ -4,7 +4,7 @@
 // Who counts as the user's own network (ONP-3 §5b): a peer is used only when the user added it
 // (--peer, POST /router/peers) or when its card is signed by a key the user pinned (--pin). Only a
 // pinned peer is the user's own network for auto-private, auto-<jurisdiction> and sensitive requests.
-import { validateCard, verifyCardSignature, keyFromJwk, jwkThumbprint } from '@opennodes/core';
+import { validateCard, verifyCardWithJwks, jwkThumbprint } from '@opennodes/core';
 
 const PROBE_TIMEOUT = 4_000;
 
@@ -21,10 +21,7 @@ export async function cardKey(base, card) {
   try {
     const res = await fetch(`${base}/.well-known/jwks.json`, { signal: AbortSignal.timeout(PROBE_TIMEOUT) });
     if (!res.ok) return null;
-    const keys = (await res.json())?.keys ?? [];
-    const jwk = (sig.kid ? keys.find((k) => k.kid === sig.kid) : null) ?? (keys.length === 1 ? keys[0] : null);
-    if (!jwk) return null;
-    verifyCardSignature(card, keyFromJwk(jwk));
+    const jwk = verifyCardWithJwks(card, await res.json());   // by kid first; throws when none verifies
     return { key: jwkThumbprint(jwk), jwk };
   } catch { return null; }
 }
