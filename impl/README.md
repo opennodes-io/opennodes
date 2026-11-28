@@ -17,7 +17,7 @@ Requires Node ≥ 22.5 (uses `node:sqlite`, built-in Ed25519). Zero runtime depe
 ## Install (published)
 
 ```
-npx @opennodes/registry@0.1.58                  # registry: web app + API + MCP on :4300
+npx @opennodes/registry@0.1.59                  # registry: web app + API + MCP on :4300
 npx @opennodes/cli@0.1.36 mcp --print-config    # stdio MCP server config for Cursor / VS Code / Claude Desktop
 npx @opennodes/cli@0.1.36 gateway --port 4141   # OpenAI-compatible gateway with onp/auto routing
 ```
