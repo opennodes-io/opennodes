@@ -3,9 +3,9 @@
 The OpenNodes Protocol (ONP) reference registry — an open, federatable discovery service for AI inference nodes.
 
 ```bash
-npx @opennodes/registry@0.1.58          # web app + API on http://127.0.0.1:4300
-ONP_DB=./registry.db npx @opennodes/registry@0.1.58   # persistent SQLite + persistent signing key
-ONP_DB=postgres://user:pass@host/db npx @opennodes/registry@0.1.58
+npx @opennodes/registry@0.1.59          # web app + API on http://127.0.0.1:4300
+ONP_DB=./registry.db npx @opennodes/registry@0.1.59   # persistent SQLite + persistent signing key
+ONP_DB=postgres://user:pass@host/db npx @opennodes/registry@0.1.59
 ```
 
 What it does:
