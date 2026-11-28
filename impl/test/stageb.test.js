@@ -70,6 +70,10 @@ test('impersonating node (same artifact claim, different model) is marked disput
   impostor.setChallenge(reg.challenge.token);
   await fetch(`${registry.origin}${reg.challenge.verify}`, { method: 'POST' });
 
+  // A first mismatch for the artefact is inconclusive (ONP-3 §4a.4): not verified, not yet disputed.
+  const first = await admit(registry, 'org.opennodes.fixture');
+  assert.equal(first.state, 'community');
+  assert.equal(first.stage_b.inconclusive[0].matches, 0);
   const result = await admit(registry, 'org.opennodes.fixture');
   assert.equal(result.state, 'disputed');
   assert.equal(result.stage_b.identityFailed, true);

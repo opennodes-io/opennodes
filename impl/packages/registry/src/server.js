@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { generateKeypair, keypairFromPem } from '@opennodes/core';
 import { createStore } from './store.js';
 import { runStageA, verificationOf } from './probes.js';
-import { runStageB, captureFingerprints, UNSIGNED_CARD, IDENTITY_CAPTURE, CUSTOMER_ACCESS_NEEDED } from './stageb.js';
+import { runStageB, captureFingerprints, judgeMismatch, STAGE_B_INCONCLUSIVE, UNSIGNED_CARD, IDENTITY_CAPTURE, CUSTOMER_ACCESS_NEEDED } from './stageb.js';
 import { startStageC } from './stagec.js';
 import { loadCorpus } from './corpus.js';
 import { vendorTable, proprietaryVendor, VENDOR_SLUG, NAMESPACE, ARTIFACT } from './vendors.js';
@@ -32,7 +32,10 @@ import {
   HORDE_STATUS_URL, HORDE_TEXT_REFERENCE_URL, HORDE_CLIENT_AGENT,
 } from './importers.js';
 import { locationRoutes, loadLocationSeeds, seedPlacements, seedNodeSites, nodeServes } from './locations.js';
-import { makeRequestCounter, nodeIdsIn } from './counts.js';
+import { makeRequestCounter, nodeIdsIn, isoWeek, recentWeeks, weekStart } from './counts.js';
+
+/** Why POST /v0/nodes refused a registration before storing anything (GET /v0/stats/registrations). */
+const REGISTRATION_FAILURES = ['card-unfetchable', 'card-invalid', 'namespace-mismatch'];
 
 /** Default basemap. OSM's tile policy asks for attribution and light use; busy registries set their own. */
 export const OSM_TILES = {
@@ -155,6 +158,11 @@ export async function startRegistry({
    * operator's probe key (card-only listings of keyed APIs), and only toward the card's own
    * endpoint origins — never to anything else.
    */
+  /** A registration refused before anything was stored (GET /v0/stats/registrations). Never fails the reply. */
+  async function failedRegistration(reason) {
+    try { await store.addRegistrationFailure(isoWeek(), reason); } catch { /* counting is best-effort */ }
+  }
+
   async function authFetch(nodeId, card) {
     const key = (await store.getCustomerKey(nodeId)) ?? (await store.getProbeKey(nodeId));
     if (!key || !card?.endpoints) return safeFetch;
@@ -313,9 +321,22 @@ export async function startRegistry({
         safeFetch: await authFetch(nodeId, card), capacity: stageBCapacity, corpus, vendors: await vendors(), signed: Boolean(revision?.sig_ok), revisionMoved,
       });
       const node = await store.getNode(nodeId);
+      let result = stageB;
       if (!stageB.stale && LISTED.includes(node.state)) {
-        if (stageB.identityFailed) {
-          await store.setState(nodeId, 'disputed', 'Stage B identity fingerprint mismatch');
+        // A confirmed mismatch disputes, except a node's first one for an artefact since its
+        // references were captured: "identity inconclusive" (ONP-3 §4a.4), held until a recapture.
+        const judged = stageB.identityFailed ? await judgeMismatch(store, nodeId, stageB) : null;
+        if (judged?.dispute) {
+          await store.setState(nodeId, 'disputed', judged.why);
+        } else if (judged) {
+          const what = judged.inconclusive.map((i) => `${i.offering_id} (${i.artifact}): ${i.matches}/${i.total} reference matches`).join('; ');
+          for (const i of judged.inconclusive) {
+            await store.recordInconclusive(nodeId, i.artifact);
+            await store.recordProbe(nodeId, i.offering_id, 'B', STAGE_B_INCONCLUSIVE, false,
+              `${i.matches}/${i.total} reference matches: identity inconclusive, the node's first mismatch for ${i.artifact} since its references were captured; not passed and not disputed; Stage B runs again after the references are captured again or an admin's review, and another mismatch then disputes`);
+          }
+          result = { ...stageB, ok: false, identityFailed: false, inconclusive: judged.inconclusive, reason: `identity inconclusive: ${what}` };
+          if (node.state !== 'community') await store.setState(nodeId, 'community', `Stage B identity inconclusive: ${what}`);
         } else if (stageB.ok && held) {
           // Passed, but on probes the operator could tell apart: it stays at (or returns to) community.
           stageB.held = CUSTOMER_ACCESS_NEEDED;
@@ -329,8 +350,8 @@ export async function startRegistry({
           await store.setState(nodeId, 'community', `Stage B failed: ${stageB.reason}`);
         }
       }
-      await planner.afterStageB(nodeId, card, stageB);
-      return stageB;
+      await planner.afterStageB(nodeId, card, result);
+      return result;
     } finally {
       stageBRunning.delete(nodeId);
     }
@@ -343,15 +364,16 @@ export async function startRegistry({
       if (probe_key != null && (typeof probe_key !== 'string' || probe_key.length > 4096)) return problem(res, 400, 'bad-probe-key', 'probe_key must be a string');
       if (!card_url) return problem(res, 400, 'missing-card-url', 'body must be {"card_url": "..."}');
       let card;
-      try { card = await fetchCard(card_url); } catch (err) { return problem(res, 422, 'card-unfetchable', String(err.message)); }
+      try { card = await fetchCard(card_url); } catch (err) { await failedRegistration('card-unfetchable'); return problem(res, 422, 'card-unfetchable', String(err.message)); }
       const errors = validateCard(card);
-      if (errors.length) return problem(res, 422, 'card-invalid', errors.slice(0, 10).join('; '));
+      if (errors.length) { await failedRegistration('card-invalid'); return problem(res, 422, 'card-invalid', errors.slice(0, 10).join('; ')); }
 
       const nodeId = card.node.id;
       const origin = new URL(card_url).origin;
       // The card must be served by a host that controls the claimed id (reverse-DNS). Otherwise anyone
       // could host a card naming someone else's node and pass the HTTP challenge on their own server.
       if (!namespaceOk(origin, nodeId)) {
+        await failedRegistration('namespace-mismatch');
         return problem(res, 403, 'namespace-mismatch',
           `node id ${nodeId} maps to ${domainForNodeId(nodeId)}; its card must be served from that host or a parent domain, not ${new URL(origin).hostname}`);
       }
@@ -471,7 +493,42 @@ export async function startRegistry({
       catch (err) { return problem(res, 502, 'capture-failed', String(err.message)); }
       if (replace) await store.clearFingerprints(target);
       await store.addFingerprints(target, refs);
-      sendJson(res, 200, { artifact: target, references: refs.length, corpus: corpus.private ? 'private' : 'built-in' });
+      await store.recordCapture(target, { how: 'node', node_id, offering_id, host: new URL(card.endpoints.openai).host });
+      const reopened = await planner.reopenAfterCapture(target);
+      sendJson(res, 200, { artifact: target, references: refs.length, corpus: corpus.private ? 'private' : 'built-in', ...(reopened.length ? { reopened } : {}) });
+    }],
+
+    // Reference capture from an endpoint that is not a registered node (admin): a separate machine
+    // serving the public weights, which must not be listed, scheduled or probed. Body {endpoint (its
+    // OpenAI base URL, e.g. http://host:11434/v1), model_id, artifact}, optional {key} (sent as a
+    // Bearer token to that origin only; never stored, logged or returned), {runtime} (e.g. "ollama
+    // 0.12.3, CPU", kept privately with the capture) and {"replace": false}. Same SSRF guard, same
+    // private corpus and the same request body as Stage B. Lists nothing.
+    ['POST', '/v0/fingerprints/capture-endpoint', async (req, res) => {
+      if (!adminOk(req, res)) return;
+      const { endpoint, model_id, artifact, key, runtime, replace = true } = await readJson(req);
+      let url;
+      try { url = new URL(endpoint); } catch { return problem(res, 400, 'bad-endpoint', 'endpoint must be an http(s) URL: the OpenAI base URL, e.g. http://host:11434/v1'); }
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || endpoint.length > 500) {
+        return problem(res, 400, 'bad-endpoint', 'endpoint must be an http(s) base URL without credentials, query or fragment');
+      }
+      if (typeof model_id !== 'string' || !model_id || model_id.length > 200) return problem(res, 400, 'bad-model-id', 'model_id must be the model name the endpoint serves');
+      if (typeof artifact !== 'string' || !ARTIFACT.test(artifact)) return problem(res, 400, 'bad-artifact', 'artifact must be hf:{org}/{repo}, ollama:{name}[:{tag}] or urn:proprietary:{vendor}:{model}');
+      if (key != null && (typeof key !== 'string' || key.length > 4096)) return problem(res, 400, 'bad-key', 'key must be a string');
+      if (runtime != null && (typeof runtime !== 'string' || runtime.length > 200)) return problem(res, 400, 'bad-runtime', 'runtime must be a short string');
+      const base = url.href.replace(/\/+$/, '');
+      const fetcher = key
+        ? (u, opts = {}, timeoutMs) => safeFetch(u, new URL(u).origin === url.origin ? { ...opts, headers: { ...(opts.headers ?? {}), authorization: `Bearer ${key}` } } : opts, timeoutMs)
+        : safeFetch;
+      const offering = { offering_id: 'capture', model: { artifact }, binding: { model_id } };
+      let refs;
+      try { refs = await captureFingerprints(fetcher, { endpoints: { openai: base } }, offering, corpus.identityPrompts(IDENTITY_CAPTURE)); }
+      catch (err) { const why = String(err.message); return problem(res, 502, 'capture-failed', key ? why.split(key).join('…') : why); }
+      if (replace) await store.clearFingerprints(artifact);
+      await store.addFingerprints(artifact, refs);
+      await store.recordCapture(artifact, { how: 'endpoint', host: url.host, model_id, ...(runtime ? { runtime } : {}) });
+      const reopened = await planner.reopenAfterCapture(artifact);
+      sendJson(res, 200, { artifact, references: refs.length, corpus: corpus.private ? 'private' : 'built-in', source: { host: url.host, ...(runtime ? { runtime } : {}) }, ...(reopened.length ? { reopened } : {}) });
     }],
 
     // Dispute resolution (admin): the only way out of `disputed`. Body {"resolution": "..."}: what
@@ -612,6 +669,25 @@ export async function startRegistry({
       sendJson(res, 200, {
         counted: 'responses that returned the node, per ISO week (Monday 00:00 UTC): search = GET /v0/offerings, recommend = POST /v0/recommend, mcp = tools/call on /mcp; each response counts a node once. Only node ids and counts are stored, never the query, task or client.',
         weeks: await requests.stats({ weeks: int('weeks', 4, 52), nodeId: query.get('node_id') || null, limit: int('limit', 50, 500) }),
+      });
+    }],
+
+    // Failed registrations: per ISO week, how many POST /v0/nodes were refused before anything was
+    // stored, by reason. Counts only. ?weeks=1..52 (default 12).
+    ['GET', '/v0/stats/registrations', async (req, res, { query }) => {
+      const weeks = Math.min(52, Math.max(1, Math.floor(Number(query.get('weeks') ?? 12)) || 12));
+      const range = recentWeeks(weeks);
+      const rows = await store.registrationFailures(range.at(-1));
+      const out = new Map(range.map((w) => [w, { week: w, starts: weekStart(w), failed: Object.fromEntries(REGISTRATION_FAILURES.map((r) => [r, 0])), total: 0 }]));
+      for (const r of rows) {
+        const w = out.get(r.week);
+        if (!w || !REGISTRATION_FAILURES.includes(r.reason)) continue;
+        w.failed[r.reason] += Number(r.n);
+        w.total += Number(r.n);
+      }
+      sendJson(res, 200, {
+        counted: 'registrations (POST /v0/nodes) refused before anything was stored, per ISO week (Monday 00:00 UTC) and reason: card-unfetchable, card-invalid, namespace-mismatch. Counts only: never the card URL, the node id or the client.',
+        weeks: [...out.values()],
       });
     }],
 

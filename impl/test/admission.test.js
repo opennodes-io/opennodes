@@ -129,7 +129,8 @@ test('a dispute survives registering again; only a recorded resolution ends it',
   await register(registry, honest);
   await capture(registry);
   await register(registry, impostor);                         // same namespace, now backed by the impostor
-  assert.equal((await admit(registry)).body.state, 'disputed');
+  assert.equal((await admit(registry)).body.state, 'community', 'a first mismatch is inconclusive (ONP-3 §4a.4)');
+  assert.equal((await admit(registry)).body.state, 'disputed', 'the second disputes');
 
   // The 4 October path: register again, verify, and expect the tier back. Not any more.
   const again = await register(registry, impostor);
@@ -513,9 +514,15 @@ test('light identity check: a node that swaps its model after passing is sent to
   await registry.blindSweep();
   assert.ok(await stageBDue(registry) - Date.now() <= SCHEDULE_DEFAULTS.stageBIdentityMs[1], 'a day later it may ask again');
 
-  // The hour passes; the scheduler runs Stage B, whose identity check disputes the node.
+  // The hour passes; the scheduler runs Stage B. Its first mismatch for the artefact is inconclusive
+  // (ONP-3 §4a.4): the node loses verified and Stage B is held until a recapture or an admin's run.
   await registry.store.setSchedule(FIXTURE, 'B', { ...(await registry.store.getSchedule(FIXTURE, 'B')), next_at: new Date(Date.now() - 1000).toISOString() });
   await registry.scheduleTick();
+  d = await detail(registry);
+  assert.equal(d.state, 'community');
+  assert.match(d.history.at(-1).reason, /^Stage B identity inconclusive: /);
+  // The admin's review runs Stage B again: a second mismatch disputes.
+  assert.equal((await admit(registry)).body.state, 'disputed');
   d = await detail(registry);
   assert.equal(d.state, 'disputed');
   assert.equal(d.history.at(-1).reason, 'Stage B identity fingerprint mismatch');

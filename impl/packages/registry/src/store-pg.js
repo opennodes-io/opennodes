@@ -54,6 +54,16 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS vendor_namespaces (
     vendor TEXT PRIMARY KEY, namespaces TEXT NOT NULL, updated_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS fingerprint_captures (
+    id SERIAL PRIMARY KEY, artifact TEXT NOT NULL, source TEXT NOT NULL, captured_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS identity_inconclusive (
+    id SERIAL PRIMARY KEY, node_id TEXT NOT NULL, artifact TEXT NOT NULL, at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS registration_failures (
+    week TEXT NOT NULL, reason TEXT NOT NULL, n INTEGER NOT NULL,
+    PRIMARY KEY (week, reason)
+  );
 `;
 
 const NODE_FLAGS = ['institutional', 'founding'];   // same list as store.js
@@ -214,6 +224,33 @@ export async function createPgStore({ connectionString, pool } = {}) {
       return nodeId
         ? q('SELECT * FROM request_counts WHERE node_id = $1 AND week >= $2 ORDER BY week DESC', [nodeId, sinceWeek])
         : q('SELECT * FROM request_counts WHERE week >= $1 ORDER BY week DESC', [sinceWeek]);
+    },
+    async deleteSchedule(nodeId, stage) {
+      await q('DELETE FROM schedule WHERE node_id = $1 AND stage = $2', [nodeId, stage]);
+    },
+    async recordCapture(artifact, source) {
+      await q('INSERT INTO fingerprint_captures (artifact, source, captured_at) VALUES ($1, $2, $3)', [artifact, JSON.stringify(source), now()]);
+    },
+    async lastCaptureAt(artifact) {
+      return (await q('SELECT MAX(captured_at) AS at FROM fingerprint_captures WHERE artifact = $1', [artifact]))[0]?.at ?? null;
+    },
+    async captures(artifact) {
+      return (await q('SELECT artifact, source, captured_at FROM fingerprint_captures WHERE artifact = $1 ORDER BY id DESC', [artifact]))
+        .map((r) => ({ ...r, source: JSON.parse(r.source) }));
+    },
+    async recordInconclusive(nodeId, artifact) {
+      await q('INSERT INTO identity_inconclusive (node_id, artifact, at) VALUES ($1, $2, $3)', [nodeId, artifact, now()]);
+    },
+    async countInconclusive(nodeId, artifact, since = null) {
+      return Number((await q('SELECT COUNT(*) AS n FROM identity_inconclusive WHERE node_id = $1 AND artifact = $2 AND at > $3',
+        [nodeId, artifact, since ?? '']))[0].n);
+    },
+    async addRegistrationFailure(week, reason) {
+      await q(`INSERT INTO registration_failures (week, reason, n) VALUES ($1, $2, 1)
+        ON CONFLICT (week, reason) DO UPDATE SET n = registration_failures.n + 1`, [week, reason]);
+    },
+    async registrationFailures(sinceWeek = '0000-W00') {
+      return q('SELECT * FROM registration_failures WHERE week >= $1 ORDER BY week DESC', [sinceWeek]);
     },
     async close() { await p.end(); },
   };
