@@ -1,6 +1,6 @@
 # ONP specification changes
 
-## Draft 0.1, revision 16 — not yet released: first identity mismatch inconclusive, references from an unlisted endpoint, failed registrations counted
+## Draft 0.1, revision 16 — 2026-11-28: first identity mismatch inconclusive, references from an unlisted endpoint, failed registrations counted
 
 Before references are captured for models outside operators serve: no outside operator has registered yet, and the first honest one on other hardware should not be publicly disputed on its first run.
 
@@ -10,7 +10,7 @@ Before references are captured for models outside operators serve: no outside op
 | C2 | ONP-3 §4a.4 (Where references come from) | Registries SHOULD record privately where each capture came from, and MAY capture from an endpoint that is not a registered node, which is then not listed, scheduled or probed. |
 | C3 | ONP-3 §6.6, §2 | Failed registrations: registrations refused before anything was stored MAY be counted per ISO week and reason, never with the card URL, node id or client; `GET /v0/stats/registrations`. |
 
-Reference implementation (not yet released):
+Reference implementation, released as registry 0.1.59 (PR #38); core, cli, ollama-router and onp-node are unchanged:
 
 - `@opennodes/registry`:
   - `stageb.js`: `judgeMismatch` decides dispute or inconclusive; the identity probe counts `unanswered` prompts; each verdict names its artefact; a capture from an endpoint without a card sends no ONP headers.
