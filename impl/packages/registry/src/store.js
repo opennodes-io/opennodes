@@ -79,6 +79,22 @@ export async function createSqliteStore(path = ':memory:') {
     CREATE TABLE IF NOT EXISTS vendor_namespaces (
       vendor TEXT PRIMARY KEY, namespaces TEXT NOT NULL, updated_at TEXT NOT NULL
     );
+    -- Each reference capture of an artefact: when, and from where (host, runtime, how), so a later
+    -- mismatch can be traced to a hardware or runtime difference. Private: no API or export reads it.
+    CREATE TABLE IF NOT EXISTS fingerprint_captures (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, artifact TEXT NOT NULL, source TEXT NOT NULL, captured_at TEXT NOT NULL
+    );
+    -- Stage B runs that ended "identity inconclusive" (ONP-3 §4a.4): a node's first confirmed partial
+    -- mismatch for an artefact since that artefact's last capture. The next one disputes.
+    CREATE TABLE IF NOT EXISTS identity_inconclusive (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT NOT NULL, artifact TEXT NOT NULL, at TEXT NOT NULL
+    );
+    -- Registrations refused before anything was stored, per ISO week and reason. Counts only: never
+    -- the card URL, the node id or the client.
+    CREATE TABLE IF NOT EXISTS registration_failures (
+      week TEXT NOT NULL, reason TEXT NOT NULL, n INTEGER NOT NULL,
+      PRIMARY KEY (week, reason)
+    );
   `);
   // Databases created before the founding mark existed: add the column in place.
   if (!db.prepare('PRAGMA table_info(nodes)').all().some((c) => c.name === 'founding')) {
@@ -227,6 +243,36 @@ export async function createSqliteStore(path = ':memory:') {
       return nodeId
         ? db.prepare('SELECT * FROM request_counts WHERE node_id = ? AND week >= ? ORDER BY week DESC').all(nodeId, sinceWeek)
         : db.prepare('SELECT * FROM request_counts WHERE week >= ? ORDER BY week DESC').all(sinceWeek);
+    },
+    async deleteSchedule(nodeId, stage) {
+      db.prepare('DELETE FROM schedule WHERE node_id = ? AND stage = ?').run(nodeId, stage);
+    },
+    /** source: {how, host, runtime?, model_id?, node_id?, offering_id?} — kept private. */
+    async recordCapture(artifact, source) {
+      db.prepare('INSERT INTO fingerprint_captures (artifact, source, captured_at) VALUES (?, ?, ?)').run(artifact, JSON.stringify(source), now());
+    },
+    /** ISO time of an artefact's last reference capture, or null. */
+    async lastCaptureAt(artifact) {
+      return db.prepare('SELECT MAX(captured_at) AS at FROM fingerprint_captures WHERE artifact = ?').get(artifact)?.at ?? null;
+    },
+    async captures(artifact) {
+      return db.prepare('SELECT artifact, source, captured_at FROM fingerprint_captures WHERE artifact = ? ORDER BY id DESC').all(artifact)
+        .map((r) => ({ ...r, source: JSON.parse(r.source) }));
+    },
+    async recordInconclusive(nodeId, artifact) {
+      db.prepare('INSERT INTO identity_inconclusive (node_id, artifact, at) VALUES (?, ?, ?)').run(nodeId, artifact, now());
+    },
+    /** Inconclusive runs for a node and artefact after an ISO time (null: ever). */
+    async countInconclusive(nodeId, artifact, since = null) {
+      return db.prepare('SELECT COUNT(*) AS n FROM identity_inconclusive WHERE node_id = ? AND artifact = ? AND at > ?')
+        .get(nodeId, artifact, since ?? '').n;
+    },
+    async addRegistrationFailure(week, reason) {
+      db.prepare(`INSERT INTO registration_failures (week, reason, n) VALUES (?, ?, 1)
+        ON CONFLICT(week, reason) DO UPDATE SET n = registration_failures.n + 1`).run(week, reason);
+    },
+    async registrationFailures(sinceWeek = '0000-W00') {
+      return db.prepare('SELECT * FROM registration_failures WHERE week >= ? ORDER BY week DESC').all(sinceWeek);
     },
     async close() { db.close(); },
   };

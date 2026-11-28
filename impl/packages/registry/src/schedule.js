@@ -45,6 +45,19 @@ export const STAGE_B_STATES = ['community', 'verified', 'attested'];
  * a light-check mismatch never redraw it.
  */
 export const TIMER = 'B:timer';
+/**
+ * The private row that holds automatic Stage B after a run ended "identity inconclusive" (ONP-3
+ * §4a.4): `digest` lists the artefacts (JSON). With the same references a second run would give the
+ * same mismatch and dispute without anyone having looked, so no change, retry or blind check sets
+ * Stage B off until the artefact is captured again (reopenAfterCapture) or an admin runs Stage B.
+ */
+export const HOLD = 'B:hold';
+
+/** Artefacts a node's Stage B hold waits on ([] when there is no hold). */
+export async function heldArtifacts(store, nodeId) {
+  const row = await store.getSchedule(nodeId, HOLD);
+  try { return row?.digest ? JSON.parse(row.digest) : []; } catch { return []; }
+}
 
 const iso = (ms) => new Date(ms).toISOString();
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
@@ -100,6 +113,7 @@ export function makePlanner(store, options = {}) {
      */
     async stageBSoon(nodeId, card) {
       const prev = await store.getSchedule(nodeId, 'B');
+      if ((await heldArtifacts(store, nodeId)).length) return prev?.next_at ?? null;   // held: see HOLD
       const at = Date.now() + between(o.stageBIdentityMs, random);
       const next = iso(Math.min(prev?.next_at ? Date.parse(prev.next_at) : Infinity, at));
       await store.setSchedule(nodeId, 'B', prev ? { ...prev, next_at: next } : {
@@ -111,6 +125,16 @@ export function makePlanner(store, options = {}) {
     async afterStageB(nodeId, card, result) {
       const prev = await store.getSchedule(nodeId, 'B') ?? {};
       const now = Date.now();
+      if (result.inconclusive) {
+        // Not passed, not disputed: nothing runs until a recapture or an admin's run (HOLD).
+        const artifacts = [...new Set([...await heldArtifacts(store, nodeId), ...result.inconclusive.map((i) => i.artifact)])];
+        await store.setSchedule(nodeId, HOLD, { last_at: iso(now), next_at: null, digest: JSON.stringify(artifacts) });
+        await store.setSchedule(nodeId, 'B', {
+          last_at: iso(now), next_at: null, ok: false, revision: card?.revision ?? null,
+          digest: servingDigest(card), pending_digest: null, failures: (prev.failures ?? 0) + 1,
+        });
+        return;
+      }
       if (result.stale) {
         // Unjudged: last_at stays, so the excused 409s since the last judged run keep counting.
         await store.setSchedule(nodeId, 'B', { ...prev, next_at: iso(now + between(o.staleRetryMs, random)), failures: (prev.failures ?? 0) + 1 });
@@ -131,6 +155,29 @@ export function makePlanner(store, options = {}) {
         last_at: iso(now), next_at: next, ok: result.ok, revision: card?.revision ?? null,
         digest: servingDigest(card), pending_digest: null, failures: result.ok ? 0 : (prev.failures ?? 0) + 1,
       });
+      // A judged run (an admin's, while held) ends the hold.
+      if (await store.getSchedule(nodeId, HOLD)) await store.deleteSchedule(nodeId, HOLD);
+    },
+    /**
+     * The artefact's references were captured again: nodes held on it (HOLD) get Stage B at a random
+     * time in the first-run window once nothing else holds them. Returns the node ids reopened.
+     */
+    async reopenAfterCapture(artifact) {
+      const reopened = [];
+      for (const node of await store.allNodes()) {
+        const held = await heldArtifacts(store, node.id);
+        if (!held.includes(artifact)) continue;
+        const rest = held.filter((a) => a !== artifact);
+        if (rest.length) {
+          const row = await store.getSchedule(node.id, HOLD);
+          await store.setSchedule(node.id, HOLD, { ...row, digest: JSON.stringify(rest) });
+          continue;
+        }
+        await store.deleteSchedule(node.id, HOLD);
+        if (STAGE_B_STATES.includes(node.state)) await this.firstStageB(node.id, await store.latestCard(node.id), 'first');
+        reopened.push(node.id);
+      }
+      return reopened;
     },
   };
 }
@@ -158,6 +205,7 @@ export function startScheduler(store, planner, { stageA, stageB, random = Math.r
 
       const current = await store.getNode(node.id);
       if (!STAGE_B_STATES.includes(current?.state)) continue;
+      if ((await heldArtifacts(store, node.id)).length) continue;   // identity inconclusive: see HOLD
       const fresh = await store.latestCard(node.id);
       let b = await store.getSchedule(node.id, 'B');
       if (!b) {

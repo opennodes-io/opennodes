@@ -37,11 +37,12 @@ export async function chatOnce(safeFetch, card, offering, content, maxTokens = I
   const t0 = performance.now();
   const { status, body } = await fetchJsonCapped(safeFetch, `${card.endpoints.openai}/chat/completions`, {
     method: 'POST',
-    headers: {
+    // A reference capture from an endpoint that is not a node (no card) sends no ONP headers.
+    headers: card.node ? {
       'content-type': 'application/json',
       'onp-offering': `${card.node.id}/${offering.offering_id}`,
       'onp-card-revision': card.revision,
-    },
+    } : { 'content-type': 'application/json' },
     body: JSON.stringify({
       model: offering.binding.model_id,
       messages: [{ role: 'user', content }],
@@ -70,6 +71,40 @@ export async function captureFingerprints(safeFetch, card, offering, prompts = D
   }
   return refs;
 }
+
+/**
+ * A confirmed identity mismatch in Stage B, judged (ONP-3 §4a.4, first mismatch): `dispute`, or
+ * `inconclusive` for the node's first mismatch on an artefact since that artefact's references
+ * were last captured, whether or not any reference matched. Only hashes are stored, so a different
+ * model cannot be told from the same weights on other hardware, engine version or kernels, and a
+ * long-enough reply on other hardware can diverge on every prompt. A model swap gains one
+ * inconclusive run per artefact and capture at most, and gets no `verified` from it. Disputes at
+ * once: any non-matching prompt that went unanswered on either ask (a refusal or failed reply, so
+ * M4's rule that a refusal counts as a non-match keeps its force). Card revisions do not reset the
+ * count; only a new capture does.
+ * Returns {dispute: true, why} or {dispute: false, inconclusive: [{offering_id, artifact, matches, total}]}.
+ */
+export async function judgeMismatch(store, nodeId, stageB) {
+  const failed = (stageB.verdicts ?? []).filter((v) => v.identity && !v.identity.ok && !v.identity.unverified);
+  const inconclusive = [];
+  for (const v of failed) {
+    const id = v.identity;
+    const artifact = v.artifact;
+    if (!artifact) return { dispute: true, why: IDENTITY_MISMATCH };
+    if (id.unanswered || id.moved) return { dispute: true, why: IDENTITY_MISMATCH };
+    const since = await store.lastCaptureAt(artifact);
+    if (await store.countInconclusive(nodeId, artifact, since) > 0) {
+      return { dispute: true, why: IDENTITY_MISMATCH };
+    }
+    inconclusive.push({ offering_id: v.offering_id, artifact, matches: id.matches, total: id.total });
+  }
+  return inconclusive.length ? { dispute: false, inconclusive } : { dispute: true, why: IDENTITY_MISMATCH };
+}
+
+/** The transition reason of a Stage B dispute (the identity probe record says how many references matched). */
+export const IDENTITY_MISMATCH = 'Stage B identity fingerprint mismatch';
+/** Probe record of a Stage B run that ended identity inconclusive. */
+export const STAGE_B_INCONCLUSIVE = 'identity-inconclusive';
 
 /** Whether a reply's text is the reference's: the exact-output comparison of ONP-3 §4a.4. */
 export const matchesReference = (text, ref) => typeof text === 'string' && sha256(text) === ref.expected_hash;
@@ -152,13 +187,18 @@ async function probeIdentity(safeFetch, pin, offering, refs, on409) {
     }
     return text !== null ? sha256(text) : null;
   };
+  // Non-matching prompts that got no text on either ask (a refusal or another failure): such a
+  // mismatch is never "inconclusive" (judgeMismatch), so a refusal keeps counting against the node.
+  let unanswered = 0;
   for (const ref of refs) {
     let hash = await ask(ref.prompt);
-    if (hash !== ref.expected_hash && !stop) { retried++; hash = await ask(ref.prompt); }
+    let noText = hash === null;
+    if (hash !== ref.expected_hash && !stop) { retried++; hash = await ask(ref.prompt); noText ||= hash === null; }
     if (hash === ref.expected_hash) matches++;
+    else if (noText && !stop) unanswered++;
     if (stop) break;
   }
-  const extra = { ...(retried ? { retried } : {}), ...(refused ? { refused } : {}),
+  const extra = { ...(retried ? { retried } : {}), ...(refused ? { refused } : {}), ...(unanswered ? { unanswered } : {}),
     ...(repinned ? { repinned, refused_repinned: refusedRepinned } : {}) };
   if (stop?.kind === 'stale') return { ok: false, matches, total: refs.length, ...extra, stale: true };
   if (stop?.kind === 'moved') return { ok: false, matches, total: refs.length, ...extra, moved: true, reason: stop.reason };
@@ -305,7 +345,7 @@ export async function runStageB(store, nodeId, card, {
   for (const listed of card.offerings) {
     if (!testable(listed)) continue;
     let offering = pinned(listed);
-    const verdict = { offering_id: offering.offering_id, identity: null, context: null, capacity: null };
+    const verdict = { offering_id: offering.offering_id, artifact: offering.model?.artifact ?? null, identity: null, context: null, capacity: null };
 
     verdict.identity = await identityOf(store, nodeId, safeFetch, pin, offering, { corpus, vendors, identitySample, on409 });
     if (verdict.identity.stale) {

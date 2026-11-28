@@ -1,5 +1,25 @@
 # ONP specification changes
 
+## Draft 0.1, revision 16 — not yet released: first identity mismatch inconclusive, references from an unlisted endpoint, failed registrations counted
+
+Before references are captured for models outside operators serve: no outside operator has registered yet, and the first honest one on other hardware should not be publicly disputed on its first run.
+
+| # | Where | Change |
+|---|---|---|
+| C1 | ONP-3 §4a.4 (First mismatch), §6.3 | A node's first confirmed mismatch for an artefact since the registry last captured its references is *identity inconclusive*, whether or not any reference matched, when every non-matching prompt got a reply (only hashes are stored, so a different model cannot be told from the same weights on other hardware): not passed, not disputed (`verified` returns to `community`), recorded, and Stage B runs again only after a recapture or a review. A further mismatch before that capture MUST dispute, as MUST one with a refused or failed prompt. Card revisions MUST NOT reset the count. Before, any confirmed mismatch disputed, and only an administrator's resolution ended it. |
+| C2 | ONP-3 §4a.4 (Where references come from) | Registries SHOULD record privately where each capture came from, and MAY capture from an endpoint that is not a registered node, which is then not listed, scheduled or probed. |
+| C3 | ONP-3 §6.6, §2 | Failed registrations: registrations refused before anything was stored MAY be counted per ISO week and reason, never with the card URL, node id or client; `GET /v0/stats/registrations`. |
+
+Reference implementation (not yet released):
+
+- `@opennodes/registry`:
+  - `stageb.js`: `judgeMismatch` decides dispute or inconclusive; the identity probe counts `unanswered` prompts; each verdict names its artefact; a capture from an endpoint without a card sends no ONP headers.
+  - `server.js`: Stage B records `identity-inconclusive` probes and the transition "Stage B identity inconclusive: …"; `POST /v0/fingerprints/capture-endpoint` (admin: `endpoint`, `model_id`, `artifact`, optional `key`, `runtime`, `replace`; same SSRF guard and private corpus; the key is sent as a Bearer token to that origin only and never stored or returned); both capture routes record the capture and reopen held nodes; `POST /v0/nodes` counts `card-unfetchable`, `card-invalid` and `namespace-mismatch`; `GET /v0/stats/registrations`.
+  - `schedule.js`: a private `B:hold` row holds automatic Stage B (changes, retries, light checks) after an inconclusive run; `reopenAfterCapture` makes Stage B due in the first-run window; any judged run ends the hold.
+  - Stores (SQLite and Postgres): `fingerprint_captures` and `identity_inconclusive` (private), `registration_failures`.
+  - Web app: the Stage B text describes the inconclusive outcome.
+  - Tests: `cold-start.test.js`.
+
 ## Draft 0.1, revision 15 — 2026-11-27: keys chosen by `kid`, one algorithm, receipts defined, no dispute dodge past the bound
 
 A re-check against main 27d7083 and registry 0.1.57 of the security review by Mark Lindley, Two Minds (twomindsworks.com), and an internal review of 24 November, found these. Released as core 0.1.27, cli 0.1.36, registry 0.1.58, ollama-router 0.1.30 and onp-node 0.1.12 (PR #33).
